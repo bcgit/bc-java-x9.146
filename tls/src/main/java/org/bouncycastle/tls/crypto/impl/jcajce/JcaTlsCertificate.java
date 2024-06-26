@@ -274,6 +274,13 @@ public class JcaTlsCertificate
         }
     }
 
+    @Override
+    public Tls13Verifier createAltVerifier(SubjectPublicKeyInfo altKeyInfo, int signatureScheme) throws IOException
+    {
+        //TODO
+        return null;
+    }
+
     public byte[] getEncoded() throws IOException
     {
         try
@@ -303,6 +310,14 @@ public class JcaTlsCertificate
         return certificate.getSigAlgOID();
     }
 
+    @Override
+    public String getAltSigAlgOID()
+    {
+//       AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(certificate.getTBSCertificate().getExtensions());
+//        return altSignatureAlgorithm.getAlgorithm().getAlgorithm().getId();
+        return null;
+    }
+
     public ASN1Encodable getSigAlgParams() throws IOException
     {
         byte[] derEncoding = certificate.getSigAlgParams();
@@ -315,6 +330,14 @@ public class JcaTlsCertificate
         // TODO[tls] Without a known ASN.1 type, this is not-quite-right
         TlsUtils.requireDEREncoding(asn1, derEncoding);
         return asn1;
+    }
+
+    @Override
+    public ASN1Encodable getAltSigAlgParams() throws IOException
+    {
+//        AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(certificate.getTBSCertificate().getExtensions());
+//        return altSignatureAlgorithm.getAlgorithm().getParameters();
+        return null;
     }
 
     DHPublicKey getPubKeyDH() throws IOException

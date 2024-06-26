@@ -40,6 +40,13 @@ public class SignatureAlgorithm
     public static final short gostr34102012_256 = 64;
     public static final short gostr34102012_512 = 65;
 
+    /*
+     * couldn't-find-a-draft-for-dilithium-r3-used-for-x9.164
+     */
+    public static final short dilithiumr3_2 = 9142;
+    public static final short dilithiumr3_3 = 9143;
+    public static final short dilithiumr3_5 = 9145;
+
     public static short getClientCertificateType(short signatureAlgorithm)
     {
         switch (signatureAlgorithm)
@@ -66,6 +73,10 @@ public class SignatureAlgorithm
 
         case SignatureAlgorithm.gostr34102012_512:
             return ClientCertificateType.gost_sign512;
+
+//        case SignatureAlgorithm.dilithiumr3_2:
+//        case SignatureAlgorithm.dilithiumr3_3:
+//        case SignatureAlgorithm.dilithiumr3_5:
 
         default:
             return -1;

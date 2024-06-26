@@ -420,6 +420,13 @@ public class TlsServerProtocol
 
         TlsUtils.establish13PhaseSecrets(tlsServerContext, pskEarlySecret, sharedSecret);
 
+        // X9.146 Add CKS extension
+        short cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientHelloExtensions);
+        if (cksCode != 0)
+        {
+            TlsExtensionsUtils.addCertificationKeySelection(serverHelloExtensions, cksCode);
+        }
+
         this.serverExtensions = serverEncryptedExtensions;
 
         applyMaxFragmentLengthExtension(securityParameters.getMaxFragmentLength());
@@ -1623,6 +1630,7 @@ public class TlsServerProtocol
     
             // CertificateVerify
             {
+                //TODO: add alt verify
                 DigitallySigned certificateVerify = TlsUtils.generate13CertificateVerify(tlsServerContext,
                     serverCredentials, handshakeHash);
                 send13CertificateVerifyMessage(certificateVerify);

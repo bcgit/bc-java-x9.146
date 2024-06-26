@@ -4,6 +4,7 @@ import java.security.SecureRandom;
 
 import org.bouncycastle.crypto.digests.SHAKEDigest;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.encoders.Hex;
 
 class DilithiumEngine
 {
@@ -518,11 +519,11 @@ class DilithiumEngine
         shakeDigest256.update(buf, 0, DilithiumK * DilithiumPolyW1PackedBytes);
         shakeDigest256.doFinal(c2, 0, SeedBytes);
 
-        // System.out.println("c = ");
-        // Helper.printByteArray(c);
-
-        // System.out.println("c2 = ");
-        // Helper.printByteArray(c2);
+//         System.out.println("c = ");
+//         System.out.println(Hex.toHexString(c));
+//
+//         System.out.println("c2 = ");
+//        System.out.println(Hex.toHexString(c2));
 
 
         for (int i = 0; i < SeedBytes; ++i)

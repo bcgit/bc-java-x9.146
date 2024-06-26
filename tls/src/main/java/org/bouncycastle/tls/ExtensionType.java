@@ -143,6 +143,11 @@ public class ExtensionType
      */
     public static final int renegotiation_info = 0xff01;
 
+    /*
+     * X9.146
+     */
+    public static final int certificate_key_selection = 0x9146;
+
     public static String getName(int extensionType)
     {
         switch (extensionType)
@@ -229,6 +234,8 @@ public class ExtensionType
             return "connection_id";
         case renegotiation_info:
             return "renegotiation_info";
+            case certificate_key_selection:
+            return "certificate_key_selection";
         default:
             return "UNKNOWN";
         }
@@ -284,6 +291,7 @@ public class ExtensionType
         case key_share:
         case connection_id:
         case renegotiation_info:
+        case certificate_key_selection:
             return true;
         default:
             return false;

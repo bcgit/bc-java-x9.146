@@ -46,6 +46,18 @@ public class SignatureScheme
     public static final int sm2sig_sm3 = 0x0708;
 
     /*
+     * couldn't-find-a-draft-for-dilithium-r3-used-for-x9.164
+     */
+    public static final short dilithiumr3_2 = 9142;
+    public static final short dilithiumr3_3 = 9143;
+    public static final short dilithiumr3_5 = 9145;
+    /*
+     * couldn't-find-a-draft-for-falcon-used-for-x9.164
+     */
+    public static final short falcon_512 = 9151;
+    public static final short falcon_1024 = 9153;
+
+    /*
      * RFC 8446 reserved for private use (0xFE00..0xFFFF)
      */
 

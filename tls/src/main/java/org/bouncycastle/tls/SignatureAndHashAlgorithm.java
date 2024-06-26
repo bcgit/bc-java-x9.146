@@ -19,6 +19,18 @@ public class SignatureAndHashAlgorithm
         create(SignatureScheme.ed25519);
     public static final SignatureAndHashAlgorithm ed448 =
         create(SignatureScheme.ed448);
+
+    public static final SignatureAndHashAlgorithm dilithiumr3_2 =
+        create(SignatureScheme.dilithiumr3_2);
+    public static final SignatureAndHashAlgorithm dilithiumr3_3 =
+        create(SignatureScheme.dilithiumr3_3);
+    public static final SignatureAndHashAlgorithm dilithiumr3_5 =
+        create(SignatureScheme.dilithiumr3_5);
+
+    public static final SignatureAndHashAlgorithm falcon_512 =
+        create(SignatureScheme.falcon_512);
+    public static final SignatureAndHashAlgorithm falcon_1024 =
+        create(SignatureScheme.falcon_1024);
     public static final SignatureAndHashAlgorithm gostr34102012_256 =
         create(HashAlgorithm.Intrinsic, SignatureAlgorithm.gostr34102012_256);
     public static final SignatureAndHashAlgorithm gostr34102012_512 =

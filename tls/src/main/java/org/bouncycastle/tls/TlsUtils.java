@@ -7,10 +7,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.security.SecureRandom;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Vector;
 
+import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Integer;
@@ -18,6 +20,10 @@ import org.bouncycastle.asn1.ASN1Object;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.DERTaggedObject;
+import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
 import org.bouncycastle.asn1.bsi.BSIObjectIdentifiers;
 import org.bouncycastle.asn1.eac.EACObjectIdentifiers;
 import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
@@ -26,6 +32,15 @@ import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
 import org.bouncycastle.asn1.rosstandart.RosstandartObjectIdentifiers;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.x509.AltSignatureAlgorithm;
+import org.bouncycastle.asn1.x509.AltSignatureValue;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.Extensions;
+import org.bouncycastle.asn1.x509.SubjectAltPublicKeyInfo;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.asn1.x509.TBSCertificate;
+import org.bouncycastle.asn1.x509.V3TBSCertificateGenerator;
 import org.bouncycastle.asn1.x509.X509ObjectIdentifiers;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.tls.crypto.Tls13Verifier;
@@ -44,11 +59,14 @@ import org.bouncycastle.tls.crypto.TlsSecret;
 import org.bouncycastle.tls.crypto.TlsStreamSigner;
 import org.bouncycastle.tls.crypto.TlsStreamVerifier;
 import org.bouncycastle.tls.crypto.TlsVerifier;
+import org.bouncycastle.tls.crypto.impl.bc.BcTlsCertificate;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Integers;
 import org.bouncycastle.util.Shorts;
 import org.bouncycastle.util.encoders.Hex;
 import org.bouncycastle.util.io.Streams;
+
+import static org.bouncycastle.tls.crypto.impl.bc.BcTlsCertificate.parseCertificate;
 
 /**
  * Some helper functions for the TLS API.
@@ -113,6 +131,13 @@ public class TlsUtils
 
         addCertSigAlgOID(h, EdECObjectIdentifiers.id_Ed25519, SignatureAndHashAlgorithm.ed25519);
         addCertSigAlgOID(h, EdECObjectIdentifiers.id_Ed448, SignatureAndHashAlgorithm.ed448);
+
+        addCertSigAlgOID(h, BCObjectIdentifiers.dilithium2, SignatureAndHashAlgorithm.dilithiumr3_2);
+        addCertSigAlgOID(h, BCObjectIdentifiers.dilithium3, SignatureAndHashAlgorithm.dilithiumr3_3);
+        addCertSigAlgOID(h, BCObjectIdentifiers.dilithium5, SignatureAndHashAlgorithm.dilithiumr3_5);
+
+        addCertSigAlgOID(h, BCObjectIdentifiers.falcon_512, SignatureAndHashAlgorithm.falcon_512);
+        addCertSigAlgOID(h, BCObjectIdentifiers.falcon_1024, SignatureAndHashAlgorithm.falcon_1024);
 
         addCertSigAlgOID(h, RosstandartObjectIdentifiers.id_tc26_signwithdigest_gost_3410_12_256,
             SignatureAndHashAlgorithm.gostr34102012_256);
@@ -2545,6 +2570,7 @@ public class TlsUtils
         TlsHandshakeHash handshakeHash, TlsCertificate certificate, CertificateVerify certificateVerify)
         throws IOException
     {
+        //TODO CHANGE THIS
         // Verify the CertificateVerify message contains a correct signature.
         boolean verified;
         try
@@ -4731,6 +4757,95 @@ public class TlsUtils
                     || (null != clientSigAlgs && containsSignatureAlgorithm(clientSigAlgs, sigAndHashAlg));
             }
 
+            // Do the validation
+
+            // NATIVE
+            TBSCertificate subjectTbs = ((BcTlsCertificate)subjectCert).getCertificate().getTBSCertificate();
+            Tls13Verifier verifier = issuerCert.createVerifier(SignatureScheme.from(sigAndHashAlg));
+            OutputStream output = verifier.getOutputStream();
+            output.write(subjectTbs.getEncoded());
+            boolean nativeVerify = verifier.verifySignature(((BcTlsCertificate)subjectCert).getCertificate().getSignature().getBytes());
+            if(!nativeVerify)
+            {
+                throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed native");
+            }
+
+            // ALTERNATIVE
+            // draft-truskovsky-lamps-pq-hybrid-x509-02
+            //  4.2 Verifying Multiple Public-Key Algorithm Certificates
+            //       a) ASN.1 DER decode the tbsCertificate field of the certificate to get a TBSCertificate object.
+            V3TBSCertificateGenerator tbsBuilder = new V3TBSCertificateGenerator();
+            tbsBuilder.setSerialNumber(subjectTbs.getSerialNumber());
+            tbsBuilder.setIssuer(subjectTbs.getIssuer());
+            tbsBuilder.setSubject(subjectTbs.getSubject());
+            tbsBuilder.setStartDate(subjectTbs.getStartDate());
+            tbsBuilder.setEndDate(subjectTbs.getEndDate());
+            tbsBuilder.setSubjectPublicKeyInfo(subjectTbs.getSubjectPublicKeyInfo());
+
+            //       b) Remove the AltSignatureValueExt extension from the TBSCertificate object and set aside the alternative signature.
+
+            Extensions exts = subjectTbs.getExtensions();
+
+
+
+            ASN1Sequence extSeq = ASN1Sequence.getInstance(subjectTbs.getExtensions().toASN1Primitive());
+            ASN1EncodableVector extV = new ASN1EncodableVector();
+            for (int j = 0; j != extSeq.size(); j++)
+            {
+                ASN1Sequence ext = ASN1Sequence.getInstance(extSeq.getObjectAt(j));
+                Extension extension = Extension.getInstance(ext);
+                if (extension.getExtnId().toString().equals("1.2.3.4.5"))
+                {
+                    continue;
+                }
+
+                if (!Extension.altSignatureValue.equals(ext.getObjectAt(0)))
+                {
+                    System.out.println(extension.getExtnId() + " : " + extension.getExtnValue().toString());
+                    System.out.println(extension.getExtnId() + " : " + Hex.toHexString(extension.getExtnValue().getOctets()));
+                    extV.add(ext);
+                }
+            }
+            tbsBuilder.setExtensions(Extensions.getInstance((new DERSequence(extV)).toASN1Primitive()));
+            AltSignatureValue altSignatureValue = AltSignatureValue.fromExtensions(subjectTbs.getExtensions());
+
+            //       c) Remove the signature field from the TBSCertificate object, converting it to a PreTBSCertificate object.
+            tbsBuilder.setSignature(null);
+
+            //       d) ASN.1 DER encode the PreTBSCertificate object.
+            byte[] altTbs = tbsBuilder.generatePreTBSCertificate().getEncoded();
+
+
+            //       e) Using the algorithm specified in the AltSignatureAlgorithmExt extension of the PreTBSCertificate,
+            //       the alternative public key from the Issuer's SubjectAltPublicKeyInfoExt extension
+            //       and the ASN.1 DER encoded PreTBSCertificate, verify the alternative signature from (b)
+            SignatureAndHashAlgorithm altSigAndHashAlg = getCertAltSigAndHashAlg(subjectCert, issuerCert);
+            TBSCertificate issuerTbs = ((BcTlsCertificate)issuerCert).getCertificate().getTBSCertificate();
+            SubjectAltPublicKeyInfo issuerAltPublicKeyInfo = SubjectAltPublicKeyInfo.fromExtensions(issuerTbs.getExtensions());
+            Tls13Verifier altVerifier = issuerCert.createAltVerifier(
+                    new SubjectPublicKeyInfo(
+                            issuerAltPublicKeyInfo.getAlgorithm(),
+                            issuerAltPublicKeyInfo.getSubjectAltPublicKey()
+                    ),
+                    SignatureScheme.from(altSigAndHashAlg)
+            );
+            OutputStream altOutput = altVerifier.getOutputStream();
+
+            //TODO: change delete this (Only done while waiting for a fix from wolfssl)
+            byte[] wolfsslPreTBS = Hex.decode("3082073da00302010202105f76345553ccfd245961dbea1d20284330819e310b3009060355040613025553310b300906035504080c024d543111300f06035504070c08596f75724369747931143012060355040a0c0b596f75724f72674e616d6531153013060355040b0c0c596f7572556e69744e616d65311b301906035504030c127777772e596f7572446f6d61696e2e636f6d3125302306092a864886f70d010901161670712d726f6f7440596f7572446f6d61696e2e636f6d3022180f32303234303631393134343733375a180f32303235313130323134343733375a3081a0310b3009060355040613025553310b300906035504080c024d543111300f06035504070c08596f75724369747931143012060355040a0c0b596f75724f72674e616d6531153013060355040b0c0c596f7572556e69744e616d65311b301906035504030c127777772e596f7572446f6d61696e2e636f6d3127302506092a864886f70d010901161870712d73657276657240596f7572446f6d61696e2e636f6d3059301306072a8648ce3d020106082a8648ce3d03010703420004efe769e35e639d6fc4a2f99225f1a022df94463fd7ac86368dfef28531285ed61b9a68b2fd01cd8f5b46a3b0ca7d926073e933ee8bea9820e8efde1b3bf2c78da382055f3082055b308205410603551d480482053830820534300d060b2b0601040102820b070404038205210090abbc952d27182aa3d872e32ce308a29c2f97923ff2ee613482c16b09d4bbdd0377cab7775d4677ca07e313b00962c0ad6c4f0f1cfd95c4cf91ed7e4e4db29a005fe5a9e137f7dba703fc2c01f204db58008a1d1b1e07c8b55b7c304308f987f84bf909074249fc8486c6686c5250d9c6ecdb8815f694ddb842d98be4f253075f0c31ed83b40007dafa5bfca60f71f91f614e93e9f77218d2f89b1885f58371773cd1f36a18fc1002bdc642460b51c5e04821b2d24c4d87a8e2de2e2ef6271d609416ae6f0c410a71e8784ff58b841be90c1eccfbf92f1b64286b40c2e3babcfbd9c42b6cd86c77fa85535756924da35e42b1c8cbf54052273c97d78aeffe57ba7a2466b99ab7b994ae5d1215500ba1089b1d284a4bc25bc37df7ced73da39c506ca5523e3c83f17be42b3a0d1ad5feb0279b3a3f7a61d65210e8fbb648c54f1815713441aacbe6bae8dd7c2f810ac7f74d81616fd211b116a2ccea584e03110b6c3bb6ce05cc58389e8b4eca6de4ef422d709c83e0ad0a4d4d6afa889b07ea14ca32d8f0209b28477a3d694865178c1c0c5c5b180fa4df1d49d28e0fc2d318f8162bd9aa3b47ce35953919f01c120b65c40f7568e23eabe962fed6a28771be811e50f1c473100afb3146dff297f2c88b5f3637c3dc7b03859fd09cfc52c31694fd7debe5573bb540e41d74aaa11e313c6d544854ab0b704fe1234d3975a7c4b8d79bfbde2b38ad8b1fbac1089a9deb849a96b2f3439766342ef8307527f67dae8967e2a9d22ae2c02487270c402540d4c8e7a03a6959db8ce6118f649f5f3d64b5f740d009822542efedb64093439d66d3a24dbd04826e3eacf935efb119a9add208a9a764d29087f0d2e74e54c93e501c3c638dea993f9d44da46e40e05c2d1bddb9f9ac802c16b07d903aa80062ae8f8c1439ab7b6f35a3750170582acbc24312d601cf1a6527c3f102cea6f46c9e148688282b8aa6278068c8dbbc1618bfcd8f94425846285823595a2e44de7141e0bf8438224c20871435ba42a089ea2a0a5753aa8473a0a3a5b2e017b0ed87b453287f47f75423c9d3dd8db47b3adc5849a885f32f956dbdf0d00533921e32a0aca839fe24344ebb2fd41e5d259b3a306d85f357ea8e4faecc1a49b2ede0da02b5a459ad3984573142bf262f1a6ca67b94e1b620783207fbc6eab0bc75e27e9b1edbff942b6ee52395fe0567f744b5b881294dafb2a66e07385540d59e1e7a9665845434d8f842e9d0d979e9574c8f76c7d205c2e64a9fa39cf7dc40aee141f2dfe6331a65a64278c427bc26fed8419adfeea1db42c1623ed40ee122c45d5f7c27db71ea58b5f93bc093c79ac60cafcf50f805e49b4b3adba8be8ed94a04260f12a12752ee92dfc38572bb089bfa8c45b5217262c5d91e2ae847647da340f248b00abcc0b7c4399c615d13229fb0dd52f75d1474fdbed30a7696a41ca0f7388b0e557502279e90a06ba1e97c58ba5e83c2ad6991cc495b2db5f3e9a23437bd1136557dd59438a56d21cfb245b3b0b32e4e549f359939c127af34e043b64f344c49be1487284c606fb6dfac02087bef3268dd0895b092fa75208b3a35e3fd83c364503ec520486776e8efc6f042908df9e5d8d662991280bc6ca4f6a5b802e1b739b68c8b5a161cc1438bf93a701f982f5b1078d7ea60da1ad642bcca5f4f529c743bffee648cc3f17f5ebc8c93e04d52e451e05ecc9fa7f726b9c8f8a9a079fb5acf7d89145ea65f0c10e2acba42ce255beb9e5622c01d825545a798ad7250b0f322c1b0a64f4dca907a52430399702a5d1def6bad8af8be42f7c407a4b9a384d624b2bd8f8bd97d8ec3e5870c8ffff30140603551d49040d060b2b0601040102820b070404");
+
+
+            altOutput.write(wolfsslPreTBS);
+            //TODO: uncomment when fixed
+//            altOutput.write(altTbs);
+//            System.out.println("alttbs: " + Hex.toHexString(altTbs));
+//            System.out.println("altsig: " + Hex.toHexString(altSignatureValue.getSignature().getBytes()));
+            boolean alternativeVerify = altVerifier.verifySignature(altSignatureValue.getSignature().getBytes());
+            if(!alternativeVerify)
+            {
+                throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed alternative");
+            }
+
             if (!valid)
             {
                 throw new TlsFatalAlert(AlertDescription.bad_certificate);
@@ -4822,6 +4937,8 @@ public class TlsUtils
     {
         SecurityParameters securityParameters = clientContext.getSecurityParametersHandshake();
         boolean isTLSv13 = isTLSv13(securityParameters.getNegotiatedVersion());
+        short cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientExtensions);
+        boolean usingAltCerts = cksCode > 1;
 
         if (null == clientAuthentication)
         {
@@ -4844,10 +4961,33 @@ public class TlsUtils
 
         checkTlsFeatures(serverCertificate, clientExtensions, serverExtensions);
 
+
         if (!isTLSv13)
         {
             keyExchange.processServerCertificate(serverCertificate);
         }
+
+        //TODO: check if CKS is provided, if so validate using CKS Scheme
+        TlsCertificate serverCert = serverCertificate.getCertificateAt(0);
+        TBSCertificate tbsCert = ((BcTlsCertificate)serverCert).getCertificate().getTBSCertificate();
+        if (usingAltCerts)
+        {
+            SubjectAltPublicKeyInfo subjectAltPublicKeyInfo = SubjectAltPublicKeyInfo.fromExtensions(tbsCert.getExtensions());
+            AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(tbsCert.getExtensions());
+            AltSignatureValue altSignatureValue = AltSignatureValue.fromExtensions(tbsCert.getExtensions());
+            //TODO: replace or find where validation is done and implement validation using these...
+
+            // TODO: I made these values public to test it out, might have to reconstruct the cert!
+            // Replacing with alt values
+            tbsCert.subjectPublicKeyInfo = new SubjectPublicKeyInfo(subjectAltPublicKeyInfo.getAlgorithm(), subjectAltPublicKeyInfo.getSubjectAltPublicKey());
+            tbsCert.signature = altSignatureAlgorithm.getAlgorithm();
+
+            // TODO: maybe change sigAlgId in serverCert
+            ((BcTlsCertificate) serverCert).getCertificate().sig =  altSignatureValue.getSignature();
+            ((BcTlsCertificate) serverCert).getCertificate().sigAlgId =  altSignatureAlgorithm.getAlgorithm();
+
+        }
+
 
         clientAuthentication.notifyServerCertificate(new TlsServerCertificateImpl(serverCertificate, serverCertificateStatus));
     }
@@ -4865,6 +5005,60 @@ public class TlsUtils
             }
 
             RSASSAPSSparams pssParams = RSASSAPSSparams.getInstance(subjectCert.getSigAlgParams());
+            if (null != pssParams)
+            {
+                ASN1ObjectIdentifier hashOID = pssParams.getHashAlgorithm().getAlgorithm();
+                if (NISTObjectIdentifiers.id_sha256.equals(hashOID))
+                {
+                    if (issuerCert.supportsSignatureAlgorithmCA(SignatureAlgorithm.rsa_pss_pss_sha256))
+                    {
+                        return SignatureAndHashAlgorithm.rsa_pss_pss_sha256;
+                    }
+                    else if (issuerCert.supportsSignatureAlgorithmCA(SignatureAlgorithm.rsa_pss_rsae_sha256))
+                    {
+                        return SignatureAndHashAlgorithm.rsa_pss_rsae_sha256;
+                    }
+                }
+                else if (NISTObjectIdentifiers.id_sha384.equals(hashOID))
+                {
+                    if (issuerCert.supportsSignatureAlgorithmCA(SignatureAlgorithm.rsa_pss_pss_sha384))
+                    {
+                        return SignatureAndHashAlgorithm.rsa_pss_pss_sha384;
+                    }
+                    else if (issuerCert.supportsSignatureAlgorithmCA(SignatureAlgorithm.rsa_pss_rsae_sha384))
+                    {
+                        return SignatureAndHashAlgorithm.rsa_pss_rsae_sha384;
+                    }
+                }
+                else if (NISTObjectIdentifiers.id_sha512.equals(hashOID))
+                {
+                    if (issuerCert.supportsSignatureAlgorithmCA(SignatureAlgorithm.rsa_pss_pss_sha512))
+                    {
+                        return SignatureAndHashAlgorithm.rsa_pss_pss_sha512;
+                    }
+                    else if (issuerCert.supportsSignatureAlgorithmCA(SignatureAlgorithm.rsa_pss_rsae_sha512))
+                    {
+                        return SignatureAndHashAlgorithm.rsa_pss_rsae_sha512;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+    static SignatureAndHashAlgorithm getCertAltSigAndHashAlg(TlsCertificate subjectCert, TlsCertificate issuerCert)
+        throws IOException
+    {
+        String sigAlgOID = subjectCert.getAltSigAlgOID();
+
+        if (null != sigAlgOID)
+        {
+            if (!PKCSObjectIdentifiers.id_RSASSA_PSS.getId().equals(sigAlgOID))
+            {
+                return (SignatureAndHashAlgorithm)CERT_SIG_ALG_OIDS.get(sigAlgOID);
+            }
+
+            RSASSAPSSparams pssParams = RSASSAPSSparams.getInstance(subjectCert.getAltSigAlgParams());
             if (null != pssParams)
             {
                 ASN1ObjectIdentifier hashOID = pssParams.getHashAlgorithm().getAlgorithm();
@@ -5868,6 +6062,20 @@ public class TlsUtils
                 return true;
             default:
                 return false;
+            }
+        }
+        case ExtensionType.certificate_key_selection:
+        {
+            switch (handshakeType)
+            {
+                case HandshakeType.client_hello:
+                case HandshakeType.server_hello:
+                case HandshakeType.certificate_request:
+                case HandshakeType.certificate:
+//                case HandshakeType.encrypted_extensions: //TODO SHOULD CKS BE HERE?
+                    return true;
+                default:
+                    return false;
             }
         }
         default:

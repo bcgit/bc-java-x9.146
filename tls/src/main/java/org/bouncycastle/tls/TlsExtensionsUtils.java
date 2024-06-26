@@ -46,6 +46,7 @@ public class TlsExtensionsUtils
     public static final Integer EXT_supported_versions = Integers.valueOf(ExtensionType.supported_versions);
     public static final Integer EXT_truncated_hmac = Integers.valueOf(ExtensionType.truncated_hmac);
     public static final Integer EXT_trusted_ca_keys = Integers.valueOf(ExtensionType.trusted_ca_keys);
+    public static final Integer EXT_certificate_key_selection = Integers.valueOf(ExtensionType.certificate_key_selection);
 
     public static Hashtable ensureExtensionsInitialised(Hashtable extensions)
     {
@@ -280,6 +281,11 @@ public class TlsExtensionsUtils
     public static void addTrustedCAKeysExtensionServer(Hashtable extensions)
     {
         extensions.put(EXT_trusted_ca_keys, createTrustedCAKeysExtensionServer());
+    }
+
+    public static void addCertificationKeySelection(Hashtable extensions, short cksCode) throws IOException
+    {
+        extensions.put(EXT_certificate_key_selection, createCertificateKeySelection(cksCode));
     }
 
     /**
@@ -518,6 +524,12 @@ public class TlsExtensionsUtils
     {
         byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_trusted_ca_keys);
         return extensionData == null ? null : readTrustedCAKeysExtensionClient(extensionData);
+    }
+
+    public static short getCertificationKeySelection(Hashtable extensions) throws IOException
+    {
+        byte[] cksCodeData = TlsUtils.getExtensionData(extensions, EXT_certificate_key_selection);
+        return cksCodeData == null ? 0 : readCertificationKeySelection(cksCodeData);
     }
 
     public static boolean hasClientCertificateURLExtension(Hashtable extensions) throws IOException
@@ -1000,6 +1012,12 @@ public class TlsExtensionsUtils
     public static byte[] createTrustedCAKeysExtensionServer()
     {
         return createEmptyExtensionData();
+    }
+
+    public static byte[] createCertificateKeySelection(short cksCode) throws IOException
+    {
+        TlsUtils.checkUint8(cksCode);
+        return TlsUtils.encodeUint8(cksCode);
     }
 
     private static boolean readEmptyExtensionData(byte[] extensionData) throws IOException
@@ -1534,6 +1552,16 @@ public class TlsExtensionsUtils
     public static boolean readTrustedCAKeysExtensionServer(byte[] extensionData) throws IOException
     {
         return readEmptyExtensionData(extensionData);
+    }
+
+    public static short readCertificationKeySelection(byte[] cksCodeData) throws IOException
+    {
+        if (cksCodeData == null)
+        {
+            throw new IllegalArgumentException("'cksCodeData' cannot be null");
+        }
+
+        return TlsUtils.readUint8(cksCodeData, 0);
     }
 
     private static byte[] patchOpaque16(ByteArrayOutputStream buf) throws IOException

@@ -117,6 +117,12 @@ public class TlsTestUtils
 
     static String getCACertResource(String eeCertResource) throws IOException
     {
+        if (eeCertResource.startsWith("x9146/server-"))
+        {
+            eeCertResource = eeCertResource.replace("server", "ca");
+            return eeCertResource;
+        }
+
         if (eeCertResource.startsWith("x509-client-"))
         {
             eeCertResource = eeCertResource.substring("x509-client-".length());
@@ -125,6 +131,7 @@ public class TlsTestUtils
         {
             eeCertResource = eeCertResource.substring("x509-server-".length());
         }
+
         if (eeCertResource.endsWith(".pem"))
         {
             eeCertResource = eeCertResource.substring(0, eeCertResource.length() - ".pem".length());

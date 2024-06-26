@@ -9,6 +9,9 @@ import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DERTaggedObject;
 import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.util.encoders.Hex;
+
+import java.io.IOException;
 
 /**
  * Generator for Version 3 TBSCertificateStructures.
@@ -178,14 +181,30 @@ public class V3TBSCertificateGenerator
         ASN1EncodableVector v = new ASN1EncodableVector(10);
 
         v.add(version);
+        try
+        {
+            System.out.println("version: " + Hex.toHexString(version.getEncoded()));
+        } catch (Exception e) {}
         v.add(serialNumber);
+        try
+        {
+            System.out.println("serialNumber: " + Hex.toHexString(serialNumber.getEncoded()));
+        } catch (Exception e) {}
 
         if (signature != null)
         {
             v.add(signature);
+            try
+            {
+                System.out.println("signature: " + Hex.toHexString(signature.getEncoded()));
+            } catch (Exception e) {}
         }
         
         v.add(issuer);
+        try
+        {
+            System.out.println("issuer: " + Hex.toHexString(issuer.getEncoded()));
+        } catch (Exception e) {}
 
         //
         // before and after dates
@@ -193,7 +212,15 @@ public class V3TBSCertificateGenerator
         {
             ASN1EncodableVector validity = new ASN1EncodableVector(2);
             validity.add(startDate);
+            try
+            {
+                System.out.println("startDate: " + Hex.toHexString(startDate.getEncoded()));
+            } catch (Exception e) {}
             validity.add(endDate);
+            try
+            {
+                System.out.println("endDate: " + Hex.toHexString(endDate.getEncoded()));
+            } catch (Exception e) {}
 
             v.add(new DERSequence(validity));
         }
@@ -201,6 +228,10 @@ public class V3TBSCertificateGenerator
         if (subject != null)
         {
             v.add(subject);
+            try
+            {
+                System.out.println("subject: " + Hex.toHexString(subject.getEncoded()));
+            } catch (Exception e) {}
         }
         else
         {
@@ -208,20 +239,39 @@ public class V3TBSCertificateGenerator
         }
 
         v.add(subjectPublicKeyInfo);
+        try
+        {
+            System.out.println("subjectPublicKeyInfo: " + Hex.toHexString(subjectPublicKeyInfo.getEncoded()));
+        } catch (Exception e) {}
 
         if (issuerUniqueID != null)
         {
             v.add(new DERTaggedObject(false, 1, issuerUniqueID));
+
+            try
+            {
+                System.out.println("issuerUniqueID: " + Hex.toHexString(issuerUniqueID.getEncoded()));
+            } catch (Exception e) {}
         }
 
         if (subjectUniqueID != null)
         {
             v.add(new DERTaggedObject(false, 2, subjectUniqueID));
+
+            try
+            {
+                System.out.println("subjectUniqueID: " + Hex.toHexString(subjectUniqueID.getEncoded()));
+            } catch (Exception e) {}
         }
 
         if (extensions != null)
         {
             v.add(new DERTaggedObject(true, 3, extensions));
+
+            try
+            {
+                System.out.println("extensions: " + Hex.toHexString(new DERTaggedObject(true, 3, extensions).getEncoded()));
+            } catch (Exception e) {}
         }
 
         return new DERSequence(v);

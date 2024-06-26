@@ -7,10 +7,13 @@ import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.x509.AltSignatureAlgorithm;
+import org.bouncycastle.asn1.x509.AltSignatureValue;
 import org.bouncycastle.asn1.x509.Certificate;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.Extensions;
 import org.bouncycastle.asn1.x509.KeyUsage;
+import org.bouncycastle.asn1.x509.SubjectAltPublicKeyInfo;
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.TlsUtils;
@@ -96,8 +99,18 @@ public class BcTlsCertificate
     {
         return certificate.getSignatureAlgorithm().getAlgorithm().getId();
     }
+    public String getAltSigAlgOID()
+    {
+        AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(certificate.getTBSCertificate().getExtensions());
+        return altSignatureAlgorithm.getAlgorithm().getAlgorithm().getId();
+    }
 
     public ASN1Encodable getSigAlgParams()
+    {
+        AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(certificate.getTBSCertificate().getExtensions());
+        return altSignatureAlgorithm.getAlgorithm().getParameters();
+    }
+    public ASN1Encodable getAltSigAlgParams()
     {
         return certificate.getSignatureAlgorithm().getParameters();
     }

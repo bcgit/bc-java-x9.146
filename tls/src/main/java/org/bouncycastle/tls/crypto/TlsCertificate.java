@@ -5,6 +5,7 @@ import java.math.BigInteger;
 
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.SignatureScheme;
 
@@ -33,6 +34,7 @@ public interface TlsCertificate
      *            {@link SignatureScheme}
      */
     Tls13Verifier createVerifier(int signatureScheme) throws IOException;
+    Tls13Verifier createAltVerifier(SubjectPublicKeyInfo altKeyInfo, int signatureScheme) throws IOException;
 
     byte[] getEncoded() throws IOException;
 
@@ -44,8 +46,10 @@ public interface TlsCertificate
      * @return the OID of this certificate's 'signatureAlgorithm', as a String.
      */
     String getSigAlgOID();
+    String getAltSigAlgOID();
 
     ASN1Encodable getSigAlgParams() throws IOException;
+    ASN1Encodable getAltSigAlgParams() throws IOException;
 
     /**
      * @return {@link SignatureAlgorithm}
