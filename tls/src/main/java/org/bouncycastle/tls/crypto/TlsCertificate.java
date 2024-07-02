@@ -35,6 +35,7 @@ public interface TlsCertificate
      */
     Tls13Verifier createVerifier(int signatureScheme) throws IOException;
     Tls13Verifier createAltVerifier(SubjectPublicKeyInfo altKeyInfo, int signatureScheme) throws IOException;
+    Tls13Verifier createAltVerifier(int signatureScheme) throws IOException;
 
     byte[] getEncoded() throws IOException;
 

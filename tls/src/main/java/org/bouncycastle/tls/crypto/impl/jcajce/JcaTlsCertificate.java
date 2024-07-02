@@ -281,6 +281,13 @@ public class JcaTlsCertificate
         return null;
     }
 
+    @Override
+    public Tls13Verifier createAltVerifier(int signatureScheme) throws IOException
+    {
+        //TODO
+        return null;
+    }
+
     public byte[] getEncoded() throws IOException
     {
         try

@@ -1609,7 +1609,12 @@ public class TlsClientProtocol
 
         assertEmpty(buf);
 
-        TlsUtils.verify13CertificateVerifyServer(tlsClientContext, handshakeHash, certificateVerify);
+        short serverCKS = TlsExtensionsUtils.getCertificationKeySelection(serverExtensions);
+        short clientCKS = TlsExtensionsUtils.getCertificationKeySelection(clientExtensions);
+
+        // TODO: Throw error if server cks != client cks (check if native == default)
+
+        TlsUtils.verify13CertificateVerifyServer(tlsClientContext, handshakeHash, certificateVerify, clientCKS);
     }
 
     protected void receive13ServerFinished(ByteArrayInputStream buf)

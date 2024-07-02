@@ -139,6 +139,9 @@ public class TlsUtils
         addCertSigAlgOID(h, BCObjectIdentifiers.falcon_512, SignatureAndHashAlgorithm.falcon_512);
         addCertSigAlgOID(h, BCObjectIdentifiers.falcon_1024, SignatureAndHashAlgorithm.falcon_1024);
 
+        addCertSigAlgOID(h, BCObjectIdentifiers.falcon_512, SignatureAndHashAlgorithm.falcon_512);
+        addCertSigAlgOID(h, BCObjectIdentifiers.falcon_1024, SignatureAndHashAlgorithm.falcon_1024);
+
         addCertSigAlgOID(h, RosstandartObjectIdentifiers.id_tc26_signwithdigest_gost_3410_12_256,
             SignatureAndHashAlgorithm.gostr34102012_256);
         addCertSigAlgOID(h, RosstandartObjectIdentifiers.id_tc26_signwithdigest_gost_3410_12_512,
@@ -2551,11 +2554,11 @@ public class TlsUtils
         TlsCertificate certificate = securityParameters.getPeerCertificate().getCertificateAt(0);
 
         verify13CertificateVerify(supportedAlgorithms, "TLS 1.3, client CertificateVerify", handshakeHash, certificate,
-            certificateVerify);
+            certificateVerify, CertificateKeySelectionType.cks_default);
     }
 
     static void verify13CertificateVerifyServer(TlsClientContext clientContext, TlsHandshakeHash handshakeHash,
-        CertificateVerify certificateVerify) throws IOException
+        CertificateVerify certificateVerify, short cksCode) throws IOException
     {
         SecurityParameters securityParameters = clientContext.getSecurityParametersHandshake();
 
@@ -2563,32 +2566,73 @@ public class TlsUtils
         TlsCertificate certificate = securityParameters.getPeerCertificate().getCertificateAt(0);
 
         verify13CertificateVerify(supportedAlgorithms, "TLS 1.3, server CertificateVerify", handshakeHash, certificate,
-            certificateVerify);
+            certificateVerify, cksCode);
     }
 
     private static void verify13CertificateVerify(Vector supportedAlgorithms, String contextString,
-        TlsHandshakeHash handshakeHash, TlsCertificate certificate, CertificateVerify certificateVerify)
+        TlsHandshakeHash handshakeHash, TlsCertificate certificate, CertificateVerify certificateVerify, short cksCode)
         throws IOException
     {
-        //TODO CHANGE THIS
         // Verify the CertificateVerify message contains a correct signature.
-        boolean verified;
+        boolean verified = true;
+        if (cksCode == CertificateKeySelectionType.cks_external)
+        {
+            verified = false;
+        }
+
         try
         {
-            int signatureScheme = certificateVerify.getAlgorithm();
 
+            int signatureScheme = certificateVerify.getAlgorithm();
             SignatureAndHashAlgorithm algorithm = SignatureScheme.getSignatureAndHashAlgorithm(signatureScheme);
             verifySupportedSignatureAlgorithm(supportedAlgorithms, algorithm);
 
-            Tls13Verifier verifier = certificate.createVerifier(signatureScheme);
+            byte[] signature = certificateVerify.getSignature();
+            byte[] nativeSignature = signature;
+            byte[] altSignature = signature;
+            if (cksCode == CertificateKeySelectionType.cks_both)
+            {
+                ByteArrayInputStream buf = new ByteArrayInputStream(signature);
+                nativeSignature = readOpaque16(buf);
+                altSignature = readOpaque16(buf);
+            }
 
-            byte[] header = getCertificateVerifyHeader(contextString);
-            byte[] prfHash = getCurrentPRFHash(handshakeHash);
 
-            OutputStream output = verifier.getOutputStream();
-            output.write(header, 0, header.length);
-            output.write(prfHash, 0, prfHash.length);
-            verified = verifier.verifySignature(certificateVerify.getSignature());
+            if (cksCode == CertificateKeySelectionType.cks_default ||
+                cksCode == CertificateKeySelectionType.cks_native ||
+                cksCode == CertificateKeySelectionType.cks_both)
+            {
+
+                //verify using native
+
+                Tls13Verifier verifier = certificate.createVerifier(signatureScheme);
+
+
+                byte[] header = getCertificateVerifyHeader(contextString);
+                byte[] prfHash = getCurrentPRFHash(handshakeHash);
+
+                OutputStream output = verifier.getOutputStream();
+                output.write(header, 0, header.length);
+                output.write(prfHash, 0, prfHash.length);
+                verified &= verifier.verifySignature(nativeSignature);
+            }
+
+            if (cksCode == CertificateKeySelectionType.cks_alternate ||
+                cksCode == CertificateKeySelectionType.cks_both)
+            {
+
+
+                Tls13Verifier altVerifier = certificate.createAltVerifier(signatureScheme);
+
+                byte[] header = getCertificateVerifyHeader(contextString);
+                byte[] prfHash = getCurrentPRFHash(handshakeHash);
+
+                OutputStream output = altVerifier.getOutputStream();
+                output.write(header, 0, header.length);
+                output.write(prfHash, 0, prfHash.length);
+
+                verified &= altVerifier.verifySignature(altSignature);
+            }
         }
         catch (TlsFatalAlert e)
         {
@@ -6072,7 +6116,7 @@ public class TlsUtils
                 case HandshakeType.server_hello:
                 case HandshakeType.certificate_request:
                 case HandshakeType.certificate:
-//                case HandshakeType.encrypted_extensions: //TODO SHOULD CKS BE HERE?
+                case HandshakeType.encrypted_extensions: //TODO SHOULD CKS BE HERE?
                     return true;
                 default:
                     return false;

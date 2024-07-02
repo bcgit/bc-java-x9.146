@@ -7,6 +7,7 @@ import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.KeyUsage;
 import org.bouncycastle.asn1.x509.SubjectAltPublicKeyInfo;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
@@ -36,6 +37,7 @@ import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.SignatureScheme;
+import org.bouncycastle.tls.TlsExtensionsUtils;
 import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.TlsUtils;
 import org.bouncycastle.tls.crypto.Tls13Verifier;
@@ -152,7 +154,15 @@ public class BcTlsRawKeyCertificate
             throw new TlsFatalAlert(AlertDescription.certificate_unknown);
         }
     }
-
+    public Tls13Verifier createAltVerifier(int signatureScheme) throws IOException
+    {
+        SubjectAltPublicKeyInfo altPublicKeyInfo = SubjectAltPublicKeyInfo.getInstance(getExtension(Extension.subjectAltPublicKeyInfo));
+        SubjectPublicKeyInfo altKeyInfo =  new SubjectPublicKeyInfo(
+                altPublicKeyInfo.getAlgorithm(),
+                altPublicKeyInfo.getSubjectAltPublicKey()
+        );
+        return createAltVerifier(altKeyInfo, signatureScheme);
+    }
 
     public Tls13Verifier createAltVerifier(SubjectPublicKeyInfo keyInfo, int signatureScheme) throws IOException
     {
@@ -244,7 +254,6 @@ public class BcTlsRawKeyCertificate
             {
                 DilithiumSigner verifier = new DilithiumSigner();
                 DilithiumPublicKeyParameters pubKey = getPubKeyDilithium(keyInfo);
-                System.out.println("VERIFIER PUBLIC KEY: " + Hex.toHexString(pubKey.getEncoded()));
                 verifier.init(false, getPubKeyDilithium(keyInfo));
 
                 return new BcTls13PQVerifier(verifier);
@@ -254,11 +263,24 @@ public class BcTlsRawKeyCertificate
             {
                 FalconSigner verifier = new FalconSigner();
                 FalconPublicKeyParameters pubKey = getPubKeyFalcon(keyInfo);
-                System.out.println("VERIFIER PUBLIC KEY: " + Hex.toHexString(pubKey.getH()));
                 verifier.init(false, getPubKeyFalcon(keyInfo));
 
                 return new BcTls13PQVerifier(verifier);
             }
+            //TODO[x9146]: alt will always be pqc
+            case SignatureScheme.hybrid_p256_dilithiumr3_2:
+            case SignatureScheme.hybrid_rsa3072_dilithiumr3_2:
+                return createAltVerifier(keyInfo, SignatureScheme.dilithiumr3_2);
+            case SignatureScheme.hybrid_p384_dilithiumr3_3:
+                return createAltVerifier(keyInfo, SignatureScheme.dilithiumr3_3);
+            case SignatureScheme.hybrid_p521_dilithiumr3_5:
+                return createAltVerifier(keyInfo, SignatureScheme.dilithiumr3_5);
+            case SignatureScheme.hybrid_p256_falcon_512:
+            case SignatureScheme.hybrid_rsa3072_falcon_512:
+                return createAltVerifier(keyInfo, SignatureScheme.falcon_512);
+            case SignatureScheme.hybrid_p521_falcon_1024:
+                return createAltVerifier(keyInfo, SignatureScheme.falcon_1024);
+
 
             // TODO[RFC 8998]
 //        case SignatureScheme.sm2sig_sm3:
@@ -371,6 +393,18 @@ public class BcTlsRawKeyCertificate
 
             return new BcTls13PQVerifier(verifier);
         }
+        //TODO[x9146]: nonalt will always be native
+        case SignatureScheme.hybrid_p256_dilithiumr3_2:
+        case SignatureScheme.hybrid_p256_falcon_512:
+            return createVerifier(SignatureScheme.ecdsa_secp256r1_sha256);
+        case SignatureScheme.hybrid_p384_dilithiumr3_3:
+            return createVerifier(SignatureScheme.ecdsa_secp384r1_sha384);
+        case SignatureScheme.hybrid_p521_dilithiumr3_5:
+        case SignatureScheme.hybrid_p521_falcon_1024:
+            return createVerifier(SignatureScheme.ecdsa_secp521r1_sha512);
+        case SignatureScheme.hybrid_rsa3072_dilithiumr3_2:
+        case SignatureScheme.hybrid_rsa3072_falcon_512:
+            return createVerifier(SignatureScheme.rsa_pss_pss_sha256);
 
         // TODO[RFC 8998]
 //        case SignatureScheme.sm2sig_sm3:

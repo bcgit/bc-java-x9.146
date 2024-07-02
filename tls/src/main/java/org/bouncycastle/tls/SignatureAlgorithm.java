@@ -43,9 +43,11 @@ public class SignatureAlgorithm
     /*
      * couldn't-find-a-draft-for-dilithium-r3-used-for-x9.164
      */
-    public static final short dilithiumr3_2 = 9142;
-    public static final short dilithiumr3_3 = 9143;
-    public static final short dilithiumr3_5 = 9145;
+    public static final short falcon_512 = 12;
+    public static final short falcon_1024 = 13;
+    public static final short dilithiumr3_2 = 14;
+    public static final short dilithiumr3_3 = 15;
+    public static final short dilithiumr3_5 = 16;
 
     public static short getClientCertificateType(short signatureAlgorithm)
     {

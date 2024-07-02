@@ -146,7 +146,8 @@ public class ExtensionType
     /*
      * X9.146
      */
-    public static final int certificate_key_selection = 0x9146;
+    public static final int certificate_key_selection = 0xff92; // wolfSSL extension value
+//    public static final int certificate_key_selection = 0x9146;
 
     public static String getName(int extensionType)
     {

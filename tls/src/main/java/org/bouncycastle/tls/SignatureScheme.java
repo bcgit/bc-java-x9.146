@@ -46,16 +46,29 @@ public class SignatureScheme
     public static final int sm2sig_sm3 = 0x0708;
 
     /*
-     * couldn't-find-a-draft-for-dilithium-r3-used-for-x9.164
+     * x9.164 OQS values for dilithium
      */
-    public static final short dilithiumr3_2 = 9142;
-    public static final short dilithiumr3_3 = 9143;
-    public static final short dilithiumr3_5 = 9145;
+    public static final int dilithiumr3_2 = 0xFEA0;
+    public static final int dilithiumr3_3 = 0xFEA3;
+    public static final int dilithiumr3_5 = 0xFEA5;
     /*
-     * couldn't-find-a-draft-for-falcon-used-for-x9.164
+     * x9.164 OQS values for falcon
      */
-    public static final short falcon_512 = 9151;
-    public static final short falcon_1024 = 9153;
+    public static final int falcon_512 = 0xFEAE;
+    public static final int falcon_1024 = 0xFEB1;
+
+    /*
+     * x9.164 OQS values for hybrid
+     */
+    public static final int hybrid_p256_dilithiumr3_2 = 0xFEA1;
+    public static final int hybrid_rsa3072_dilithiumr3_2 = 0xFEA2;
+    public static final int hybrid_p384_dilithiumr3_3 = 0xFEA4;
+    public static final int hybrid_p521_dilithiumr3_5 = 0xFEA6;
+    public static final int hybrid_p256_falcon_512 = 0xFEAF;
+    public static final int hybrid_rsa3072_falcon_512 = 0xFEB0;
+    public static final int hybrid_p521_falcon_1024 = 0xFEB2;
+
+
 
     /*
      * RFC 8446 reserved for private use (0xFE00..0xFFFF)

@@ -84,6 +84,37 @@ class MockX9146TlsClient
                 + ", " + AlertDescription.getText(alertDescription));
     }
 
+    protected Vector getSupportedSignatureAlgorithms()
+    {
+        Vector defaultVector = TlsUtils.getDefaultSupportedSignatureAlgorithms(context);
+        //TODO use addIfSupported?
+
+        // DILITHIUM
+        defaultVector.add(SignatureAndHashAlgorithm.dilithiumr3_2);
+        defaultVector.add(SignatureAndHashAlgorithm.dilithiumr3_3);
+        defaultVector.add(SignatureAndHashAlgorithm.dilithiumr3_5);
+
+        // Hybrid
+        // ecdsa-dilithium
+        defaultVector.add(SignatureAndHashAlgorithm.hybrid_p256_dilithiumr3_2);
+        defaultVector.add(SignatureAndHashAlgorithm.hybrid_p384_dilithiumr3_3);
+        defaultVector.add(SignatureAndHashAlgorithm.hybrid_p521_dilithiumr3_5);
+        // rsa-dilithium
+//        defaultVector.add(SignatureAndHashAlgorithm.hybrid_rsa3072_dilithiumr3_2);
+        // ecdsa-falcon
+//        defaultVector.add(SignatureAndHashAlgorithm.hybrid_p256_falcon_512);
+//        defaultVector.add(SignatureAndHashAlgorithm.hybrid_p521_falcon_1024);
+        // rsa-falcon
+//        defaultVector.add(SignatureAndHashAlgorithm.hybrid_rsa3072_falcon_512);
+
+        // FALCON
+//        defaultVector.add(SignatureAndHashAlgorithm.falcon_512);
+//        defaultVector.add(SignatureAndHashAlgorithm.falcon_1024);
+
+
+        return defaultVector;
+    }
+
     public Hashtable getClientExtensions() throws IOException
     {
         if (context.getSecurityParametersHandshake().getClientRandom() == null)

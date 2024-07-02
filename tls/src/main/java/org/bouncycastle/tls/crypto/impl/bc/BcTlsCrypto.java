@@ -410,6 +410,8 @@ public class BcTlsCrypto
         case SignatureAlgorithm.gostr34102012_512:
         // TODO[RFC 8998]
 //        case SignatureAlgorithm.sm2:
+
+        // TODO[X9146] Add pqc signatures?
         default:
             return false;
         }

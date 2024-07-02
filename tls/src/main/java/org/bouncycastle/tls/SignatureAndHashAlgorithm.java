@@ -31,6 +31,16 @@ public class SignatureAndHashAlgorithm
         create(SignatureScheme.falcon_512);
     public static final SignatureAndHashAlgorithm falcon_1024 =
         create(SignatureScheme.falcon_1024);
+
+    //TODO[x9146]: make an alt signature here and have hyrbids no relay on other methods to figure out alt signature!
+    public static final  SignatureAndHashAlgorithm hybrid_p256_dilithiumr3_2 = create(SignatureScheme.hybrid_p256_dilithiumr3_2);
+    public static final  SignatureAndHashAlgorithm hybrid_rsa3072_dilithiumr3_2 = create(SignatureScheme.hybrid_rsa3072_dilithiumr3_2);
+    public static final  SignatureAndHashAlgorithm hybrid_p384_dilithiumr3_3 = create(SignatureScheme.hybrid_p384_dilithiumr3_3);
+    public static final  SignatureAndHashAlgorithm hybrid_p521_dilithiumr3_5 = create(SignatureScheme.hybrid_p521_dilithiumr3_5);
+
+    public static final  SignatureAndHashAlgorithm hybrid_p256_falcon_512 = create(SignatureScheme.hybrid_p256_falcon_512);
+    public static final  SignatureAndHashAlgorithm hybrid_rsa3072_falcon_512 = create(SignatureScheme.hybrid_rsa3072_falcon_512);
+    public static final  SignatureAndHashAlgorithm hybrid_p521_falcon_1024 = create(SignatureScheme.hybrid_p521_falcon_1024);
     public static final SignatureAndHashAlgorithm gostr34102012_256 =
         create(HashAlgorithm.Intrinsic, SignatureAlgorithm.gostr34102012_256);
     public static final SignatureAndHashAlgorithm gostr34102012_512 =
@@ -89,6 +99,16 @@ public class SignatureAndHashAlgorithm
             return ecdsa_brainpoolP384r1tls13_sha384;
         case SignatureAlgorithm.ecdsa_brainpoolP512r1tls13_sha512:
             return ecdsa_brainpoolP512r1tls13_sha512;
+        case SignatureAlgorithm.falcon_512:
+            return falcon_512;
+        case SignatureAlgorithm.falcon_1024:
+            return falcon_1024;
+        case SignatureAlgorithm.dilithiumr3_2:
+            return dilithiumr3_2;
+        case SignatureAlgorithm.dilithiumr3_3:
+            return dilithiumr3_3;
+        case SignatureAlgorithm.dilithiumr3_5:
+            return dilithiumr3_5;
         default:
             return create(HashAlgorithm.Intrinsic, signatureAlgorithm);
         }
