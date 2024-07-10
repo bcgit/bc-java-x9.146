@@ -5,6 +5,7 @@ import org.bouncycastle.tls.CertificateKeySelectionType;
 import org.bouncycastle.tls.TlsClient;
 import org.bouncycastle.tls.TlsClientProtocol;
 import org.bouncycastle.tls.TlsExtensionsUtils;
+import org.bouncycastle.tls.TlsServer;
 import org.bouncycastle.tls.TlsServerProtocol;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.encoders.Hex;
@@ -15,6 +16,7 @@ import java.io.OutputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.net.Socket;
 
 public class TlsX9146ProtocolTest
@@ -73,6 +75,21 @@ public class TlsX9146ProtocolTest
     }
 
 
+    public void testServerWithWolfClient() throws Exception
+    {
+        ServerSocket ss = new ServerSocket(11111);
+
+        System.out.println("ServerSocket port: " + ss.getLocalPort());
+        System.out.println("ServerSocket ip: " + ss.getInetAddress());
+
+        while (true)
+        {
+            Socket s = ss.accept();
+            TlsServerProtocol tlsServerProtocol = new TlsServerProtocol(s.getInputStream(), s.getOutputStream());
+            tlsServerProtocol.accept(new MockX9146TlsServer());
+        }
+    }
+
     public void testClientServer() throws Exception
     {
         PipedInputStream clientRead = TlsTestUtils.createPipedInputStream();
@@ -89,7 +106,9 @@ public class TlsX9146ProtocolTest
         MockX9146TlsClient client = new MockX9146TlsClient(null);
 
         // Adds the CKS Code to the Hello Message
-        client.setCksCode(CertificateKeySelectionType.cks_alternate);
+        client.setCksCode(CertificateKeySelectionType.cks_both);
+//        client.setCksCode(CertificateKeySelectionType.cks_alternate);
+//        client.setCksCode(CertificateKeySelectionType.cks_native);
 
         clientProtocol.connect(client);
 

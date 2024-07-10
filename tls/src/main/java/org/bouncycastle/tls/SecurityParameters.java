@@ -21,6 +21,7 @@ public class SecurityParameters
     short prfHashAlgorithm = -1;
     int prfHashLength = -1;
     int verifyDataLength = -1;
+    short cksCode = 0;
     TlsSecret baseKeyClient = null;
     TlsSecret baseKeyServer = null;
     TlsSecret earlyExporterMasterSecret = null;
@@ -82,6 +83,7 @@ public class SecurityParameters
         this.serverSigAlgsCert = null;
         this.serverSupportedGroups = null;
         this.statusRequestVersion = 0;
+        this.cksCode = 0;
 
         this.baseKeyClient = clearSecret(baseKeyClient);
         this.baseKeyServer = clearSecret(baseKeyServer);
@@ -113,6 +115,11 @@ public class SecurityParameters
     public boolean isSecureRenegotiation()
     {
         return secureRenegotiation;
+    }
+
+    public short getCertificateKeySelectionCode()
+    {
+        return cksCode;
     }
 
     /**

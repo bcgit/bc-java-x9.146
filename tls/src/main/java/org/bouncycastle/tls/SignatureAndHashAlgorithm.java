@@ -58,6 +58,22 @@ public class SignatureAndHashAlgorithm
     public static final SignatureAndHashAlgorithm rsa_pss_pss_sha512 =
         create(SignatureScheme.rsa_pss_pss_sha512);
 
+    public static SignatureAndHashAlgorithm getHybrid(SignatureAndHashAlgorithm nativeAlg, SignatureAndHashAlgorithm altAlg)
+    {
+        if (nativeAlg == ecdsa_brainpoolP256r1tls13_sha256 && altAlg == dilithiumr3_2)
+        {
+            return hybrid_p256_dilithiumr3_2;
+        }
+        if (nativeAlg == ecdsa_brainpoolP384r1tls13_sha384 && altAlg == dilithiumr3_3)
+        {
+            return hybrid_p384_dilithiumr3_3;
+        }
+        if (nativeAlg == ecdsa_brainpoolP512r1tls13_sha512 && altAlg == dilithiumr3_5)
+        {
+            return hybrid_p521_dilithiumr3_5;
+        }
+        return null;
+    }
     public static SignatureAndHashAlgorithm getInstance(short hashAlgorithm, short signatureAlgorithm)
     {
         switch (hashAlgorithm)

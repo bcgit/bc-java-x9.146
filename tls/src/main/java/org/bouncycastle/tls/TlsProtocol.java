@@ -1811,6 +1811,7 @@ public abstract class TlsProtocol
         throws IOException
     {
         HandshakeMessageOutput message = new HandshakeMessageOutput(HandshakeType.certificate_verify);
+        //
         certificateVerify.encode(message);
         message.send(this);
     }

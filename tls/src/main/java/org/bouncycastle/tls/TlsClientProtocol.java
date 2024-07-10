@@ -1,6 +1,7 @@
 package org.bouncycastle.tls;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -13,6 +14,7 @@ import org.bouncycastle.tls.crypto.TlsSecret;
 import org.bouncycastle.tls.crypto.TlsStreamSigner;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Integers;
+import org.bouncycastle.util.encoders.Hex;
 
 public class TlsClientProtocol
     extends TlsProtocol
@@ -1604,8 +1606,9 @@ public class TlsClientProtocol
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
-
         CertificateVerify certificateVerify = CertificateVerify.parse(tlsClientContext, buf);
+        System.out.println("alg: " + certificateVerify.getAlgorithm());
+        System.out.println("sig: " + Hex.toHexString(certificateVerify.getSignature()));
 
         assertEmpty(buf);
 

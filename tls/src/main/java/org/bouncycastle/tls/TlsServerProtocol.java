@@ -1569,6 +1569,9 @@ public class TlsServerProtocol
     protected void send13ServerHelloCoda(ServerHello serverHello, boolean afterHelloRetryRequest) throws IOException
     {
         final SecurityParameters securityParameters = tlsServerContext.getSecurityParametersHandshake();
+        // TODO[x9.146]: should ckscode be stored in securityParameters or somewhere else?
+        short cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientExtensions);
+        securityParameters.cksCode = cksCode;
 
         byte[] serverHelloTranscriptHash = TlsUtils.getCurrentPRFHash(handshakeHash);
 
@@ -1622,6 +1625,7 @@ public class TlsServerProtocol
                  * extension instead.
                  */
 
+
                 Certificate serverCertificate = serverCredentials.getCertificate();
                 send13CertificateMessage(serverCertificate);
                 securityParameters.tlsServerEndPoint = null;
@@ -1631,6 +1635,18 @@ public class TlsServerProtocol
             // CertificateVerify
             {
                 //TODO: add alt verify
+                /*
+                 * X9.146 Change serverCredentials according to the certificate key selection code (cksCode)
+                 * TODO[x9.146]: Could this be handled somewhere else?
+                 *  Can I avoid making BcTlsSigner class
+                 *  Maybe change getCredentials() from MockServer class?
+                 */
+
+                //TODO[x9.146]: How do we select which cksCode to use if multiple is sent?
+                // (find first mutual cksCode supported by both client and server?)
+
+
+
                 DigitallySigned certificateVerify = TlsUtils.generate13CertificateVerify(tlsServerContext,
                     serverCredentials, handshakeHash);
                 send13CertificateVerifyMessage(certificateVerify);

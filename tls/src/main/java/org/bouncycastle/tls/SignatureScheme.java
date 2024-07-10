@@ -263,6 +263,28 @@ public class SignatureScheme
         }
     }
 
+    public static boolean isPQ(int signatureScheme)
+    {
+        switch (signatureScheme)
+        {
+        case dilithiumr3_2:
+        case dilithiumr3_3:
+        case dilithiumr3_5:
+        case falcon_512:
+        case falcon_1024:
+        case hybrid_p256_dilithiumr3_2:
+        case hybrid_rsa3072_dilithiumr3_2:
+        case hybrid_p384_dilithiumr3_3:
+        case hybrid_p521_dilithiumr3_5:
+        case hybrid_p256_falcon_512:
+        case hybrid_rsa3072_falcon_512:
+        case hybrid_p521_falcon_1024:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     public static boolean isRSAPSS(int signatureScheme)
     {
         switch (signatureScheme)

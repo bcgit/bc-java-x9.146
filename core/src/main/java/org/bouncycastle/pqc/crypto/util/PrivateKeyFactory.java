@@ -11,6 +11,7 @@ import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
@@ -297,6 +298,16 @@ public class PrivateKeyFactory
                         ASN1BitString.getInstance(keyEnc.getObjectAt(6)).getOctets(),
                         null);
                 }
+            }
+            else if (keyObj instanceof DEROctetString)
+            {
+                byte[] data = ASN1OctetString.getInstance(keyObj).getOctets();
+                if (keyInfo.getPublicKeyData() != null)
+                {
+                    DilithiumPublicKeyParameters pubParams = PublicKeyFactory.DilithiumConverter.getPublicKeyParams(spParams, keyInfo.getPublicKeyData());
+                    return new DilithiumPrivateKeyParameters(spParams, data, pubParams);
+                }
+                return new DilithiumPrivateKeyParameters(spParams, data, null);
             }
             else
             {

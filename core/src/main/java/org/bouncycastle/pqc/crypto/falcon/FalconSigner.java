@@ -7,7 +7,7 @@ import org.bouncycastle.pqc.crypto.MessageSigner;
 import org.bouncycastle.util.encoders.Hex;
 
 public class FalconSigner
-    implements MessageSigner
+        implements MessageSigner
 {
     private byte[] encodedkey;
     private FalconNIST nist;

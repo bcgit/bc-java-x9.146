@@ -1236,6 +1236,9 @@ public class TlsUtils
         case SignatureAlgorithm.dsa:
         case SignatureAlgorithm.ecdsa:
         case SignatureAlgorithm.rsa:
+        case SignatureAlgorithm.dilithiumr3_2:
+        case SignatureAlgorithm.dilithiumr3_3:
+        case SignatureAlgorithm.dilithiumr3_5:
             return SignatureAndHashAlgorithm.getInstance(HashAlgorithm.sha1, signatureAlgorithm);
         default:
             return null;
@@ -2437,7 +2440,10 @@ public class TlsUtils
     static DigitallySigned generate13CertificateVerify(TlsContext context, TlsCredentialedSigner credentialedSigner,
         TlsHandshakeHash handshakeHash) throws IOException
     {
+        short cksCode = context.getSecurityParameters().cksCode;
         SignatureAndHashAlgorithm signatureAndHashAlgorithm = credentialedSigner.getSignatureAndHashAlgorithm();
+        SignatureAndHashAlgorithm altSignatureAndHashAlgorithm = credentialedSigner.getAltSignatureAndHashAlgorithm();
+
         if (null == signatureAndHashAlgorithm)
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
@@ -2447,33 +2453,87 @@ public class TlsUtils
             ? "TLS 1.3, server CertificateVerify"
             : "TLS 1.3, client CertificateVerify";
 
-        byte[] signature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
-            handshakeHash, signatureAndHashAlgorithm);
+        byte[] signature;
 
-        return new DigitallySigned(signatureAndHashAlgorithm, signature);
+        byte[] nativeSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
+            handshakeHash, signatureAndHashAlgorithm, CertificateKeySelectionType.cks_native);
+
+        byte[] altSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
+            handshakeHash, altSignatureAndHashAlgorithm, CertificateKeySelectionType.cks_alternate);
+
+        if (cksCode == CertificateKeySelectionType.cks_default || cksCode == CertificateKeySelectionType.cks_native)
+        {
+            return new DigitallySigned(signatureAndHashAlgorithm, nativeSignature);
+        }
+        else if(cksCode == CertificateKeySelectionType.cks_alternate)
+        {
+            return new DigitallySigned(altSignatureAndHashAlgorithm, altSignature);
+        }
+        else if (cksCode == CertificateKeySelectionType.cks_both)
+        {
+            return new DigitallySigned(
+                    SignatureAndHashAlgorithm.getHybrid(signatureAndHashAlgorithm, altSignatureAndHashAlgorithm),
+                    Arrays.concatenate(nativeSignature, altSignature));
+        }
+        else
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
     }
 
     private static byte[] generate13CertificateVerify(TlsCrypto crypto, TlsCredentialedSigner credentialedSigner,
-        String contextString, TlsHandshakeHash handshakeHash, SignatureAndHashAlgorithm signatureAndHashAlgorithm)
+        String contextString, TlsHandshakeHash handshakeHash, SignatureAndHashAlgorithm signatureAndHashAlgorithm, short cksCode)
             throws IOException
     {
-        TlsStreamSigner streamSigner = credentialedSigner.getStreamSigner();
+        byte[] hash = new byte[0];
 
-        byte[] header = getCertificateVerifyHeader(contextString);
-        byte[] prfHash = getCurrentPRFHash(handshakeHash);
-
-        if (null != streamSigner)
+        if (cksCode == CertificateKeySelectionType.cks_default ||
+            cksCode == CertificateKeySelectionType.cks_native ||
+            cksCode == CertificateKeySelectionType.cks_both)
         {
-            OutputStream output = streamSigner.getOutputStream();
-            output.write(header, 0, header.length);
-            output.write(prfHash, 0, prfHash.length);
-            return streamSigner.getSignature();
+            TlsStreamSigner streamSigner = credentialedSigner.getStreamSigner();
+
+            byte[] header = getCertificateVerifyHeader(contextString);
+            byte[] prfHash = getCurrentPRFHash(handshakeHash);
+
+            if (null != streamSigner)
+            {
+                OutputStream output = streamSigner.getOutputStream();
+                output.write(header, 0, header.length);
+                output.write(prfHash, 0, prfHash.length);
+                return streamSigner.getSignature();
+            }
+
+            TlsHash tlsHash = createHash(crypto, signatureAndHashAlgorithm);
+            tlsHash.update(header, 0, header.length);
+            tlsHash.update(prfHash, 0, prfHash.length);
+            hash = tlsHash.calculateHash();
         }
 
-        TlsHash tlsHash = createHash(crypto, signatureAndHashAlgorithm);
-        tlsHash.update(header, 0, header.length);
-        tlsHash.update(prfHash, 0, prfHash.length);
-        byte[] hash = tlsHash.calculateHash();
+        if (cksCode == CertificateKeySelectionType.cks_alternate ||
+            cksCode == CertificateKeySelectionType.cks_both)
+        {
+            TlsStreamSigner streamSigner = credentialedSigner.getAltStreamSigner();
+
+            byte[] header = getCertificateVerifyHeader(contextString);
+            byte[] prfHash = getCurrentPRFHash(handshakeHash);
+
+            if (null != streamSigner)
+            {
+                OutputStream output = streamSigner.getOutputStream();
+                output.write(header, 0, header.length);
+                output.write(prfHash, 0, prfHash.length);
+                return streamSigner.getSignature();
+            }
+
+            TlsHash tlsHash = createHash(crypto, signatureAndHashAlgorithm);
+            tlsHash.update(header, 0, header.length);
+            tlsHash.update(prfHash, 0, prfHash.length);
+            hash = tlsHash.calculateHash();
+        }
+
+
+
         return credentialedSigner.generateRawSignature(hash);
     }
 
@@ -2582,6 +2642,8 @@ public class TlsUtils
 
         try
         {
+            System.out.println(contextString);
+            System.out.println("cksCode: " + cksCode);
 
             int signatureScheme = certificateVerify.getAlgorithm();
             SignatureAndHashAlgorithm algorithm = SignatureScheme.getSignatureAndHashAlgorithm(signatureScheme);
@@ -2602,9 +2664,6 @@ public class TlsUtils
                 cksCode == CertificateKeySelectionType.cks_native ||
                 cksCode == CertificateKeySelectionType.cks_both)
             {
-
-                //verify using native
-
                 Tls13Verifier verifier = certificate.createVerifier(signatureScheme);
 
 
@@ -2620,8 +2679,6 @@ public class TlsUtils
             if (cksCode == CertificateKeySelectionType.cks_alternate ||
                 cksCode == CertificateKeySelectionType.cks_both)
             {
-
-
                 Tls13Verifier altVerifier = certificate.createAltVerifier(signatureScheme);
 
                 byte[] header = getCertificateVerifyHeader(contextString);

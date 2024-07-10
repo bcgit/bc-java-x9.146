@@ -1,5 +1,7 @@
 package org.bouncycastle.tls;
 
+import org.bouncycastle.util.encoders.Hex;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
@@ -35,6 +37,10 @@ class HandshakeMessageOutput
 
     void send(TlsProtocol protocol) throws IOException
     {
+        {
+            String pro =  protocol instanceof TlsClientProtocol ? "Client" : "Server";
+            System.out.println(pro + "-(" + protocol.connection_state + "): " + Hex.toHexString(buf));
+        }
         // Patch actual length back in
         int bodyLength = count - 4;
         TlsUtils.checkUint24(bodyLength);

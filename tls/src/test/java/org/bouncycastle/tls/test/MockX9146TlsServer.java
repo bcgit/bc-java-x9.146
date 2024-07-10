@@ -4,6 +4,7 @@ import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.Certificate;
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.AlertLevel;
+import org.bouncycastle.tls.CertificateKeySelectionType;
 import org.bouncycastle.tls.CertificateRequest;
 import org.bouncycastle.tls.ChannelBinding;
 import org.bouncycastle.tls.ClientCertificateType;
@@ -196,6 +197,10 @@ class MockX9146TlsServer
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
+        //TODO[x9.146]: Change TlsExtensionsUtils.getCertficationKeySelection to return a vector of shorts instead of just one ckscode
+
+//        TlsExtensionsUtils.addCertificationKeySelection(serverExtensions, TlsExtensionsUtils.getCertificationKeySelection(clientExtensions));
+        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{1});
 
         return super.getServerExtensions();
     }
@@ -216,16 +221,40 @@ class MockX9146TlsServer
             "x509-server-key-rsa-enc.pem");
     }
 
-    protected TlsCredentialedSigner getPQSignerCredentials() throws IOException
+    protected TlsCredentialedSigner  getPQSignerCredentials() throws IOException
     {
-        Vector clientSigAlgs = context.getSecurityParametersHandshake().getClientSigAlgs();
         //TODO: do I need to also load the server ALT key?
-        return TlsTestUtils.loadSignerCredentials(context, clientSigAlgs, SignatureAlgorithm.ecdsa,
-                "x9146/server-P256-dilithium2-cert.pem", "x9146/server-P256-key.pem");
-//        return TlsTestUtils.loadSignerCredentials(context, clientSigAlgs, SignatureAlgorithm.ecdsa,
-//                "x9146/server-P256-falcon1-cert.pem", "x9146/server-P256-key.pem");
-//        return TlsTestUtils.loadSignerCredentials(context, clientSigAlgs, SignatureAlgorithm.ecdsa,
-//                "x9146/server-P256-falcon1-cert.pem", "x9146/server-falcon1-key-pq.pem");
+        // make a load dual credential function?
+
+        Vector clientSigAlgs = context.getSecurityParametersHandshake().getClientSigAlgs();
+
+
+        return TlsTestUtils.loadDualSignerCredentials(context, clientSigAlgs,
+                SignatureAlgorithm.ecdsa, SignatureAlgorithm.dilithiumr3_2,
+                "x9146/server-P256-dilithium2-cert.pem",
+                "x9146/server-P256-key.pem", "x9146/server-dilithium2-key-pq.pem");
+
+//        short cksCode = context.getSecurityParameters().getCertificateKeySelectionCode();
+//        switch (cksCode)
+//        {
+//            case CertificateKeySelectionType.cks_default:
+//            case CertificateKeySelectionType.cks_native:
+//            {
+//                return TlsTestUtils.loadSignerCredentials(context, clientSigAlgs, SignatureAlgorithm.ecdsa,
+//                "x9146/server-P256-dilithium2-cert.pem", "x9146/server-P256-key.pem");
+//            }
+//            case CertificateKeySelectionType.cks_alternate:
+//            {
+//                return TlsTestUtils.loadSignerCredentials(context, clientSigAlgs, SignatureAlgorithm.dilithiumr3_2,
+//                        "x9146/server-P256-dilithium2-cert.pem", "x9146/server-dilithium2-key-pq.pem");
+//            }
+//            case CertificateKeySelectionType.cks_both:
+//            {
+//                throw new UnsupportedOperationException();
+//            }
+//            default:
+//                throw new UnsupportedOperationException();
+//        }
     }
     protected TlsCredentialedSigner getRSASignerCredentials() throws IOException
     {

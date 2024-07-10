@@ -26,6 +26,8 @@ public interface TlsCredentialedSigner
      * @return the full algorithm details for the signature.
      */
     SignatureAndHashAlgorithm getSignatureAndHashAlgorithm();
+    SignatureAndHashAlgorithm getAltSignatureAndHashAlgorithm();
 
     TlsStreamSigner getStreamSigner() throws IOException;
+    TlsStreamSigner getAltStreamSigner() throws IOException;
 }

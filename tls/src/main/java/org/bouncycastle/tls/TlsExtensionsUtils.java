@@ -283,6 +283,11 @@ public class TlsExtensionsUtils
         extensions.put(EXT_trusted_ca_keys, createTrustedCAKeysExtensionServer());
     }
 
+    public static void addCertificationKeySelections(Hashtable extensions, byte[] cksCodes) throws IOException
+    {
+        //TODO[x9.146]: change use createCKS
+        extensions.put(EXT_certificate_key_selection, cksCodes);
+    }
     public static void addCertificationKeySelection(Hashtable extensions, short cksCode) throws IOException
     {
         extensions.put(EXT_certificate_key_selection, createCertificateKeySelection(cksCode));

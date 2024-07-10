@@ -16,11 +16,18 @@ public class DefaultTlsCredentialedSigner
     protected TlsCryptoParameters cryptoParams;
     protected Certificate certificate;
     protected SignatureAndHashAlgorithm signatureAndHashAlgorithm;
+    protected SignatureAndHashAlgorithm altSignatureAndHashAlgorithm;
 
     protected TlsSigner signer;
+    protected TlsSigner altSigner;
 
     public DefaultTlsCredentialedSigner(TlsCryptoParameters cryptoParams, TlsSigner signer, Certificate certificate,
                                         SignatureAndHashAlgorithm signatureAndHashAlgorithm)
+    {
+        this(cryptoParams, signer, null, certificate, signatureAndHashAlgorithm, null);
+    }
+    public DefaultTlsCredentialedSigner(TlsCryptoParameters cryptoParams, TlsSigner signer, TlsSigner altSigner, Certificate certificate,
+                                        SignatureAndHashAlgorithm signatureAndHashAlgorithm, SignatureAndHashAlgorithm altSignatureAndHashAlgorithm)
     {
         if (certificate == null)
         {
@@ -34,12 +41,13 @@ public class DefaultTlsCredentialedSigner
         {
             throw new IllegalArgumentException("'signer' cannot be null");
         }
-
         this.signer = signer;
+        this.altSigner = altSigner;
 
         this.cryptoParams = cryptoParams;
         this.certificate = certificate;
         this.signatureAndHashAlgorithm = signatureAndHashAlgorithm;
+        this.altSignatureAndHashAlgorithm = altSignatureAndHashAlgorithm;
     }
 
     public Certificate getCertificate()
@@ -57,10 +65,18 @@ public class DefaultTlsCredentialedSigner
     {
         return signatureAndHashAlgorithm;
     }
+    public SignatureAndHashAlgorithm getAltSignatureAndHashAlgorithm()
+    {
+        return altSignatureAndHashAlgorithm;
+    }
 
     public TlsStreamSigner getStreamSigner() throws IOException
     {
         return signer.getStreamSigner(getEffectiveAlgorithm());
+    }
+    public TlsStreamSigner getAltStreamSigner() throws IOException
+    {
+        return altSigner.getStreamSigner(getAltEffectiveAlgorithm());
     }
 
     protected SignatureAndHashAlgorithm getEffectiveAlgorithm()
@@ -69,6 +85,19 @@ public class DefaultTlsCredentialedSigner
         if (TlsImplUtils.isTLSv12(cryptoParams))
         {
             algorithm = getSignatureAndHashAlgorithm();
+            if (algorithm == null)
+            {
+                throw new IllegalStateException("'signatureAndHashAlgorithm' cannot be null for (D)TLS 1.2+");
+            }
+        }
+        return algorithm;
+    }
+    protected SignatureAndHashAlgorithm getAltEffectiveAlgorithm()
+    {
+        SignatureAndHashAlgorithm algorithm = null;
+        if (TlsImplUtils.isTLSv12(cryptoParams))
+        {
+            algorithm = getAltSignatureAndHashAlgorithm();
             if (algorithm == null)
             {
                 throw new IllegalStateException("'signatureAndHashAlgorithm' cannot be null for (D)TLS 1.2+");

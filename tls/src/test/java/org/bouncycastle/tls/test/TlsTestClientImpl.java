@@ -346,7 +346,15 @@ class TlsTestClientImpl
                     {
                         return signerCredentials.getSignatureAndHashAlgorithm();
                     }
+                    public SignatureAndHashAlgorithm getAltSignatureAndHashAlgorithm()
+                    {
+                        return signerCredentials.getAltSignatureAndHashAlgorithm();
+                    }
 
+                    public TlsStreamSigner getAltStreamSigner() throws IOException
+                    {
+                        throw new UnsupportedOperationException();
+                    }
                     public TlsStreamSigner getStreamSigner() throws IOException
                     {
                         final TlsStreamSigner streamSigner = signerCredentials.getStreamSigner();

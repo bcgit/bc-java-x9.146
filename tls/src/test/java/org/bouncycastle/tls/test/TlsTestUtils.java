@@ -253,6 +253,33 @@ public class TlsTestUtils
         }
     }
 
+    public static TlsCredentialedSigner loadDualSignerCredentials(TlsCryptoParameters cryptoParams, TlsCrypto crypto,
+        String[] certResources, String keyResource, SignatureAndHashAlgorithm signatureAndHashAlgorithm,
+                                String altKeyResource, SignatureAndHashAlgorithm altSignatureAndHashAlgorithm)
+        throws IOException
+    {
+        Certificate certificate = loadCertificateChain(cryptoParams.getServerVersion(), crypto, certResources);
+
+        // TODO[tls-ops] Need to have TlsCrypto construct the credentials from the certs/key (as raw data)
+        if (crypto instanceof BcTlsCrypto)
+        {
+            AsymmetricKeyParameter privateKey = loadBcPrivateKeyResource(keyResource);
+            AsymmetricKeyParameter altPrivateKey = loadBcPrivateKeyResource(altKeyResource);
+
+
+            return new BcDefaultTlsCredentialedSigner(cryptoParams, (BcTlsCrypto)crypto, privateKey, altPrivateKey,
+                    certificate, signatureAndHashAlgorithm, altSignatureAndHashAlgorithm);
+        }
+        else
+        {
+            JcaTlsCrypto jcaCrypto = (JcaTlsCrypto)crypto;
+            PrivateKey privateKey = loadJcaPrivateKeyResource(jcaCrypto, keyResource);
+
+            //TODO[x9.146]: do for jca
+
+            return new JcaDefaultTlsCredentialedSigner(cryptoParams, jcaCrypto, privateKey, certificate, signatureAndHashAlgorithm);
+        }
+    }
     public static TlsCredentialedSigner loadSignerCredentials(TlsCryptoParameters cryptoParams, TlsCrypto crypto,
         String[] certResources, String keyResource, SignatureAndHashAlgorithm signatureAndHashAlgorithm)
         throws IOException
@@ -283,7 +310,59 @@ public class TlsTestUtils
 
         return loadSignerCredentials(cryptoParams, crypto, certResources, keyResource, signatureAndHashAlgorithm);
     }
+    static TlsCredentialedSigner loadDualSignerCredentials(TlsContext context, String[] certResources,
+        String keyResource, String altKeyResource, SignatureAndHashAlgorithm signatureAndHashAlgorithm, SignatureAndHashAlgorithm altSignatureAndHashAlgorithm) throws IOException
+    {
+        TlsCrypto crypto = context.getCrypto();
+        TlsCryptoParameters cryptoParams = new TlsCryptoParameters(context);
 
+        return loadDualSignerCredentials(cryptoParams, crypto, certResources, keyResource, signatureAndHashAlgorithm, altKeyResource, altSignatureAndHashAlgorithm);
+    }
+
+    static TlsCredentialedSigner loadDualSignerCredentials(TlsContext context, Vector supportedSignatureAlgorithms,
+       short signatureAlgorithm, short altSignatureAlgorithm, String certResource, String keyResource,
+       String altKeyResource) throws IOException
+    {
+        SignatureAndHashAlgorithm signatureAndHashAlgorithm = null;
+        SignatureAndHashAlgorithm altSignatureAndHashAlgorithm = null;
+        //TODO: do altsignature hash algorithm
+        if (supportedSignatureAlgorithms == null)
+        {
+            supportedSignatureAlgorithms = TlsUtils.getDefaultSignatureAlgorithms(signatureAlgorithm);
+        }
+
+        for (int i = 0; i < supportedSignatureAlgorithms.size(); ++i)
+        {
+            SignatureAndHashAlgorithm alg = (SignatureAndHashAlgorithm)
+                    supportedSignatureAlgorithms.elementAt(i);
+            if (alg.getSignature() == signatureAlgorithm)
+            {
+                // Just grab the first one we find
+                signatureAndHashAlgorithm = alg;
+                break;
+            }
+        }
+        //TODO do better
+        for (int i = 0; i < supportedSignatureAlgorithms.size(); ++i)
+        {
+            SignatureAndHashAlgorithm alg = (SignatureAndHashAlgorithm)
+                    supportedSignatureAlgorithms.elementAt(i);
+            if (alg.getSignature() == altSignatureAlgorithm)
+            {
+                // Just grab the first one we find
+                altSignatureAndHashAlgorithm = alg;
+                break;
+            }
+        }
+
+        if (signatureAndHashAlgorithm == null || altSignatureAndHashAlgorithm == null)
+        {
+            return null;
+        }
+
+        return loadDualSignerCredentials(context, new String[]{ certResource }, keyResource, altKeyResource,
+                signatureAndHashAlgorithm, altSignatureAndHashAlgorithm);
+    }
     static TlsCredentialedSigner loadSignerCredentials(TlsContext context, Vector supportedSignatureAlgorithms,
         short signatureAlgorithm, String certResource, String keyResource) throws IOException
     {
@@ -400,7 +479,18 @@ public class TlsTestUtils
         PemObject pem = loadPemResource(resource);
         if (pem.getType().equals("PRIVATE KEY"))
         {
-            return PrivateKeyFactory.createKey(pem.getContent());
+            // TODO:[x9.146] maybe have a separation for pq private keys?
+            AsymmetricKeyParameter kp;
+            try
+            {
+                kp = PrivateKeyFactory.createKey(pem.getContent());
+            }
+            catch (Exception e)
+            {
+                kp = org.bouncycastle.pqc.crypto.util.PrivateKeyFactory.createKey(pem.getContent());
+            }
+            return kp;
+
         }
         if (pem.getType().equals("ENCRYPTED PRIVATE KEY"))
         {
