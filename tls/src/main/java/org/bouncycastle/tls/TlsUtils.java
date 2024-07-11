@@ -2471,9 +2471,12 @@ public class TlsUtils
         }
         else if (cksCode == CertificateKeySelectionType.cks_both)
         {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            TlsUtils.writeOpaque16(nativeSignature, out);
+            TlsUtils.writeOpaque16(altSignature, out);
             return new DigitallySigned(
                     SignatureAndHashAlgorithm.getHybrid(signatureAndHashAlgorithm, altSignatureAndHashAlgorithm),
-                    Arrays.concatenate(nativeSignature, altSignature));
+                    out.toByteArray());
         }
         else
         {

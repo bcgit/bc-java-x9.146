@@ -60,15 +60,15 @@ public class SignatureAndHashAlgorithm
 
     public static SignatureAndHashAlgorithm getHybrid(SignatureAndHashAlgorithm nativeAlg, SignatureAndHashAlgorithm altAlg)
     {
-        if (nativeAlg == ecdsa_brainpoolP256r1tls13_sha256 && altAlg == dilithiumr3_2)
+        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp256r1_sha256)) && altAlg.equals(dilithiumr3_2))
         {
             return hybrid_p256_dilithiumr3_2;
         }
-        if (nativeAlg == ecdsa_brainpoolP384r1tls13_sha384 && altAlg == dilithiumr3_3)
+        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp384r1_sha384)) && altAlg.equals(dilithiumr3_3))
         {
             return hybrid_p384_dilithiumr3_3;
         }
-        if (nativeAlg == ecdsa_brainpoolP512r1tls13_sha512 && altAlg == dilithiumr3_5)
+        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp521r1_sha512)) && altAlg.equals(dilithiumr3_5))
         {
             return hybrid_p521_dilithiumr3_5;
         }
