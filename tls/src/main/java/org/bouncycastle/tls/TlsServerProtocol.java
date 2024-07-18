@@ -333,7 +333,6 @@ public class TlsServerProtocol
 
         Hashtable serverHelloExtensions = new Hashtable();
         Hashtable serverEncryptedExtensions = TlsExtensionsUtils.ensureExtensionsInitialised(tlsServer.getServerExtensions());
-
         tlsServer.getServerExtensionsForConnection(serverEncryptedExtensions);
 
         ProtocolVersion serverLegacyVersion = ProtocolVersion.TLSv12;
@@ -424,7 +423,7 @@ public class TlsServerProtocol
         short cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientHelloExtensions);
         if (cksCode != 0)
         {
-            TlsExtensionsUtils.addCertificationKeySelection(serverHelloExtensions, cksCode);
+//            TlsExtensionsUtils.addCertificationKeySelection(serverHelloExtensions, cksCode);
         }
 
         this.serverExtensions = serverEncryptedExtensions;

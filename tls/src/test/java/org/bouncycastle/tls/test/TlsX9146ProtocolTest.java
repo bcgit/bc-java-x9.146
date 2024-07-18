@@ -34,8 +34,6 @@ public class TlsX9146ProtocolTest
     }
     public void testClientWithWolfServer() throws Exception
     {
-        //TODO: connect to wolfSSL server find which ip and port is used and connect and try having a com with them
-
         PipedInputStream serverRead = TlsTestUtils.createPipedInputStream();
 
 

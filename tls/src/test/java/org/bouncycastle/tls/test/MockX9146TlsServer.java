@@ -199,8 +199,8 @@ class MockX9146TlsServer
         }
         //TODO[x9.146]: Change TlsExtensionsUtils.getCertficationKeySelection to return a vector of shorts instead of just one ckscode
 
-//        TlsExtensionsUtils.addCertificationKeySelection(serverExtensions, TlsExtensionsUtils.getCertificationKeySelection(clientExtensions));
-        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{1});
+        TlsExtensionsUtils.addCertificationKeySelection(serverExtensions, TlsExtensionsUtils.getCertificationKeySelection(clientExtensions));
+        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{3});
 
         return super.getServerExtensions();
     }
