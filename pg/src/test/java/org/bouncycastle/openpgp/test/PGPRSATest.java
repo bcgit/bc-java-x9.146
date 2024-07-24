@@ -346,7 +346,7 @@ public class PGPRSATest
           + "flaT8ST07xBjIR30RjsL+dex9uwT/wBKo6i5UtPFdHp4/u/pgECTiOQDYBIByB+w0RVEVmZUUM39"
           + "xA7P867ampqampqaq09BQwV9RWwUVNFU1AUTTJEoeQLnHJgMnGTjP51a1Nf/2Q==");
 
-    byte[] embeddedJPEGKey = Base64.decode(
+    static byte[] embeddedJPEGKey = Base64.decode(
             "mI0ER0JXuwEEAKNqsXwLU6gu6P2Q/HJqEJVt3A7Kp1yucn8HWVeJF9JLAKVjVU8jrvz9Bw4NwaRJ"
           + "NGYEAgdRq8Hx3WP9FXFCIVfCdi+oQrphcHWzzBFul8sykUGT+LmcBdqQGU9WaWSJyCOmUht4j7t0"
           + "zk/IXX0YxGmkqR+no5rTj9LMDG8AQQrFABEBAAG0P0VyaWMgSCBFY2hpZG5hIChpbWFnZSB0ZXN0"
@@ -446,11 +446,16 @@ public class PGPRSATest
 
         PGPPublicKey            pubKey = pgpPub.getPublicKey();
 
-        if (!areEqual(pubKey.getFingerprint(), Hex.decode("4FFB9F0884266C715D1CEAC804A3BBFA")))
+        byte[] expectedVersion3 = Hex.decode("4FFB9F0884266C715D1CEAC804A3BBFA");
+        if (!areEqual(pubKey.getFingerprint(), expectedVersion3))
         {
             fail("version 3 fingerprint test failed");
         }
-        
+        if (!pubKey.hasFingerprint(expectedVersion3))
+        {
+            fail("version 3 fingerprint test failed");
+        }
+
         //
         // version 4
         //
@@ -458,7 +463,12 @@ public class PGPRSATest
 
         pubKey = pgpPub.getPublicKey();
 
-        if (!areEqual(pubKey.getFingerprint(), Hex.decode("3062363c1046a01a751946bb35586146fdf3f373")))
+        byte[] expectedVersion4 = Hex.decode("3062363c1046a01a751946bb35586146fdf3f373");
+        if (!areEqual(pubKey.getFingerprint(), expectedVersion4))
+        {
+            fail("version 4 fingerprint test failed");
+        }
+        if (!pubKey.hasFingerprint(expectedVersion4))
         {
             fail("version 4 fingerprint test failed");
         }

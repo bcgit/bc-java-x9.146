@@ -6,23 +6,23 @@ import java.io.OutputStream;
 
 import org.bouncycastle.bcpg.BCPGInputStream;
 import org.bouncycastle.bcpg.BCPGOutputStream;
+import org.bouncycastle.bcpg.HashUtils;
 import org.bouncycastle.bcpg.OnePassSignaturePacket;
 import org.bouncycastle.bcpg.Packet;
+import org.bouncycastle.bcpg.SignaturePacket;
 import org.bouncycastle.openpgp.operator.PGPContentVerifier;
 import org.bouncycastle.openpgp.operator.PGPContentVerifierBuilder;
 import org.bouncycastle.openpgp.operator.PGPContentVerifierBuilderProvider;
+import org.bouncycastle.util.Arrays;
 
 /**
  * A one pass signature object.
  */
 public class PGPOnePassSignature
+    extends PGPDefaultSignatureGenerator
 {
     private OnePassSignaturePacket sigPack;
-    private int signatureType;
-
     private PGPContentVerifier verifier;
-    private byte lastb;
-    private OutputStream sigOut;
 
     private static OnePassSignaturePacket cast(Packet packet)
         throws IOException
@@ -43,10 +43,11 @@ public class PGPOnePassSignature
     
     PGPOnePassSignature(
         OnePassSignaturePacket sigPack)
-        throws PGPException
     {
+        // v3 OPSs are typically used with v4 sigs
+        super(sigPack.getVersion() == OnePassSignaturePacket.VERSION_3 ? SignaturePacket.VERSION_4 : sigPack.getVersion());
         this.sigPack = sigPack;
-        this.signatureType = sigPack.getSignatureType();
+        this.sigType = sigPack.getSignatureType();
     }
 
     /**
@@ -65,96 +66,40 @@ public class PGPOnePassSignature
 
         lastb = 0;
         sigOut = verifier.getOutputStream();
+
+        checkSaltSize();
+        updateWithSalt();
     }
 
-    public void update(
-        byte b)
+    private void checkSaltSize()
+        throws PGPException
     {
-        if (signatureType == PGPSignature.CANONICAL_TEXT_DOCUMENT)
+        if (getVersion() != SignaturePacket.VERSION_6)
         {
-            if (b == '\r')
-            {
-                byteUpdate((byte)'\r');
-                byteUpdate((byte)'\n');
-            }
-            else if (b == '\n')
-            {
-                if (lastb != '\r')
-                {
-                    byteUpdate((byte)'\r');
-                    byteUpdate((byte)'\n');
-                }
-            }
-            else
-            {
-                byteUpdate(b);
-            }
-
-            lastb = b;
+            return;
         }
-        else
+
+        int expectedSaltSize = HashUtils.getV6SignatureSaltSizeInBytes(getHashAlgorithm());
+        if (expectedSaltSize != getSalt().length)
         {
-            byteUpdate(b);
+            throw new PGPException("RFC9580 defines the salt size for " + PGPUtil.getDigestName(getHashAlgorithm()) +
+                " as " + expectedSaltSize + " octets, but signature has " + getSalt().length + " octets.");
         }
     }
 
-    public void update(
-        byte[] bytes)
+    private void updateWithSalt()
+        throws PGPException
     {
-        if (signatureType == PGPSignature.CANONICAL_TEXT_DOCUMENT)
+        if (version == SignaturePacket.VERSION_6)
         {
-            for (int i = 0; i != bytes.length; i++)
+            try
             {
-                this.update(bytes[i]);
+                sigOut.write(getSalt());
             }
-        }
-        else
-        {
-            blockUpdate(bytes, 0, bytes.length);
-        }
-    }
-
-    public void update(
-        byte[] bytes,
-        int off,
-        int length)
-    {
-        if (signatureType == PGPSignature.CANONICAL_TEXT_DOCUMENT)
-        {
-            int finish = off + length;
-
-            for (int i = off; i != finish; i++)
+            catch (IOException e)
             {
-                this.update(bytes[i]);
+                throw new PGPException("Cannot salt the signature.", e);
             }
-        }
-        else
-        {
-            blockUpdate(bytes, off, length);
-        }
-    }
-
-    private void byteUpdate(byte b)
-    {
-        try
-        {
-            sigOut.write(b);
-        }
-        catch (IOException e)
-        {
-            throw new PGPRuntimeOperationException(e.getMessage(), e);
-        }
-    }
-
-    private void blockUpdate(byte[] block, int off, int len)
-    {
-        try
-        {
-            sigOut.write(block, off, len);
-        }
-        catch (IOException e)
-        {
-            throw new PGPRuntimeOperationException(e.getMessage(), e);
         }
     }
 
@@ -169,6 +114,8 @@ public class PGPOnePassSignature
         PGPSignature pgpSig)
         throws PGPException
     {
+        compareSalt(pgpSig);
+        
         try
         {
             sigOut.write(pgpSig.getSignatureTrailer());
@@ -183,9 +130,58 @@ public class PGPOnePassSignature
         return verifier.verify(pgpSig.getSignature());
     }
 
+    private void compareSalt(PGPSignature signature)
+        throws PGPException
+    {
+        if (version != SignaturePacket.VERSION_6)
+        {
+            return;
+        }
+        if (!Arrays.constantTimeAreEqual(getSalt(), signature.getSalt()))
+        {
+            throw new PGPException("Salt in OnePassSignaturePacket does not match salt in SignaturePacket.");
+        }
+    }
+
+    /**
+     * Return the packet version.
+     *
+     * @return packet version
+     */
+    public int getVersion()
+    {
+        return sigPack.getVersion();
+    }
+
+    /**
+     * Return the key-ID of the issuer signing key.
+     * For {@link OnePassSignaturePacket#VERSION_6} packets, the key-ID is derived from the fingerprint.
+     *
+     * @return key-ID
+     */
     public long getKeyID()
     {
         return sigPack.getKeyID();
+    }
+
+    /**
+     * Return the issuer key fingerprint.
+     * Only for {@link OnePassSignaturePacket#VERSION_6} packets.
+     * @return fingerprint
+     */
+    public byte[] getFingerprint()
+    {
+        return sigPack.getFingerprint();
+    }
+
+    /**
+     * Return the salt used in the corresponding signature.
+     * Only for {@link OnePassSignaturePacket#VERSION_6} packets.
+     * @return salt
+     */
+    public byte[] getSalt()
+    {
+        return sigPack.getSalt();
     }
 
     public int getSignatureType()

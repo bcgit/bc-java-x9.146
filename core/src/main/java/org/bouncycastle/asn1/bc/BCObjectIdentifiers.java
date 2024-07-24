@@ -114,12 +114,14 @@ public interface BCObjectIdentifiers
     ASN1ObjectIdentifier xmss = bc_sig.branch("2");
     ASN1ObjectIdentifier xmss_SHA256ph = xmss.branch("1");
     ASN1ObjectIdentifier xmss_SHA512ph = xmss.branch("2");
-    ASN1ObjectIdentifier xmss_SHAKE128ph = xmss.branch("3");
-    ASN1ObjectIdentifier xmss_SHAKE256ph = xmss.branch("4");
+    ASN1ObjectIdentifier xmss_SHAKE128_512ph = xmss.branch("3");
+    ASN1ObjectIdentifier xmss_SHAKE256_1024ph = xmss.branch("4");
     ASN1ObjectIdentifier xmss_SHA256 = xmss.branch("5");
     ASN1ObjectIdentifier xmss_SHA512 = xmss.branch("6");
     ASN1ObjectIdentifier xmss_SHAKE128 = xmss.branch("7");
     ASN1ObjectIdentifier xmss_SHAKE256 = xmss.branch("8");
+    ASN1ObjectIdentifier xmss_SHAKE128ph = xmss.branch("9");
+    ASN1ObjectIdentifier xmss_SHAKE256ph = xmss.branch("10");
 
     /**
      * XMSS^MT
@@ -127,12 +129,14 @@ public interface BCObjectIdentifiers
     ASN1ObjectIdentifier xmss_mt = bc_sig.branch("3");
     ASN1ObjectIdentifier xmss_mt_SHA256ph = xmss_mt.branch("1");
     ASN1ObjectIdentifier xmss_mt_SHA512ph = xmss_mt.branch("2");
-    ASN1ObjectIdentifier xmss_mt_SHAKE128ph = xmss_mt.branch("3");
-    ASN1ObjectIdentifier xmss_mt_SHAKE256ph = xmss_mt.branch("4");
+    ASN1ObjectIdentifier xmss_mt_SHAKE128_512ph = xmss_mt.branch("3");
+    ASN1ObjectIdentifier xmss_mt_SHAKE256_1024ph = xmss_mt.branch("4");
     ASN1ObjectIdentifier xmss_mt_SHA256 = xmss_mt.branch("5");
     ASN1ObjectIdentifier xmss_mt_SHA512 = xmss_mt.branch("6");
     ASN1ObjectIdentifier xmss_mt_SHAKE128 = xmss_mt.branch("7");
     ASN1ObjectIdentifier xmss_mt_SHAKE256 = xmss_mt.branch("8");
+    ASN1ObjectIdentifier xmss_mt_SHAKE128ph = xmss_mt.branch("9");
+    ASN1ObjectIdentifier xmss_mt_SHAKE256ph = xmss_mt.branch("10");
 
     /**
      * qTESLA
@@ -195,6 +199,23 @@ public interface BCObjectIdentifiers
     ASN1ObjectIdentifier sphincsPlus_haraka_256s_r3_simple = sphincsPlus.branch("35");
     ASN1ObjectIdentifier sphincsPlus_haraka_256f_r3_simple = sphincsPlus.branch("36");
 
+
+    ASN1ObjectIdentifier sphincsPlus_interop = new ASN1ObjectIdentifier("1.3.9999.6");
+
+    ASN1ObjectIdentifier sphincsPlus_sha2_128f = new ASN1ObjectIdentifier("1.3.9999.6.4.13");
+    ASN1ObjectIdentifier sphincsPlus_sha2_128s = new ASN1ObjectIdentifier("1.3.9999.6.4.16");
+    ASN1ObjectIdentifier sphincsPlus_sha2_192f = new ASN1ObjectIdentifier("1.3.9999.6.5.10");
+    ASN1ObjectIdentifier sphincsPlus_sha2_192s = new ASN1ObjectIdentifier("1.3.9999.6.5.12");
+    ASN1ObjectIdentifier sphincsPlus_sha2_256f = new ASN1ObjectIdentifier("1.3.9999.6.6.10");
+    ASN1ObjectIdentifier sphincsPlus_sha2_256s = new ASN1ObjectIdentifier("1.3.9999.6.6.12");
+
+    ASN1ObjectIdentifier sphincsPlus_shake_128f = new ASN1ObjectIdentifier("1.3.9999.6.7.13");
+    ASN1ObjectIdentifier sphincsPlus_shake_128s = new ASN1ObjectIdentifier("1.3.9999.6.7.16");
+    ASN1ObjectIdentifier sphincsPlus_shake_192f = new ASN1ObjectIdentifier("1.3.9999.6.8.10");
+    ASN1ObjectIdentifier sphincsPlus_shake_192s = new ASN1ObjectIdentifier("1.3.9999.6.8.12");
+    ASN1ObjectIdentifier sphincsPlus_shake_256f = new ASN1ObjectIdentifier("1.3.9999.6.9.10");
+    ASN1ObjectIdentifier sphincsPlus_shake_256s = new ASN1ObjectIdentifier("1.3.9999.6.9.12");
+
     /**
      * Picnic
      */
@@ -227,7 +248,7 @@ public interface BCObjectIdentifiers
     ASN1ObjectIdentifier falcon = bc_sig.branch("7");
 
     ASN1ObjectIdentifier falcon_512 = new ASN1ObjectIdentifier("1.3.9999.3.6");  // falcon.branch("1");
-    ASN1ObjectIdentifier falcon_1024 =  new ASN1ObjectIdentifier("1.3.9999.3.4"); // falcon.branch("2");
+    ASN1ObjectIdentifier falcon_1024 =  new ASN1ObjectIdentifier("1.3.9999.3.9"); // falcon.branch("2");
 
     /*
      * Dilithium
@@ -235,9 +256,9 @@ public interface BCObjectIdentifiers
     ASN1ObjectIdentifier dilithium = bc_sig.branch("8");
 
     // OpenSSL OIDs
-    ASN1ObjectIdentifier dilithium2 = new ASN1ObjectIdentifier("1.3.6.1.4.1.2.267.7.4.4"); // dilithium.branch("1");
-    ASN1ObjectIdentifier dilithium3 = new ASN1ObjectIdentifier("1.3.6.1.4.1.2.267.7.6.5"); // dilithium.branch("2");
-    ASN1ObjectIdentifier dilithium5 = new ASN1ObjectIdentifier("1.3.6.1.4.1.2.267.7.8.7"); // dilithium.branch("3");
+    ASN1ObjectIdentifier dilithium2 = new ASN1ObjectIdentifier("1.3.6.1.4.1.2.267.12.4.4"); // dilithium.branch("1");
+    ASN1ObjectIdentifier dilithium3 = new ASN1ObjectIdentifier("1.3.6.1.4.1.2.267.12.6.5"); // dilithium.branch("2");
+    ASN1ObjectIdentifier dilithium5 = new ASN1ObjectIdentifier("1.3.6.1.4.1.2.267.12.8.7"); // dilithium.branch("3");
     ASN1ObjectIdentifier dilithium2_aes = new ASN1ObjectIdentifier("1.3.6.1.4.1.2.267.11.4.4"); // dilithium.branch("4");
     ASN1ObjectIdentifier dilithium3_aes = new ASN1ObjectIdentifier("1.3.6.1.4.1.2.267.11.6.5"); // dilithium.branch("5");
     ASN1ObjectIdentifier dilithium5_aes = new ASN1ObjectIdentifier("1.3.6.1.4.1.2.267.11.8.7"); // dilithium.branch("6");
@@ -355,6 +376,8 @@ public interface BCObjectIdentifiers
     ASN1ObjectIdentifier ntruhps2048677 = pqc_kem_ntru.branch("2");
     ASN1ObjectIdentifier ntruhps4096821 = pqc_kem_ntru.branch("3");
     ASN1ObjectIdentifier ntruhrss701 = pqc_kem_ntru.branch("4");
+    ASN1ObjectIdentifier ntruhps40961229 = pqc_kem_ntru.branch("5");
+    ASN1ObjectIdentifier ntruhrss1373 = pqc_kem_ntru.branch("6");
 
     /**
      * Kyber

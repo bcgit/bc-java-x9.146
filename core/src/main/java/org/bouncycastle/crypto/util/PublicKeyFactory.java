@@ -17,13 +17,9 @@ import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
 import org.bouncycastle.asn1.cryptopro.ECGOST3410NamedCurves;
 import org.bouncycastle.asn1.cryptopro.GOST3410PublicKeyAlgParameters;
-import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
-import org.bouncycastle.asn1.oiw.ElGamalParameter;
-import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.DHParameter;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSAPublicKey;
-import org.bouncycastle.asn1.rosstandart.RosstandartObjectIdentifiers;
 import org.bouncycastle.asn1.ua.DSTU4145BinaryField;
 import org.bouncycastle.asn1.ua.DSTU4145ECBinary;
 import org.bouncycastle.asn1.ua.DSTU4145NamedCurves;
@@ -36,14 +32,12 @@ import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x509.X509ObjectIdentifiers;
 import org.bouncycastle.asn1.x9.DHPublicKey;
 import org.bouncycastle.asn1.x9.DomainParameters;
-import org.bouncycastle.asn1.x9.ECNamedCurveTable;
 import org.bouncycastle.asn1.x9.ValidationParams;
 import org.bouncycastle.asn1.x9.X962Parameters;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.asn1.x9.X9ECPoint;
 import org.bouncycastle.asn1.x9.X9IntegerConverter;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
-import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
 import org.bouncycastle.crypto.params.DHParameters;
 import org.bouncycastle.crypto.params.DHPublicKeyParameters;
@@ -61,6 +55,10 @@ import org.bouncycastle.crypto.params.ElGamalPublicKeyParameters;
 import org.bouncycastle.crypto.params.RSAKeyParameters;
 import org.bouncycastle.crypto.params.X25519PublicKeyParameters;
 import org.bouncycastle.crypto.params.X448PublicKeyParameters;
+import org.bouncycastle.internal.asn1.edec.EdECObjectIdentifiers;
+import org.bouncycastle.internal.asn1.oiw.ElGamalParameter;
+import org.bouncycastle.internal.asn1.oiw.OIWObjectIdentifiers;
+import org.bouncycastle.internal.asn1.rosstandart.RosstandartObjectIdentifiers;
 import org.bouncycastle.math.ec.ECCurve;
 import org.bouncycastle.math.ec.ECPoint;
 import org.bouncycastle.util.Arrays;
@@ -291,13 +289,7 @@ public class PublicKeyFactory
             if (params.isNamedCurve())
             {
                 ASN1ObjectIdentifier oid = (ASN1ObjectIdentifier)params.getParameters();
-
-                X9ECParameters x9 = CustomNamedCurves.getByOID(oid);
-                if (x9 == null)
-                {
-                    x9 = ECNamedCurveTable.getByOID(oid);
-                }
-                dParams = new ECNamedDomainParameters(oid, x9);
+                dParams = ECNamedDomainParameters.lookup(oid);
             }
             else if (params.isImplicitlyCA())
             {

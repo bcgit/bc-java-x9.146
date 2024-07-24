@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.security.AlgorithmParameters;
 import java.security.GeneralSecurityException;
+import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -47,6 +48,8 @@ import org.bouncycastle.tls.crypto.TlsECConfig;
 import org.bouncycastle.tls.crypto.TlsECDomain;
 import org.bouncycastle.tls.crypto.TlsHMAC;
 import org.bouncycastle.tls.crypto.TlsHash;
+import org.bouncycastle.tls.crypto.TlsKemConfig;
+import org.bouncycastle.tls.crypto.TlsKemDomain;
 import org.bouncycastle.tls.crypto.TlsNonceGenerator;
 import org.bouncycastle.tls.crypto.TlsSRP6Client;
 import org.bouncycastle.tls.crypto.TlsSRP6Server;
@@ -67,6 +70,7 @@ import org.bouncycastle.tls.crypto.impl.jcajce.srp.SRP6Server;
 import org.bouncycastle.tls.crypto.impl.jcajce.srp.SRP6VerifierGenerator;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Integers;
+import org.bouncycastle.util.Strings;
 
 /**
  * Class for providing cryptographic services for TLS based on implementations in the JCA/JCE.
@@ -233,9 +237,12 @@ public class JcaTlsCrypto
                 // NOTE: Ignores macAlgorithm
                 return createCipher_SM4_GCM(cryptoParams);
 
+            case EncryptionAlgorithm._28147_CNT_IMIT:
             case EncryptionAlgorithm.DES40_CBC:
             case EncryptionAlgorithm.DES_CBC:
             case EncryptionAlgorithm.IDEA_CBC:
+            case EncryptionAlgorithm.KUZNYECHIK_CTR_OMAC:
+            case EncryptionAlgorithm.MAGMA_CTR_OMAC:
             case EncryptionAlgorithm.RC2_CBC_40:
             case EncryptionAlgorithm.RC4_128:
             case EncryptionAlgorithm.RC4_40:
@@ -404,6 +411,8 @@ public class JcaTlsCrypto
             return "HmacSHA512";
         case CryptoHashAlgorithm.sm3:
             return "HmacSM3";
+        case CryptoHashAlgorithm.gostr3411_2012_256:
+            return "HmacGOST3411-2012-256";
         default:
             throw new IllegalArgumentException("invalid CryptoHashAlgorithm: " + cryptoHashAlgorithm);
         }
@@ -433,6 +442,21 @@ public class JcaTlsCrypto
         else if (NamedGroup.refersToASpecificFiniteField(namedGroup))
         {
             return DHUtil.getAlgorithmParameters(this, TlsDHUtils.getNamedDHGroup(namedGroup));
+        }
+        else if (NamedGroup.refersToASpecificKem(namedGroup))
+        {
+            switch (namedGroup)
+            {
+            /*
+             * TODO[tls-kem] Return AlgorithmParameters to check against disabled algorithms?
+             */
+            case NamedGroup.OQS_mlkem512:
+            case NamedGroup.OQS_mlkem768:
+            case NamedGroup.OQS_mlkem1024:
+            case NamedGroup.DRAFT_mlkem768:
+            case NamedGroup.DRAFT_mlkem1024:
+                return null;
+            }
         }
 
         throw new IllegalArgumentException("NamedGroup not supported: " + NamedGroup.getText(namedGroup));
@@ -536,7 +560,7 @@ public class JcaTlsCrypto
         case CryptoSignatureAlgorithm.rsa_pss_pss_sha512:
             return true;
 
-        // TODO[draft-smyshlyaev-tls12-gost-suites-10]
+        // TODO[RFC 9189]
         case CryptoSignatureAlgorithm.gostr34102012_256:
         case CryptoSignatureAlgorithm.gostr34102012_512:
 
@@ -554,6 +578,11 @@ public class JcaTlsCrypto
     }
 
     public boolean hasECDHAgreement()
+    {
+        return true;
+    }
+    
+    public boolean hasKemAgreement()
     {
         return true;
     }
@@ -713,11 +742,13 @@ public class JcaTlsCrypto
         case SignatureAlgorithm.ecdsa_brainpoolP512r1tls13_sha512:
             return true;
 
-        // TODO[draft-smyshlyaev-tls12-gost-suites-10]
+        // TODO[RFC 9189]
         case SignatureAlgorithm.gostr34102012_256:
         case SignatureAlgorithm.gostr34102012_512:
+
         // TODO[RFC 8998]
 //        case SignatureAlgorithm.sm2:
+
         default:
             return false;
         }
@@ -821,6 +852,11 @@ public class JcaTlsCrypto
             return new JceTlsECDomain(this, ecConfig);
         }
     }
+    
+    public TlsKemDomain createKemDomain(TlsKemConfig kemConfig)
+    {
+        return new JceTlsMLKemDomain(this, kemConfig);
+    }
 
     public TlsSecret hkdfInit(int cryptoHashAlgorithm)
     {
@@ -887,7 +923,7 @@ public class JcaTlsCrypto
     protected TlsHash createHash(String digestName)
         throws GeneralSecurityException
     {
-        return new JcaTlsHash(helper.createMessageDigest(digestName));
+        return new JcaTlsHash(helper.createDigest(digestName));
     }
 
     /**
@@ -921,20 +957,38 @@ public class JcaTlsCrypto
             SecureRandom random = needsRandom ? getSecureRandom() : null;
 
             JcaJceHelper helper = getHelper();
-            if (null != parameter)
-            {
-                Signature dummySigner = helper.createSignature(algorithmName);
-                dummySigner.initSign(privateKey, random);
-                helper = new ProviderJcaJceHelper(dummySigner.getProvider());
-            }
 
-            Signature signer = helper.createSignature(algorithmName);
-            if (null != parameter)
+            try
             {
-                signer.setParameter(parameter);
+                if (null != parameter)
+                {
+                    Signature dummySigner = helper.createSignature(algorithmName);
+                    dummySigner.initSign(privateKey, random);
+                    helper = new ProviderJcaJceHelper(dummySigner.getProvider());
+                }
+
+                Signature signer = helper.createSignature(algorithmName);
+                if (null != parameter)
+                {
+                    signer.setParameter(parameter);
+                }
+                signer.initSign(privateKey, random);
+                return new JcaTlsStreamSigner(signer);
             }
-            signer.initSign(privateKey, random);
-            return new JcaTlsStreamSigner(signer);
+            catch (InvalidKeyException e)
+            {
+                String upperAlg = Strings.toUpperCase(algorithmName);
+                if (upperAlg.endsWith("MGF1"))
+                {
+                    // ANDMGF1 has vanished from the Sun PKCS11 provider.
+                    algorithmName = upperAlg.replace("ANDMGF1", "SSA-PSS");
+                    return createStreamSigner(algorithmName, parameter, privateKey, needsRandom);
+                }
+                else
+                {
+                    throw e;
+                }
+            }
         }
         catch (GeneralSecurityException e)
         {
@@ -1085,9 +1139,12 @@ public class JcaTlsCrypto
         case EncryptionAlgorithm.SM4_GCM:
             return isUsableCipher("SM4/GCM/NoPadding", 128);
 
+        case EncryptionAlgorithm._28147_CNT_IMIT:
         case EncryptionAlgorithm.DES_CBC:
         case EncryptionAlgorithm.DES40_CBC:
         case EncryptionAlgorithm.IDEA_CBC:
+        case EncryptionAlgorithm.KUZNYECHIK_CTR_OMAC:
+        case EncryptionAlgorithm.MAGMA_CTR_OMAC:
         case EncryptionAlgorithm.RC2_CBC_40:
         case EncryptionAlgorithm.RC4_128:
         case EncryptionAlgorithm.RC4_40:
@@ -1127,6 +1184,11 @@ public class JcaTlsCrypto
                     return Boolean.TRUE;
                 }
                 }
+            }
+            else if (NamedGroup.refersToASpecificKem(namedGroup))
+            {
+                // TODO[tls-kem] When implemented via provider, need to check for support dynamically
+                return Boolean.TRUE;
             }
             else if (NamedGroup.refersToAnECDSACurve(namedGroup))
             {
@@ -1280,6 +1342,8 @@ public class JcaTlsCrypto
             return "SHA-512";
         case CryptoHashAlgorithm.sm3:
             return "SM3";
+        case CryptoHashAlgorithm.gostr3411_2012_256:
+            return "GOST3411-2012-256";
         default:
             throw new IllegalArgumentException("invalid CryptoHashAlgorithm: " + cryptoHashAlgorithm);
         }

@@ -203,7 +203,7 @@ public class SignatureScheme
         }
     }
 
-    /** @deprecated Use {@link #getCryptoHashAlgorithm(int) instead. */
+    /** @deprecated Use {@link #getCryptoHashAlgorithm(int)} instead. */
     public static int getRSAPSSCryptoHashAlgorithm(int signatureScheme)
     {
         switch (signatureScheme)

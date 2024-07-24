@@ -1,8 +1,9 @@
 package org.bouncycastle.pqc.crypto.crystals.kyber;
 
-import java.security.SecureRandom;
-
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.encoders.Hex;
+
+import java.security.SecureRandom;
 
 class KyberEngine
 {
@@ -145,13 +146,13 @@ class KyberEngine
             KyberEta1 = 3;
             KyberPolyCompressedBytes = 128;
             KyberPolyVecCompressedBytes = k * 320;
-            sessionKeyLength = 16;
+            sessionKeyLength = 32;
             break;
         case 3:
             KyberEta1 = 2;
             KyberPolyCompressedBytes = 128;
             KyberPolyVecCompressedBytes = k * 320;
-            sessionKeyLength = 24;
+            sessionKeyLength = 32;
             break;
         case 4:
             KyberEta1 = 2;
@@ -176,6 +177,7 @@ class KyberEngine
         this.CryptoSecretKeyBytes = KyberSecretKeyBytes;
         this.CryptoPublicKeyBytes = KyberPublicKeyBytes;
         this.CryptoCipherTextBytes = KyberCipherTextBytes;
+
 
         if(usingAes)
         {
@@ -216,6 +218,22 @@ class KyberEngine
 
     public byte[][] kemEncrypt(byte[] publicKeyInput)
     {
+        // Input validation (6.2 ML-KEM Encaps)
+        // Type Check
+        if (publicKeyInput.length != KyberIndCpaPublicKeyBytes)
+        {
+            throw new IllegalArgumentException("Input validation Error: Type check failed for ml-kem encapsulation");
+        }
+        // Modulus Check
+        PolyVec polyVec = new PolyVec(this);
+        byte[] seed = indCpa.unpackPublicKey(polyVec, publicKeyInput);
+        byte[] ek = indCpa.packPublicKey(polyVec, seed);
+        if (!Arrays.areEqual(ek, publicKeyInput))
+        {
+            throw new IllegalArgumentException("Input validation: Modulus check failed for ml-kem encapsulation");
+        }
+
+
         byte[] outputCipherText;
 
         byte[] buf = new byte[2 * KyberSymBytes];
@@ -225,26 +243,21 @@ class KyberEngine
 
         random.nextBytes(randBytes);
 
-        // SHA3-256 Random Bytes
-        symmetric.hash_h(randBytes, randBytes, 0);
         System.arraycopy(randBytes, 0, buf, 0, KyberSymBytes);
 
         // SHA3-256 Public Key
         symmetric.hash_h(buf, publicKeyInput, KyberSymBytes);
 
         // SHA3-512( SHA3-256(RandBytes) || SHA3-256(PublicKey) )
-
         symmetric.hash_g(kr, buf);
 
         // IndCpa Encryption
         outputCipherText = indCpa.encrypt(Arrays.copyOfRange(buf, 0, KyberSymBytes), publicKeyInput, Arrays.copyOfRange(kr, 32, kr.length));
 
-        symmetric.hash_h(kr, outputCipherText, KyberSymBytes);
-
         byte[] outputSharedSecret = new byte[sessionKeyLength];
 
-        symmetric.kdf(outputSharedSecret, kr);
-
+        System.arraycopy(kr, 0, outputSharedSecret, 0, outputSharedSecret.length);
+        
         byte[][] outBuf = new byte[2][];
         outBuf[0] = outputSharedSecret;
         outBuf[1] = outputCipherText;
@@ -273,11 +286,7 @@ class KyberEngine
 
         cmov(kr, Arrays.copyOfRange(secretKey, KyberSecretKeyBytes - KyberSymBytes, KyberSecretKeyBytes), KyberSymBytes, fail);
 
-        byte[] outputSharedSecret = new byte[sessionKeyLength];
-
-        symmetric.kdf(outputSharedSecret, kr);
-
-        return outputSharedSecret;
+        return Arrays.copyOfRange(kr, 0, sessionKeyLength);
     }
 
     private void cmov(byte[] r, byte[] x, int xlen, boolean b)

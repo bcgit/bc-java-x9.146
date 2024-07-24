@@ -18,6 +18,11 @@ public class HSSPublicKeyParameters
     {
         super(false);
 
+        if (lmsPublicKey == null)
+        {
+            throw new NullPointerException("lmsPublicKey");
+        }
+
         this.l = l;
         this.lmsPublicKey = lmsPublicKey;
     }
@@ -131,7 +136,7 @@ public class HSSPublicKeyParameters
 
     public boolean verify(LMSContext context)
     {
-        boolean failed = false;
+        boolean passed = true;
 
         LMSSignedPubKey[] sigKeys = context.getSignedPubKeys();
 
@@ -146,13 +151,10 @@ public class HSSPublicKeyParameters
         {
             LMSSignature sig = sigKeys[i].getSignature();
             byte[] msg = sigKeys[i].getPublicKey().toByteArray();
-            if (!LMS.verifySignature(key, sig, msg))
-            {
-                failed = true;
-            }
+            passed &= LMS.verifySignature(key, sig, msg);
             key = sigKeys[i].getPublicKey();
         }
 
-        return !failed & key.verify(context);
+        return passed & key.verify(context);
     }
 }

@@ -78,39 +78,60 @@ public abstract class AbstractTlsServer
         return "No selectable cipher suite";
     }
 
+    protected int getMaximumDefaultCurveBits()
+    {
+        return NamedGroup.getCurveBits(NamedGroup.secp521r1);
+    }
+
+    protected int getMaximumDefaultFiniteFieldBits()
+    {
+        return NamedGroup.getFiniteFieldBits(NamedGroup.ffdhe8192);
+    }
+
     protected int getMaximumNegotiableCurveBits()
     {
+        int maxBits = 0;
         int[] clientSupportedGroups = context.getSecurityParametersHandshake().getClientSupportedGroups();
-        if (clientSupportedGroups == null)
+        if (clientSupportedGroups != null)
+        {
+            for (int i = 0; i < clientSupportedGroups.length; ++i)
+            {
+                maxBits = Math.max(maxBits, NamedGroup.getCurveBits(clientSupportedGroups[i]));
+            }
+        }
+        else
         {
             /*
              * RFC 4492 4. A client that proposes ECC cipher suites may choose not to include these
-             * extensions. In this case, the server is free to choose any one of the elliptic curves
-             * or point formats [...].
+             * extensions. In this case, the server is free to choose any one of the elliptic curves or point
+             * formats [...].
              */
-            return NamedGroup.getMaximumCurveBits();
-        }
-
-        int maxBits = 0;
-        for (int i = 0; i < clientSupportedGroups.length; ++i)
-        {
-            maxBits = Math.max(maxBits, NamedGroup.getCurveBits(clientSupportedGroups[i]));
+            maxBits = getMaximumDefaultCurveBits();
         }
         return maxBits;
     }
 
     protected int getMaximumNegotiableFiniteFieldBits()
     {
-        int[] clientSupportedGroups = context.getSecurityParametersHandshake().getClientSupportedGroups();
-        if (clientSupportedGroups == null)
-        {
-            return NamedGroup.getMaximumFiniteFieldBits();
-        }
-
         int maxBits = 0;
-        for (int i = 0; i < clientSupportedGroups.length; ++i)
+        boolean anyPeerFF = false;
+        int[] clientSupportedGroups = context.getSecurityParametersHandshake().getClientSupportedGroups();
+        if (clientSupportedGroups != null)
         {
-            maxBits = Math.max(maxBits, NamedGroup.getFiniteFieldBits(clientSupportedGroups[i]));
+            for (int i = 0; i < clientSupportedGroups.length; ++i)
+            {
+                anyPeerFF |= NamedGroup.isFiniteField(clientSupportedGroups[i]);
+                maxBits = Math.max(maxBits, NamedGroup.getFiniteFieldBits(clientSupportedGroups[i]));
+            }
+        }
+        if (!anyPeerFF)
+        {
+            /*
+             * RFC 7919 4. If [...] the Supported Groups extension is either absent from the ClientHello
+             * entirely or contains no FFDHE groups (i.e., no codepoints between 256 and 511, inclusive), then
+             * the server [...] MAY select an FFDHE cipher suite and offer an FFDHE group of its choice [...].
+             */
+            maxBits = getMaximumDefaultFiniteFieldBits();
         }
         return maxBits;
     }
@@ -142,22 +163,32 @@ public abstract class AbstractTlsServer
 
     protected int selectDH(int minimumFiniteFieldBits)
     {
+        boolean anyPeerFF = false;
         int[] clientSupportedGroups = context.getSecurityParametersHandshake().getClientSupportedGroups();
-        if (clientSupportedGroups == null)
+        if (clientSupportedGroups != null)
         {
-            return selectDHDefault(minimumFiniteFieldBits);
-        }
-
-        // Try to find a supported named group of the required size from the client's list.
-        for (int i = 0; i < clientSupportedGroups.length; ++i)
-        {
-            int namedGroup = clientSupportedGroups[i];
-            if (NamedGroup.getFiniteFieldBits(namedGroup) >= minimumFiniteFieldBits)
+            // Try to find a supported named group of the required size from the client's list.
+            for (int i = 0; i < clientSupportedGroups.length; ++i)
             {
-                return namedGroup;
+                int namedGroup = clientSupportedGroups[i];
+                anyPeerFF |= NamedGroup.isFiniteField(namedGroup);
+
+                if (NamedGroup.getFiniteFieldBits(namedGroup) >= minimumFiniteFieldBits)
+                {
+                    // This default server implementation supports all NamedGroup finite fields
+                    return namedGroup;
+                }
             }
         }
-
+        if (!anyPeerFF)
+        {
+            /*
+             * RFC 7919 4. If [...] the Supported Groups extension is either absent from the ClientHello
+             * entirely or contains no FFDHE groups (i.e., no codepoints between 256 and 511, inclusive), then
+             * the server [...] MAY select an FFDHE cipher suite and offer an FFDHE group of its choice [...].
+             */
+            return selectDHDefault(minimumFiniteFieldBits);
+        }
         return -1;
     }
 
@@ -176,6 +207,11 @@ public abstract class AbstractTlsServer
         int[] clientSupportedGroups = context.getSecurityParametersHandshake().getClientSupportedGroups();
         if (clientSupportedGroups == null)
         {
+            /*
+             * RFC 4492 4. A client that proposes ECC cipher suites may choose not to include these
+             * extensions. In this case, the server is free to choose any one of the elliptic curves or point
+             * formats [...].
+             */
             return selectECDHDefault(minimumCurveBits);
         }
 
@@ -185,6 +221,7 @@ public abstract class AbstractTlsServer
             int namedGroup = clientSupportedGroups[i];
             if (NamedGroup.getCurveBits(namedGroup) >= minimumCurveBits)
             {
+                // This default server implementation supports all NamedGroup curves
                 return namedGroup;
             }
         }

@@ -71,6 +71,9 @@ public class Extensions
     private Extensions(
         ASN1Sequence seq)
     {
+        // it's tempting to check there's at least one entry in the sequence. Don't!
+        // It turns out there's quite a few empty extension blocks out there...
+
         Enumeration e = seq.getObjects();
 
         while (e.hasMoreElements())
@@ -110,6 +113,11 @@ public class Extensions
     public Extensions(
         Extension[] extensions)
     {
+        if (extensions == null || extensions.length == 0)
+        {
+            throw new IllegalArgumentException("extension array cannot be null or empty");
+        }
+
         for (int i = 0; i != extensions.length; i++)
         {
             Extension ext = extensions[i];

@@ -20,6 +20,8 @@ class DilithiumEngine
     public final static int DilithiumRootOfUnity = 1753;
     public final static int SeedBytes = 32;
     public final static int CrhBytes = 64;
+    public final static int RndBytes = 32;
+    public final static int TrBytes = 64;
 
     public final static int DilithiumPolyT1PackedBytes = 320;
     public final static int DilithiumPolyT0PackedBytes = 416;
@@ -40,6 +42,7 @@ class DilithiumEngine
     private final int DilithiumGamma1;
     private final int DilithiumGamma2;
     private final int DilithiumOmega;
+    private final int DilithiumCTilde;
 
     private final int CryptoPublicKeyBytes;
     private final int CryptoSecretKeyBytes;
@@ -54,102 +57,107 @@ class DilithiumEngine
         return symmetric;
     }
 
-    public int getDilithiumPolyVecHPackedBytes()
+    int getDilithiumPolyVecHPackedBytes()
     {
         return DilithiumPolyVecHPackedBytes;
     }
 
-    public int getDilithiumPolyZPackedBytes()
+    int getDilithiumPolyZPackedBytes()
     {
         return DilithiumPolyZPackedBytes;
     }
 
-    public int getDilithiumPolyW1PackedBytes()
+    int getDilithiumPolyW1PackedBytes()
     {
         return DilithiumPolyW1PackedBytes;
     }
 
-    public int getDilithiumPolyEtaPackedBytes()
+    int getDilithiumPolyEtaPackedBytes()
     {
         return DilithiumPolyEtaPackedBytes;
     }
 
-    public int getDilithiumMode()
+    int getDilithiumMode()
     {
         return DilithiumMode;
     }
 
-    public int getDilithiumK()
+    int getDilithiumK()
     {
         return DilithiumK;
     }
 
-    public int getDilithiumL()
+    int getDilithiumL()
     {
         return DilithiumL;
     }
 
-    public int getDilithiumEta()
+    int getDilithiumEta()
     {
         return DilithiumEta;
     }
 
-    public int getDilithiumTau()
+    int getDilithiumTau()
     {
         return DilithiumTau;
     }
 
-    public int getDilithiumBeta()
+    int getDilithiumBeta()
     {
         return DilithiumBeta;
     }
 
-    public int getDilithiumGamma1()
+    int getDilithiumGamma1()
     {
         return DilithiumGamma1;
     }
 
-    public int getDilithiumGamma2()
+    int getDilithiumGamma2()
     {
         return DilithiumGamma2;
     }
 
-    public int getDilithiumOmega()
+    int getDilithiumOmega()
     {
         return DilithiumOmega;
     }
+    
+    int getDilithiumCTilde()
+    {
+        return DilithiumCTilde;
+    }
 
-    public int getCryptoPublicKeyBytes()
+    int getCryptoPublicKeyBytes()
     {
         return CryptoPublicKeyBytes;
     }
 
-    public int getCryptoSecretKeyBytes()
+    int getCryptoSecretKeyBytes()
     {
         return CryptoSecretKeyBytes;
     }
 
-    public int getCryptoBytes()
+    int getCryptoBytes()
     {
         return CryptoBytes;
     }
 
-    public int getPolyUniformGamma1NBlocks()
+    int getPolyUniformGamma1NBlocks()
     {
         return this.PolyUniformGamma1NBlocks;
     }
 
-    public SHAKEDigest getShake256Digest()
+    SHAKEDigest getShake256Digest()
     {
         return this.shake256Digest;
     }
 
-    public SHAKEDigest getShake128Digest()
+    SHAKEDigest getShake128Digest()
     {
         return this.shake128Digest;
     }
 
-    public DilithiumEngine(int mode, SecureRandom random, boolean usingAes)
+    DilithiumEngine(int mode, SecureRandom random, boolean usingAes)
     {
         this.DilithiumMode = mode;
         switch (mode)
@@ -166,6 +174,7 @@ class DilithiumEngine
             this.DilithiumPolyZPackedBytes = 576;
             this.DilithiumPolyW1PackedBytes = 192;
             this.DilithiumPolyEtaPackedBytes = 96;
+            this.DilithiumCTilde = 32;
             break;
         case 3:
             this.DilithiumK = 6;
@@ -179,6 +188,7 @@ class DilithiumEngine
             this.DilithiumPolyZPackedBytes = 640;
             this.DilithiumPolyW1PackedBytes = 128;
             this.DilithiumPolyEtaPackedBytes = 128;
+            this.DilithiumCTilde = 48;
             break;
         case 5:
             this.DilithiumK = 8;
@@ -192,6 +202,7 @@ class DilithiumEngine
             this.DilithiumPolyZPackedBytes = 640;
             this.DilithiumPolyW1PackedBytes = 128;
             this.DilithiumPolyEtaPackedBytes = 96;
+            this.DilithiumCTilde = 64;
             break;
         default:
             throw new IllegalArgumentException("The mode " + mode + "is not supported by Crystals Dilithium!");
@@ -212,12 +223,13 @@ class DilithiumEngine
         this.CryptoPublicKeyBytes = SeedBytes + this.DilithiumK * DilithiumPolyT1PackedBytes;
         this.CryptoSecretKeyBytes =
             (
-                3 * SeedBytes
+                2 * SeedBytes
+                    + TrBytes
                     + DilithiumL * this.DilithiumPolyEtaPackedBytes
                     + DilithiumK * this.DilithiumPolyEtaPackedBytes
                     + DilithiumK * DilithiumPolyT0PackedBytes
             );
-        this.CryptoBytes = SeedBytes + DilithiumL * this.DilithiumPolyZPackedBytes + this.DilithiumPolyVecHPackedBytes;
+        this.CryptoBytes = DilithiumCTilde + DilithiumL * this.DilithiumPolyZPackedBytes + this.DilithiumPolyVecHPackedBytes;
 
         if (this.DilithiumGamma1 == (1 << 17))
         {
@@ -237,7 +249,7 @@ class DilithiumEngine
     {
         byte[] seedBuf = new byte[SeedBytes];
         byte[] buf = new byte[2 * SeedBytes + CrhBytes];
-        byte[] tr = new byte[SeedBytes];
+        byte[] tr = new byte[TrBytes];
 
         byte[] rho = new byte[SeedBytes],
             rhoPrime = new byte[CrhBytes],
@@ -301,7 +313,7 @@ class DilithiumEngine
 
         shake256Digest.update(rho, 0, rho.length);
         shake256Digest.update(encT1, 0, encT1.length);
-        shake256Digest.doFinal(tr, 0, SeedBytes);
+        shake256Digest.doFinal(tr, 0, TrBytes);
 
         byte[][] sk = Packing.packSecretKey(rho, tr, key, t0, s1, s2, this);
         
@@ -321,21 +333,21 @@ class DilithiumEngine
 
         Packing.unpackSecretKey(t0, s1, s2, t0Enc, s1Enc, s2Enc, this);
 
-        this.shake256Digest.update(tr, 0, SeedBytes);
+        this.shake256Digest.update(tr, 0, TrBytes);
         this.shake256Digest.update(msg, 0, msglen);
         this.shake256Digest.doFinal(mu, 0, CrhBytes);
 
+        byte[] rnd = new byte[RndBytes];
         if (random != null)
         {
-            random.nextBytes(rhoPrime);
+            random.nextBytes(rnd);
         }
-        else
-        {
-            byte[] keyMu = Arrays.copyOf(key, SeedBytes + CrhBytes);
-            System.arraycopy(mu, 0, keyMu, SeedBytes, CrhBytes);
-            shake256Digest.update(keyMu, 0, SeedBytes + CrhBytes);
-            shake256Digest.doFinal(rhoPrime, 0, CrhBytes);
-        }
+
+        byte[] keyMu = Arrays.copyOf(key, SeedBytes + RndBytes + CrhBytes);
+        System.arraycopy(rnd, 0, keyMu, SeedBytes, RndBytes);
+        System.arraycopy(mu, 0, keyMu, SeedBytes + RndBytes, CrhBytes);
+        shake256Digest.update(keyMu, 0, SeedBytes + RndBytes + CrhBytes);
+        shake256Digest.doFinal(rhoPrime, 0, CrhBytes);
 
         aMatrix.expandMatrix(rho);
 
@@ -367,9 +379,9 @@ class DilithiumEngine
 
             shake256Digest.update(mu, 0, CrhBytes);
             shake256Digest.update(outSig, 0, DilithiumK * DilithiumPolyW1PackedBytes);
-            shake256Digest.doFinal(outSig, 0, SeedBytes);
+            shake256Digest.doFinal(outSig, 0, DilithiumCTilde);
 
-            cp.challenge(Arrays.copyOfRange(outSig, 0, SeedBytes));
+            cp.challenge(Arrays.copyOfRange(outSig, 0, DilithiumCTilde));  // uses only the first DilithiumCTilde bytes of sig
             cp.polyNtt();
 
             // Compute z, reject if it reveals secret
@@ -423,7 +435,7 @@ class DilithiumEngine
         byte[] buf,
             mu = new byte[CrhBytes],
             c,
-            c2 = new byte[SeedBytes];
+            c2 = new byte[DilithiumCTilde];
         Poly cp = new Poly(this);
         PolyVecMatrix aMatrix = new PolyVecMatrix(this);
         PolyVecL z = new PolyVecL(this);
@@ -448,7 +460,7 @@ class DilithiumEngine
         {
             return false;
         }
-        c = Arrays.copyOfRange(sig, 0, SeedBytes);
+        c = Arrays.copyOfRange(sig, 0, DilithiumCTilde);
 
         // System.out.println(z.toString("z"));
         // System.out.println(h.toString("h"));
@@ -461,11 +473,11 @@ class DilithiumEngine
         // Compute crh(crh(rho, t1), msg)
         shake256Digest.update(rho, 0, rho.length);
         shake256Digest.update(encT1, 0, encT1.length);
-        shake256Digest.doFinal(mu, 0, SeedBytes);
+        shake256Digest.doFinal(mu, 0, TrBytes);
         // System.out.println("mu before = ");
         // Helper.printByteArray(mu);
 
-        shake256Digest.update(mu, 0, SeedBytes);
+        shake256Digest.update(mu, 0, TrBytes);
         shake256Digest.update(msg, 0, msglen);
         shake256Digest.doFinal(mu, 0);
 
@@ -473,7 +485,7 @@ class DilithiumEngine
         // Helper.printByteArray(mu);
 
         // Matrix-vector multiplication; compute Az - c2^dt1
-        cp.challenge(c);
+        cp.challenge(Arrays.copyOfRange(c, 0, DilithiumCTilde));  // use only first DilithiumCTilde of c.
         // System.out.println("cp = ");
         // System.out.println(cp.toString());
 
@@ -517,7 +529,7 @@ class DilithiumEngine
         SHAKEDigest shakeDigest256 = new SHAKEDigest(256);
         shakeDigest256.update(mu, 0, CrhBytes);
         shakeDigest256.update(buf, 0, DilithiumK * DilithiumPolyW1PackedBytes);
-        shakeDigest256.doFinal(c2, 0, SeedBytes);
+        shakeDigest256.doFinal(c2, 0, DilithiumCTilde);
 
 //         System.out.println("c = ");
 //         System.out.println(Hex.toHexString(c));
@@ -526,14 +538,7 @@ class DilithiumEngine
 //        System.out.println(Hex.toHexString(c2));
 
 
-        for (int i = 0; i < SeedBytes; ++i)
-        {
-            if (c[i] != c2[i])
-            {
-                return false;
-            }
-        }
-        return true;
+        return Arrays.constantTimeAreEqual(c, c2);
     }
 
     public boolean signOpen(byte[] msg, byte[] signedMsg, int signedMsglen, byte[] rho, byte[] t1)

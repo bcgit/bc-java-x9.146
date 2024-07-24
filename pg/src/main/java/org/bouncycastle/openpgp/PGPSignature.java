@@ -12,13 +12,15 @@ import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.bcpg.BCPGInputStream;
 import org.bouncycastle.bcpg.BCPGOutputStream;
+import org.bouncycastle.bcpg.HashUtils;
 import org.bouncycastle.bcpg.MPInteger;
 import org.bouncycastle.bcpg.Packet;
 import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
 import org.bouncycastle.bcpg.SignaturePacket;
 import org.bouncycastle.bcpg.SignatureSubpacket;
 import org.bouncycastle.bcpg.TrustPacket;
-import org.bouncycastle.bcpg.UserAttributeSubpacket;
+import org.bouncycastle.math.ec.rfc8032.Ed25519;
+import org.bouncycastle.math.ec.rfc8032.Ed448;
 import org.bouncycastle.openpgp.operator.PGPContentVerifier;
 import org.bouncycastle.openpgp.operator.PGPContentVerifierBuilder;
 import org.bouncycastle.openpgp.operator.PGPContentVerifierBuilderProvider;
@@ -30,6 +32,7 @@ import org.bouncycastle.util.Strings;
  * A PGP signature object.
  */
 public class PGPSignature
+    extends PGPDefaultSignatureGenerator
 {
     public static final int BINARY_DOCUMENT = 0x00;
     public static final int CANONICAL_TEXT_DOCUMENT = 0x01;
@@ -49,13 +52,10 @@ public class PGPSignature
     public static final int TIMESTAMP = 0x40;
     public static final int THIRD_PARTY_CONFIRMATION = 0x50;
 
-    private final int signatureType;
     private final SignaturePacket sigPck;
     private final TrustPacket trustPck;
 
     private volatile PGPContentVerifier verifier;
-    private volatile byte lastb;
-    private volatile OutputStream sigOut;
 
     private static SignaturePacket cast(Packet packet)
         throws IOException
@@ -77,8 +77,9 @@ public class PGPSignature
     PGPSignature(
         PGPSignature signature)
     {
+        super(signature.getVersion());
         sigPck = signature.sigPck;
-        signatureType = signature.signatureType;
+        sigType = signature.sigType;
         trustPck = signature.trustPck;
     }
 
@@ -92,8 +93,9 @@ public class PGPSignature
         SignaturePacket sigPacket,
         TrustPacket trustPacket)
     {
+        super(sigPacket.getVersion());
         this.sigPck = sigPacket;
-        this.signatureType = sigPck.getSignatureType();
+        this.sigType = sigPck.getSignatureType();
         this.trustPck = trustPacket;
     }
 
@@ -150,6 +152,10 @@ public class PGPSignature
     public void init(PGPContentVerifierBuilderProvider verifierBuilderProvider, PGPPublicKey pubKey)
         throws PGPException
     {
+        if (sigType == 0xFF)
+        {
+            throw new PGPException("Illegal signature type 0xFF provided.");
+        }
         PGPContentVerifierBuilder verifierBuilder = createVerifierProvider(verifierBuilderProvider);
 
         init(verifierBuilder.build(pubKey));
@@ -161,91 +167,38 @@ public class PGPSignature
         return verifierBuilderProvider.get(sigPck.getKeyAlgorithm(), sigPck.getHashAlgorithm());
     }
 
-    void init(PGPContentVerifier verifier)
+    void init(PGPContentVerifier verifier) 
+        throws PGPException
     {
         this.verifier = verifier;
         this.lastb = 0;
         this.sigOut = verifier.getOutputStream();
+
+        checkSaltSize();
+        updateWithSalt();
     }
 
-    public void update(
-        byte b)
+    private void checkSaltSize()
+        throws PGPException
     {
-        if (signatureType == PGPSignature.CANONICAL_TEXT_DOCUMENT)
+        if (getVersion() != SignaturePacket.VERSION_6)
         {
-            if (b == '\r')
-            {
-                byteUpdate((byte)'\r');
-                byteUpdate((byte)'\n');
-            }
-            else if (b == '\n')
-            {
-                if (lastb != '\r')
-                {
-                    byteUpdate((byte)'\r');
-                    byteUpdate((byte)'\n');
-                }
-            }
-            else
-            {
-                byteUpdate(b);
-            }
-
-            lastb = b;
+            return;
         }
-        else
+
+        int expectedSaltSize = HashUtils.getV6SignatureSaltSizeInBytes(getHashAlgorithm());
+        if (expectedSaltSize != sigPck.getSalt().length)
         {
-            byteUpdate(b);
+            throw new PGPException("RFC9580 defines the salt size for " + PGPUtil.getDigestName(getHashAlgorithm()) +
+                " as " + expectedSaltSize + " octets, but signature has " + sigPck.getSalt().length + " octets.");
         }
     }
 
-    public void update(
-        byte[] bytes)
+    private void updateWithSalt()
     {
-        this.update(bytes, 0, bytes.length);
-    }
-
-    public void update(
-        byte[] bytes,
-        int off,
-        int length)
-    {
-        if (signatureType == PGPSignature.CANONICAL_TEXT_DOCUMENT)
+        if (getVersion() == SignaturePacket.VERSION_6)
         {
-            int finish = off + length;
-
-            for (int i = off; i != finish; i++)
-            {
-                this.update(bytes[i]);
-            }
-        }
-        else
-        {
-            blockUpdate(bytes, off, length);
-        }
-    }
-
-    private void byteUpdate(byte b)
-    {
-        try
-        {
-            sigOut.write(b);
-        }
-        catch (IOException e)
-        {
-            throw new PGPRuntimeOperationException(e.getMessage(), e);
-        }
-    }
-
-    private void blockUpdate(byte[] block, int off, int len)
-    {
-        try
-        {
-            sigOut.write(block, off, len);
-        }
-        catch (IOException e)
-        {
-            throw new PGPRuntimeOperationException(e.getMessage(), e);
+            update(sigPck.getSalt());
         }
     }
 
@@ -267,27 +220,6 @@ public class PGPSignature
     }
 
 
-    private void updateWithIdData(int header, byte[] idBytes)
-    {
-        this.update((byte)header);
-        this.update((byte)(idBytes.length >> 24));
-        this.update((byte)(idBytes.length >> 16));
-        this.update((byte)(idBytes.length >> 8));
-        this.update((byte)(idBytes.length));
-        this.update(idBytes);
-    }
-
-    private void updateWithPublicKey(PGPPublicKey key)
-        throws PGPException
-    {
-        byte[] keyBytes = getEncodedPublicKey(key);
-
-        this.update((byte)0x99);
-        this.update((byte)(keyBytes.length >> 8));
-        this.update((byte)(keyBytes.length));
-        this.update(keyBytes);
-    }
-
     /**
      * Verify the signature as certifying the passed in public key as associated
      * with the passed in user attributes.
@@ -307,8 +239,8 @@ public class PGPSignature
             throw new PGPException("PGPSignature not initialised - call init().");
         }
 
-        if (!PGPSignature.isCertification(signatureType)
-            && PGPSignature.CERTIFICATION_REVOCATION != signatureType)
+        if (!PGPSignature.isCertification(sigType)
+            && PGPSignature.CERTIFICATION_REVOCATION != sigType)
         {
             throw new PGPException("signature is neither a certification signature nor a certification revocation.");
         }
@@ -323,23 +255,7 @@ public class PGPSignature
     {
         updateWithPublicKey(key);
 
-        //
-        // hash in the userAttributes
-        //
-        try
-        {
-            ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-            UserAttributeSubpacket[] packets = userAttributes.toSubpacketArray();
-            for (int i = 0; i != packets.length; i++)
-            {
-                packets[i].encode(bOut);
-            }
-            updateWithIdData(0xd1, bOut.toByteArray());
-        }
-        catch (IOException e)
-        {
-            throw new PGPException("cannot encode subpacket array", e);
-        }
+        getAttributesHash(userAttributes);
 
         addTrailer();
 
@@ -382,8 +298,8 @@ public class PGPSignature
             throw new PGPException("PGPSignature not initialised - call init().");
         }
 
-        if (!PGPSignature.isCertification(signatureType)
-            && PGPSignature.CERTIFICATION_REVOCATION != signatureType)
+        if (!PGPSignature.isCertification(sigType)
+            && PGPSignature.CERTIFICATION_REVOCATION != sigType)
         {
             throw new PGPException("signature is neither a certification signature nor a certification revocation.");
         }
@@ -425,9 +341,9 @@ public class PGPSignature
             throw new PGPException("PGPSignature not initialised - call init().");
         }
 
-        if (PGPSignature.SUBKEY_BINDING != signatureType
-            && PGPSignature.PRIMARYKEY_BINDING != signatureType
-            && PGPSignature.SUBKEY_REVOCATION != signatureType)
+        if (PGPSignature.SUBKEY_BINDING != sigType
+            && PGPSignature.PRIMARYKEY_BINDING != sigType
+            && PGPSignature.SUBKEY_REVOCATION != sigType)
         {
             throw new PGPException("signature is not a key binding signature.");
         }
@@ -558,6 +474,11 @@ public class PGPSignature
         return null;
     }
 
+    byte[] getSalt()
+    {
+        return sigPck.getSalt();
+    }
+
     public byte[] getSignature()
         throws PGPException
     {
@@ -570,13 +491,22 @@ public class PGPSignature
             {
                 signature = BigIntegers.asUnsignedByteArray(sigValues[0].getValue());
             }
-            else if (this.getKeyAlgorithm() == PublicKeyAlgorithmTags.EDDSA_LEGACY)
+            else if (getKeyAlgorithm() == PublicKeyAlgorithmTags.EDDSA_LEGACY)
             {
-                signature = new byte[64];
                 byte[] a = BigIntegers.asUnsignedByteArray(sigValues[0].getValue());
                 byte[] b = BigIntegers.asUnsignedByteArray(sigValues[1].getValue());
-                System.arraycopy(a, 0, signature, 32 - a.length, a.length);
-                System.arraycopy(b, 0, signature, 64 - b.length, b.length);
+                if (a.length + b.length > Ed25519.SIGNATURE_SIZE)
+                {
+                    signature = new byte[Ed448.SIGNATURE_SIZE];
+                    System.arraycopy(a, 0, signature, Ed448.PUBLIC_KEY_SIZE - a.length, a.length);
+                    System.arraycopy(b, 0, signature, Ed448.SIGNATURE_SIZE - b.length, b.length);
+                }
+                else
+                {
+                    signature = new byte[Ed25519.SIGNATURE_SIZE];
+                    System.arraycopy(a, 0, signature, Ed25519.PUBLIC_KEY_SIZE - a.length, a.length);
+                    System.arraycopy(b, 0, signature, Ed25519.SIGNATURE_SIZE - b.length, b.length);
+                }
             }
             else
             {
@@ -661,24 +591,6 @@ public class PGPSignature
         {
             out.writePacket(trustPck);
         }
-    }
-
-    private byte[] getEncodedPublicKey(
-        PGPPublicKey pubKey)
-        throws PGPException
-    {
-        byte[] keyBytes;
-
-        try
-        {
-            keyBytes = pubKey.publicPk.getEncodedContents();
-        }
-        catch (IOException e)
-        {
-            throw new PGPException("exception preparing key.", e);
-        }
-
-        return keyBytes;
     }
 
     /**

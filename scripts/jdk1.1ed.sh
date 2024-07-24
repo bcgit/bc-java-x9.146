@@ -62,6 +62,19 @@ w
 q
 %
 
+ed org/bouncycastle/asn1/x500/style/X500NameTokenizer.java <<%
+g/private final .*/s/final//
+w
+w
+q
+%
+
+ed org/bouncycastle/asn1/x509/AltSignatureAlgorithm.java <<%
+g/private final .*/s/final//
+w
+w
+q
+%
 ed org/bouncycastle/asn1/x509/AltSignatureAlgorithm.java <<%
 g/private final .*/s/final//
 w
@@ -206,6 +219,18 @@ w
 q
 %
 
+ed org/bouncycastle/pkcs/DeltaCertificateRequestAttributeValue.java <<%
+g/private final /s/final//
+w
+q
+%
+
+ed org/bouncycastle/pkcs/PKCS10CertificationRequest.java <<%
+g/private final /s/final//
+w
+q
+%
+
 ed org/bouncycastle/asn1/pkcs/PBKDF2Params.java <<%
 g/private final ASN1OctetString octStr;/s/final//
 g/private final ASN1Integer iterationCount;/s/final//
@@ -228,6 +253,12 @@ done
 
 ed org/bouncycastle/asn1/x9/X9ECPoint.java <<%
 g/private final ASN1OctetString encoding;/s/final//
+w
+q
+%
+
+ed org/bouncycastle/crypto/encodings/OAEPEncoding.java <<%
+g/private final/s/final//
 w
 q
 %

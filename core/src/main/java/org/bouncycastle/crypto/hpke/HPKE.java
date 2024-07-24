@@ -40,7 +40,7 @@ public class HPKE
     private final short kemId;
     private final short kdfId;
     private final short aeadId;
-    private final DHKEM dhkem;
+    private final KEM kem;
     private final HKDF hkdf;
 
     short Nk;
@@ -58,7 +58,7 @@ public class HPKE
         this.kdfId = kdfId;
         this.aeadId = aeadId;
         this.hkdf = new HKDF(kdfId);
-        this.dhkem = new DHKEM(kemId);
+        this.kem = new DHKEM(kemId);
         if (aeadId == aead_AES_GCM128)
         {
             Nk = 16;
@@ -67,6 +67,16 @@ public class HPKE
         {
             Nk = 32;
         }
+
+    }
+
+    public int getEncSize()
+    {
+        return kem.getEncryptionSize();
+    }
+    public short getAeadId()
+    {
+        return aeadId;
     }
 
     private void VerifyPSKInputs(byte mode, byte[] psk, byte[] pskid)
@@ -116,32 +126,32 @@ public class HPKE
 
     public AsymmetricCipherKeyPair generatePrivateKey()
     {
-        return dhkem.GeneratePrivateKey();
+        return kem.GeneratePrivateKey();
     }
 
 
     public byte[] serializePublicKey(AsymmetricKeyParameter pk)
     {
-        return dhkem.SerializePublicKey(pk);
+        return kem.SerializePublicKey(pk);
     }
 
     public byte[] serializePrivateKey(AsymmetricKeyParameter sk)
     {
-        return dhkem.SerializePrivateKey(sk);
+        return kem.SerializePrivateKey(sk);
     }
     public AsymmetricKeyParameter deserializePublicKey(byte[] pkEncoded)
     {
-        return dhkem.DeserializePublicKey(pkEncoded);
+        return kem.DeserializePublicKey(pkEncoded);
     }
 
     public AsymmetricCipherKeyPair deserializePrivateKey(byte[] skEncoded, byte[] pkEncoded)
     {
-        return dhkem.DeserializePrivateKey(skEncoded, pkEncoded);
+        return kem.DeserializePrivateKey(skEncoded, pkEncoded);
     }
 
     public AsymmetricCipherKeyPair deriveKeyPair(byte[] ikm)
     {
-        return dhkem.DeriveKeyPair(ikm);
+        return kem.DeriveKeyPair(ikm);
     }
 
     public byte[][] sendExport(AsymmetricKeyParameter pkR, byte[] info, byte[] exporterContext, int L,
@@ -248,10 +258,19 @@ public class HPKE
         return ctx.open(aad, ct);
     }
 
-
     public HPKEContextWithEncapsulation setupBaseS(AsymmetricKeyParameter pkR, byte[] info)
     {
-        byte[][] output = dhkem.Encap(pkR); // sharedSecret, enc
+        byte[][] output = kem.Encap(pkR); // sharedSecret, enc
+        HPKEContext ctx = keySchedule(mode_base, output[0], info, default_psk, default_psk_id);
+
+        return new HPKEContextWithEncapsulation(ctx, output[1]);
+    }
+
+    // Variant of setupBaseS() where caller can provide their own ephemeral key pair.
+    // This should only be used to validate test vectors.
+    public HPKEContextWithEncapsulation setupBaseS(AsymmetricKeyParameter pkR, byte[] info, AsymmetricCipherKeyPair kpE)
+    {
+        byte[][] output = kem.Encap(pkR, kpE); // sharedSecret, enc
         HPKEContext ctx = keySchedule(mode_base, output[0], info, default_psk, default_psk_id);
 
         return new HPKEContextWithEncapsulation(ctx, output[1]);
@@ -259,13 +278,13 @@ public class HPKE
 
     public HPKEContext setupBaseR(byte[] enc, AsymmetricCipherKeyPair skR, byte[] info)
     {
-        byte[] sharedSecret = dhkem.Decap(enc, skR);
+        byte[] sharedSecret = kem.Decap(enc, skR);
         return keySchedule(mode_base, sharedSecret, info, default_psk, default_psk_id);
     }
 
     public HPKEContextWithEncapsulation SetupPSKS(AsymmetricKeyParameter pkR, byte[] info, byte[] psk, byte[] psk_id)
     {
-        byte[][] output = dhkem.Encap(pkR); // sharedSecret, enc
+        byte[][] output = kem.Encap(pkR); // sharedSecret, enc
 
         HPKEContext ctx = keySchedule(mode_psk, output[0], info, psk, psk_id);
 
@@ -274,13 +293,13 @@ public class HPKE
 
     public HPKEContext setupPSKR(byte[] enc, AsymmetricCipherKeyPair skR, byte[] info, byte[] psk, byte[] psk_id)
     {
-        byte[] sharedSecret = dhkem.Decap(enc, skR);
+        byte[] sharedSecret = kem.Decap(enc, skR);
         return keySchedule(mode_psk, sharedSecret, info, psk, psk_id);
     }
 
     public HPKEContextWithEncapsulation setupAuthS(AsymmetricKeyParameter pkR, byte[] info, AsymmetricCipherKeyPair skS)
     {
-        byte[][] output = dhkem.AuthEncap(pkR, skS);
+        byte[][] output = kem.AuthEncap(pkR, skS);
         HPKEContext ctx = keySchedule(mode_auth, output[0], info, default_psk, default_psk_id);
 
         return new HPKEContextWithEncapsulation(ctx, output[1]);
@@ -288,13 +307,13 @@ public class HPKE
 
     public HPKEContext setupAuthR(byte[] enc, AsymmetricCipherKeyPair skR, byte[] info, AsymmetricKeyParameter pkS)
     {
-        byte[] sharedSecret = dhkem.AuthDecap(enc, skR, pkS);
+        byte[] sharedSecret = kem.AuthDecap(enc, skR, pkS);
         return keySchedule(mode_auth, sharedSecret, info, default_psk, default_psk_id);
     }
 
     public HPKEContextWithEncapsulation setupAuthPSKS(AsymmetricKeyParameter pkR, byte[] info, byte[] psk, byte[] psk_id, AsymmetricCipherKeyPair skS)
     {
-        byte[][] output = dhkem.AuthEncap(pkR, skS);
+        byte[][] output = kem.AuthEncap(pkR, skS);
         HPKEContext ctx = keySchedule(mode_auth_psk, output[0], info, psk, psk_id);
 
         return new HPKEContextWithEncapsulation(ctx, output[1]);
@@ -302,7 +321,7 @@ public class HPKE
 
     public HPKEContext setupAuthPSKR(byte[] enc, AsymmetricCipherKeyPair skR, byte[] info, byte[] psk, byte[] psk_id, AsymmetricKeyParameter pkS)
     {
-        byte[] sharedSecret = dhkem.AuthDecap(enc, skR, pkS);
+        byte[] sharedSecret = kem.AuthDecap(enc, skR, pkS);
         return keySchedule(mode_auth_psk, sharedSecret, info, psk, psk_id);
     }
 }

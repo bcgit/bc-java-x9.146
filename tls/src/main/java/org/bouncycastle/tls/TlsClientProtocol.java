@@ -1238,7 +1238,8 @@ public class TlsClientProtocol
                  */
                 if (null == TlsUtils.getExtensionData(this.clientExtensions, extType))
                 {
-                    throw new TlsFatalAlert(AlertDescription.unsupported_extension);
+                    throw new TlsFatalAlert(AlertDescription.unsupported_extension,
+                        "Unrequested extension in ServerHello: " + ExtensionType.getText(extType.intValue()));
                 }
 
                 /*
@@ -1861,7 +1862,7 @@ public class TlsClientProtocol
             TlsExtensionsUtils.addSupportedVersionsExtensionClient(clientExtensions, supportedVersions);
 
             /*
-             * RFC 8446 4.2.1. In compatibility mode [..], this field MUST be non-empty, so a client
+             * RFC 8446 4.1.2. In compatibility mode [..], this field MUST be non-empty, so a client
              * not offering a pre-TLS 1.3 session MUST generate a new 32-byte value.
              */
             if (legacy_session_id.length < 1 && tlsClient.shouldUseCompatibilityMode())

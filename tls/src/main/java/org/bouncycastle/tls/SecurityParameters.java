@@ -18,7 +18,6 @@ public class SecurityParameters
     short maxFragmentLength = -1;
     int prfAlgorithm = -1;
     int prfCryptoHashAlgorithm = -1;
-    short prfHashAlgorithm = -1;
     int prfHashLength = -1;
     int verifyDataLength = -1;
     short cksCode = 0;
@@ -220,16 +219,6 @@ public class SecurityParameters
     public int getPRFCryptoHashAlgorithm()
     {
         return prfCryptoHashAlgorithm;
-    }
-
-    /**
-     * @return {@link HashAlgorithm} for the current {@link PRFAlgorithm}
-     * 
-     * @deprecated Use {@link #getPRFCryptoHashAlgorithm()} instead.
-     */
-    public short getPRFHashAlgorithm()
-    {
-        return prfHashAlgorithm;
     }
 
     public int getPRFHashLength()

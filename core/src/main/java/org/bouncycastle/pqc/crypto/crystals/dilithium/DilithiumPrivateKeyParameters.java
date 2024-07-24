@@ -34,7 +34,7 @@ public class DilithiumPrivateKeyParameters
         int index = 0;
         this.rho = Arrays.copyOfRange(encoding, 0, DilithiumEngine.SeedBytes); index += DilithiumEngine.SeedBytes;
         this.k = Arrays.copyOfRange(encoding, index, index + DilithiumEngine.SeedBytes); index += DilithiumEngine.SeedBytes;
-        this.tr = Arrays.copyOfRange(encoding, index, index + DilithiumEngine.SeedBytes); index += DilithiumEngine.SeedBytes;
+        this.tr = Arrays.copyOfRange(encoding, index, index + DilithiumEngine.TrBytes); index += DilithiumEngine.TrBytes;
         int delta = eng.getDilithiumL() * eng.getDilithiumPolyEtaPackedBytes();
         this.s1 = Arrays.copyOfRange(encoding, index, index + delta); index += delta;
         delta = eng.getDilithiumK() * eng.getDilithiumPolyEtaPackedBytes();

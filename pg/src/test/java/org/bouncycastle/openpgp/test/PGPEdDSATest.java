@@ -67,7 +67,7 @@ import org.bouncycastle.util.test.UncloseableOutputStream;
 public class PGPEdDSATest
     extends SimpleTest
 {
-    private static final String edDSASampleKey =
+    static final String edDSASampleKey =
         "-----BEGIN PGP PUBLIC KEY BLOCK-----\n" +
             "Comment: Alice's OpenPGP certificate\n" +
             "Comment: https://www.ietf.org/id/draft-bre-openpgp-samples-01.html\n" +
@@ -84,7 +84,7 @@ public class PGPEdDSATest
             "=iIGO\n" +
             "-----END PGP PUBLIC KEY BLOCK-----\n";
 
-    private static final String edDSASecretKey =
+    static final String edDSASecretKey =
         "-----BEGIN PGP PRIVATE KEY BLOCK-----\n" +
             "Comment: Alice's OpenPGP Transferable Secret Key\n" +
             "Comment: https://www.ietf.org/id/draft-bre-openpgp-samples-01.html\n" +
@@ -412,7 +412,8 @@ public class PGPEdDSATest
 
         PGPPublicKeyRing pubKeyRing = new PGPPublicKeyRing(aIn, new JcaKeyFingerprintCalculator());
 
-        isTrue(areEqual(Hex.decode("EB85 BB5F A33A 75E1 5E94 4E63 F231 550C 4F47 E38E"), pubKeyRing.getPublicKey().getFingerprint()));
+        isTrue(areEqual(pubKeyRing.getPublicKey().getFingerprint(), Hex.decode("EB85 BB5F A33A 75E1 5E94 4E63 F231 550C 4F47 E38E")));
+        isTrue(pubKeyRing.getPublicKey().hasFingerprint(Hex.decode("EB85 BB5F A33A 75E1 5E94 4E63 F231 550C 4F47 E38E")));
 
         aIn = new ArmoredInputStream(new ByteArrayInputStream(Strings.toByteArray(edDSASecretKey)));
 
