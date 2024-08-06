@@ -48,9 +48,9 @@ public class SignatureScheme
     /*
      * x9.164 OQS values for dilithium
      */
-    public static final int dilithiumr3_2 = 0xFEA0;
-    public static final int dilithiumr3_3 = 0xFEA3;
-    public static final int dilithiumr3_5 = 0xFEA5;
+    public static final int dilithiumr3_2 = 0xFED0;
+    public static final int dilithiumr3_3 = 0xFED1;
+    public static final int dilithiumr3_5 = 0xFED2;
     /*
      * x9.164 OQS values for falcon
      */

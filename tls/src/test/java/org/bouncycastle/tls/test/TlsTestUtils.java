@@ -32,9 +32,11 @@ import org.bouncycastle.crypto.util.PrivateKeyFactory;
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.Certificate;
 import org.bouncycastle.tls.CertificateEntry;
+import org.bouncycastle.tls.CertificateKeySelectionType;
 import org.bouncycastle.tls.ProtocolVersion;
 import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
+import org.bouncycastle.tls.SignatureScheme;
 import org.bouncycastle.tls.TlsContext;
 import org.bouncycastle.tls.TlsCredentialedAgreement;
 import org.bouncycastle.tls.TlsCredentialedDecryptor;
@@ -117,6 +119,11 @@ public class TlsTestUtils
 
     static String getCACertResource(String eeCertResource) throws IOException
     {
+        if (eeCertResource.startsWith("x9146/ca-"))
+        {
+//            eeCertResource = eeCertResource.replace("ca", "server");
+            return eeCertResource;
+        }
         if (eeCertResource.startsWith("x9146/server-"))
         {
             eeCertResource = eeCertResource.replace("server", "ca");
@@ -336,17 +343,41 @@ public class TlsTestUtils
             supportedSignatureAlgorithms = TlsUtils.getDefaultSignatureAlgorithms(signatureAlgorithm);
         }
 
+        short targetHash = -1;
+        if (keyResource.contains("P256"))
+        {
+            targetHash = SignatureScheme.getHashAlgorithm(SignatureScheme.ecdsa_secp256r1_sha256);
+        }
+        if (keyResource.contains("P384"))
+        {
+            targetHash = SignatureScheme.getHashAlgorithm(SignatureScheme.ecdsa_secp384r1_sha384);
+        }
+        if (keyResource.contains("P512"))
+        {
+            targetHash = SignatureScheme.getHashAlgorithm(SignatureScheme.ecdsa_secp521r1_sha512);
+        }
+
+
         for (int i = 0; i < supportedSignatureAlgorithms.size(); ++i)
         {
             SignatureAndHashAlgorithm alg = (SignatureAndHashAlgorithm)
                     supportedSignatureAlgorithms.elementAt(i);
-            if (alg.getSignature() == signatureAlgorithm)
+
+            // find target signature and hash
+            if (targetHash == alg.getHash() &&  alg.getSignature() == signatureAlgorithm)
             {
-                // Just grab the first one we find
+                signatureAndHashAlgorithm = alg;
+                break;
+            }
+
+            // Just grab the first one we find if keyResource does not specify hash
+            if (targetHash == -1 &&  alg.getSignature() == signatureAlgorithm)
+            {
                 signatureAndHashAlgorithm = alg;
                 break;
             }
         }
+
         //TODO do better
         for (int i = 0; i < supportedSignatureAlgorithms.size(); ++i)
         {
@@ -616,7 +647,49 @@ public class TlsTestUtils
         {
             String eeCertResource = resources[i];
             TlsCertificate eeCert = loadCertificateResource(crypto, eeCertResource);
+
+            System.out.println("cacert: " + Hex.toHexString(cert.getEncoded()));
+            System.out.println("eecert: " + Hex.toHexString(eeCert.getEncoded()));
             if (areSameCertificate(cert, eeCert))
+            {
+                String caCertResource = getCACertResource(eeCertResource);
+                TlsCertificate caCert = loadCertificateResource(crypto, caCertResource);
+                if (null != caCert)
+                {
+                    return new TlsCertificate[]{ eeCert, caCert };
+                }
+            }
+        }
+        return null;
+    }
+    static TlsCertificate[] getTrustedCertPath(TlsCrypto crypto, TlsCertificate cert, String[] resources, short cksCode)
+        throws IOException
+    {
+        for (int i = 0; i < resources.length; ++i)
+        {
+            String eeCertResource = resources[i];
+            TlsCertificate eeCert = loadCertificateResource(crypto, eeCertResource);
+
+            switch (cksCode)
+            {
+                case CertificateKeySelectionType.cks_native:
+                case CertificateKeySelectionType.cks_default:
+                    break;
+                case CertificateKeySelectionType.cks_alternate:
+                case CertificateKeySelectionType.cks_both:
+                    //TODO[X9.146]: do i need to modify certs to check?
+                    break;
+
+                case CertificateKeySelectionType.cks_external:
+                default:
+                    System.out.println(cksCode);
+                    throw new RuntimeException("Unknown Certificate Key Selection Code!");
+
+            }
+
+
+
+//            if (areSameCertificate(cert, eeCert))
             {
                 String caCertResource = getCACertResource(eeCertResource);
                 TlsCertificate caCert = loadCertificateResource(crypto, caCertResource);

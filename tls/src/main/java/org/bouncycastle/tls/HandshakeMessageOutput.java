@@ -39,7 +39,7 @@ class HandshakeMessageOutput
     {
         {
             String pro =  protocol instanceof TlsClientProtocol ? "Client" : "Server";
-            System.out.println(pro + "-(" + protocol.connection_state + "): " + Hex.toHexString(buf));
+            System.out.println(pro + "S-(" + protocol.connection_state + "): " + Hex.toHexString(buf));
         }
         // Patch actual length back in
         int bodyLength = count - 4;

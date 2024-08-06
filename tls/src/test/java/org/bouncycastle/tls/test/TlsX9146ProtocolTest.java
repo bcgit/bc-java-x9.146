@@ -76,15 +76,22 @@ public class TlsX9146ProtocolTest
     public void testServerWithWolfClient() throws Exception
     {
         ServerSocket ss = new ServerSocket(11111);
-
+    
         System.out.println("ServerSocket port: " + ss.getLocalPort());
         System.out.println("ServerSocket ip: " + ss.getInetAddress());
-
-        while (true)
-        {
+    
+        try {
             Socket s = ss.accept();
-            TlsServerProtocol tlsServerProtocol = new TlsServerProtocol(s.getInputStream(), s.getOutputStream());
-            tlsServerProtocol.accept(new MockX9146TlsServer());
+            TlsServerProtocol tlsServerProtocol = new TlsServerProtocol();
+            try {
+                tlsServerProtocol = new TlsServerProtocol(s.getInputStream(), s.getOutputStream());
+                tlsServerProtocol.accept(new MockX9146TlsServer());
+            } finally {
+                tlsServerProtocol.close();
+//                s.close();
+            }
+        } finally {
+            ss.close();
         }
     }
 
@@ -151,7 +158,7 @@ public class TlsX9146ProtocolTest
             }
             catch (Exception e)
             {
-//                throw new RuntimeException(e);
+                throw new RuntimeException(e);
             }
         }
     }

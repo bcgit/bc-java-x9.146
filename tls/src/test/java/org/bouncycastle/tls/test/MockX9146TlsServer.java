@@ -90,38 +90,44 @@ class MockX9146TlsServer
 
     public CertificateRequest getCertificateRequest() throws IOException
     {
-        Vector serverSigAlgs = null;
-        if (TlsUtils.isSignatureAlgorithmsExtensionAllowed(context.getServerVersion()))
-        {
-            serverSigAlgs = TlsUtils.getDefaultSupportedSignatureAlgorithms(context);
-        }
 
-        Vector certificateAuthorities = new Vector();
-//      certificateAuthorities.addElement(TlsTestUtils.loadBcCertificateResource("x509-ca-dsa.pem").getSubject());
-//      certificateAuthorities.addElement(TlsTestUtils.loadBcCertificateResource("x509-ca-ecdsa.pem").getSubject());
-//      certificateAuthorities.addElement(TlsTestUtils.loadBcCertificateResource("x509-ca-rsa.pem").getSubject());
+        //NOT NEEDED FOR X9.146 POC
 
-        // All the CA certificates are currently configured with this subject
-        certificateAuthorities.addElement(new X500Name("CN=BouncyCastle TLS Test CA"));
+        return null;
 
-        if (TlsUtils.isTLSv13(context))
-        {
-            // TODO[tls13] Support for non-empty request context
-            byte[] certificateRequestContext = TlsUtils.EMPTY_BYTES;
-
-            // TODO[tls13] Add TlsTestConfig.serverCertReqSigAlgsCert
-            Vector serverSigAlgsCert = null;
-
-            return new CertificateRequest(certificateRequestContext, serverSigAlgs, serverSigAlgsCert,
-                certificateAuthorities);
-        }
-        else
-        {
-            short[] certificateTypes = new short[]{ ClientCertificateType.rsa_sign,
-                ClientCertificateType.dss_sign, ClientCertificateType.ecdsa_sign };
-
-            return new CertificateRequest(certificateTypes, serverSigAlgs, certificateAuthorities);
-        }
+//        Vector serverSigAlgs = null;
+//        if (TlsUtils.isSignatureAlgorithmsExtensionAllowed(context.getServerVersion()))
+//        {
+//            serverSigAlgs = TlsUtils.getDefaultSupportedSignatureAlgorithms(context);
+//        }
+//
+//        Vector certificateAuthorities = new Vector();
+//      certificateAuthorities.addElement(TlsTestUtils.loadBcCertificateResource("x9146/ca-P256-mldsa44-cert.pem").getSubject());
+////      certificateAuthorities.addElement(TlsTestUtils.loadBcCertificateResource("x509-ca-dsa.pem").getSubject());
+////      certificateAuthorities.addElement(TlsTestUtils.loadBcCertificateResource("x509-ca-ecdsa.pem").getSubject());
+////      certificateAuthorities.addElement(TlsTestUtils.loadBcCertificateResource("x509-ca-rsa.pem").getSubject());
+//
+//        // All the CA certificates are currently configured with this subject
+//        certificateAuthorities.addElement(new X500Name("CN=BouncyCastle TLS Test CA"));
+//
+//        if (TlsUtils.isTLSv13(context))
+//        {
+//            // TODO[tls13] Support for non-empty request context
+//            byte[] certificateRequestContext = TlsUtils.EMPTY_BYTES;
+//
+//            // TODO[tls13] Add TlsTestConfig.serverCertReqSigAlgsCert
+//            Vector serverSigAlgsCert = null;
+//
+//            return new CertificateRequest(certificateRequestContext, serverSigAlgs, serverSigAlgsCert,
+//                certificateAuthorities);
+//        }
+//        else
+//        {
+//            short[] certificateTypes = new short[]{ ClientCertificateType.rsa_sign,
+//                ClientCertificateType.dss_sign, ClientCertificateType.ecdsa_sign };
+//
+//            return new CertificateRequest(certificateTypes, serverSigAlgs, certificateAuthorities);
+//        }
     }
 
     public void notifyClientCertificate(org.bouncycastle.tls.Certificate clientCertificate) throws IOException
@@ -145,12 +151,15 @@ class MockX9146TlsServer
         }
 
         String[] trustedCertResources = new String[]{
-                "x9146/ca-P256-dilithium2-cert.pem",
+                "x9146/ca-P256-mldsa44-cert.pem",
 //                "x9146/ca-P256-falcon1-cert.pem"
         };
 
+        //TODO[X9.146] process the trusted cert resource via provided cks code
+        short cksCode = context.getSecurityParameters().getCertificateKeySelectionCode();
+
         TlsCertificate[] certPath = TlsTestUtils.getTrustedCertPath(context.getCrypto(), chain[0],
-            trustedCertResources);
+            trustedCertResources, cksCode);
 
         if (null == certPath)
         {
@@ -187,6 +196,10 @@ class MockX9146TlsServer
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
 
+        //DO I NEED TO DO THIS
+        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, new byte[]{2});
+
+
         //TODO: Do we need to check for CKS Code Extension ?? (create hasCertificateKeySelection)
         super.processClientExtensions(clientExtensions);
     }
@@ -199,8 +212,8 @@ class MockX9146TlsServer
         }
         //TODO[x9.146]: Change TlsExtensionsUtils.getCertficationKeySelection to return a vector of shorts instead of just one ckscode
 
-        TlsExtensionsUtils.addCertificationKeySelection(serverExtensions, TlsExtensionsUtils.getCertificationKeySelection(clientExtensions));
-        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{3});
+//        TlsExtensionsUtils.addCertificationKeySelection(serverExtensions, TlsExtensionsUtils.getCertificationKeySelection(clientExtensions));
+        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{2});
 
         return super.getServerExtensions();
     }
@@ -231,30 +244,8 @@ class MockX9146TlsServer
 
         return TlsTestUtils.loadDualSignerCredentials(context, clientSigAlgs,
                 SignatureAlgorithm.ecdsa, SignatureAlgorithm.dilithiumr3_2,
-                "x9146/server-P256-dilithium2-cert.pem",
-                "x9146/server-P256-key.pem", "x9146/server-dilithium2-key-pq.pem");
-
-//        short cksCode = context.getSecurityParameters().getCertificateKeySelectionCode();
-//        switch (cksCode)
-//        {
-//            case CertificateKeySelectionType.cks_default:
-//            case CertificateKeySelectionType.cks_native:
-//            {
-//                return TlsTestUtils.loadSignerCredentials(context, clientSigAlgs, SignatureAlgorithm.ecdsa,
-//                "x9146/server-P256-dilithium2-cert.pem", "x9146/server-P256-key.pem");
-//            }
-//            case CertificateKeySelectionType.cks_alternate:
-//            {
-//                return TlsTestUtils.loadSignerCredentials(context, clientSigAlgs, SignatureAlgorithm.dilithiumr3_2,
-//                        "x9146/server-P256-dilithium2-cert.pem", "x9146/server-dilithium2-key-pq.pem");
-//            }
-//            case CertificateKeySelectionType.cks_both:
-//            {
-//                throw new UnsupportedOperationException();
-//            }
-//            default:
-//                throw new UnsupportedOperationException();
-//        }
+                "x9146/server-P256-mldsa44-cert.pem",
+                "x9146/server-P256-key.pem", "x9146/server-mldsa44-key-pq.pem");
     }
     protected TlsCredentialedSigner getRSASignerCredentials() throws IOException
     {

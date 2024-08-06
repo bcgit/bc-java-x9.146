@@ -174,7 +174,7 @@ class MockX9146TlsClient
                 }
 
                 String[] trustedCertResources = new String[]{
-                        "x9146/server-P256-dilithium2-cert.pem"
+                        "x9146/server-P256-mldsa44-cert.pem"
 //                        "x9146/server-P256-falcon1-cert.pem"
                 };
 

@@ -16,6 +16,7 @@ import org.bouncycastle.tls.crypto.TlsCrypto;
 import org.bouncycastle.tls.crypto.TlsSecret;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Integers;
+import org.bouncycastle.util.encoders.Hex;
 
 public abstract class TlsProtocol
     implements TlsCloseable
@@ -664,6 +665,13 @@ public abstract class TlsProtocol
                 checkReceivedChangeCipherSpec(HandshakeType.finished == type);
                 break;
             }
+            }
+
+            {
+                ByteArrayOutputStream testOut = new ByteArrayOutputStream();
+                queue.copyTo(testOut, totalLength);
+                String pro = this instanceof TlsClientProtocol ? "Client" : "Server";
+                System.out.println(pro + "R-(" + this.connection_state + "): " + Hex.toHexString(testOut.toByteArray()));
             }
 
             HandshakeMessageInput buf = queue.readHandshakeMessage(totalLength);

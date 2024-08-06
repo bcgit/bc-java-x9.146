@@ -45,9 +45,9 @@ public class SignatureAlgorithm
      */
     public static final short falcon_512 = 12;
     public static final short falcon_1024 = 13;
-    public static final short dilithiumr3_2 = 0xA0;
-    public static final short dilithiumr3_3 = 0xA3;
-    public static final short dilithiumr3_5 = 0xA5;
+    public static final short dilithiumr3_2 = 0xD0;
+    public static final short dilithiumr3_3 = 0xD1;
+    public static final short dilithiumr3_5 = 0xD2;
 
     public static short getClientCertificateType(short signatureAlgorithm)
     {
