@@ -648,8 +648,6 @@ public class TlsTestUtils
             String eeCertResource = resources[i];
             TlsCertificate eeCert = loadCertificateResource(crypto, eeCertResource);
 
-            System.out.println("cacert: " + Hex.toHexString(cert.getEncoded()));
-            System.out.println("eecert: " + Hex.toHexString(eeCert.getEncoded()));
             if (areSameCertificate(cert, eeCert))
             {
                 String caCertResource = getCACertResource(eeCertResource);
@@ -682,8 +680,7 @@ public class TlsTestUtils
 
                 case CertificateKeySelectionType.cks_external:
                 default:
-                    System.out.println(cksCode);
-                    throw new RuntimeException("Unknown Certificate Key Selection Code!");
+                    throw new RuntimeException("Unknown Certificate Key Selection Code: " + cksCode);
 
             }
 

@@ -11,6 +11,7 @@ import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.AlertLevel;
 import org.bouncycastle.tls.CertificateRequest;
 import org.bouncycastle.tls.ChannelBinding;
+import org.bouncycastle.tls.CipherSuite;
 import org.bouncycastle.tls.ClientCertificateType;
 import org.bouncycastle.tls.DefaultTlsClient;
 import org.bouncycastle.tls.MaxFragmentLength;
@@ -36,10 +37,21 @@ class MockX9146TlsClient
     TlsSession session;
 
     short cksCode = 0;
+    int[] selectedCipherSuites = null;
+
+    public void setSelectedCipherSuites(int[] selectedCipherSuites)
+    {
+        this.selectedCipherSuites = selectedCipherSuites;
+    }
 
     public void setCksCode(short cksCode)
     {
         this.cksCode = cksCode;
+    }
+
+    protected int[] getSupportedCipherSuites()
+    {
+        return TlsUtils.getSupportedCipherSuites(getCrypto(), selectedCipherSuites);
     }
 
     MockX9146TlsClient(TlsSession session)
@@ -47,6 +59,8 @@ class MockX9146TlsClient
         super(new BcTlsCrypto());
 
         this.session = session;
+        selectedCipherSuites = super.getSupportedCipherSuites();
+
     }
 
     protected Vector getProtocolNames()

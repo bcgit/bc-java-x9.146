@@ -7,6 +7,7 @@ import org.bouncycastle.tls.AlertLevel;
 import org.bouncycastle.tls.CertificateKeySelectionType;
 import org.bouncycastle.tls.CertificateRequest;
 import org.bouncycastle.tls.ChannelBinding;
+import org.bouncycastle.tls.CipherSuite;
 import org.bouncycastle.tls.ClientCertificateType;
 import org.bouncycastle.tls.DefaultTlsServer;
 import org.bouncycastle.tls.ProtocolName;
@@ -27,12 +28,28 @@ import java.io.PrintStream;
 import java.util.Hashtable;
 import java.util.Vector;
 
+
 class MockX9146TlsServer
     extends DefaultTlsServer
 {
+
+    int[] selectedCipherSuites = null;
+    byte cksCode = 0;
+
+    public void setSelectedCipherSuites(int[] selectedCipherSuites)
+    {
+        this.selectedCipherSuites = selectedCipherSuites;
+    }
+
+    public void setCksCode(int cksCode)
+    {
+        this.cksCode = (byte)cksCode;
+    }
+
     MockX9146TlsServer()
     {
         super(new BcTlsCrypto());
+        selectedCipherSuites = super.getSupportedCipherSuites();
     }
 
     protected Vector getProtocolNames()
@@ -55,6 +72,11 @@ class MockX9146TlsServer
         }
 
         return super.getCredentials();
+    }
+
+    protected int[] getSupportedCipherSuites()
+    {
+        return TlsUtils.getSupportedCipherSuites(getCrypto(), selectedCipherSuites);
     }
 
     public void notifyAlertRaised(short alertLevel, short alertDescription, String message, Throwable cause)
@@ -197,7 +219,7 @@ class MockX9146TlsServer
         }
 
         //DO I NEED TO DO THIS
-        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, new byte[]{2});
+//        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, new byte[]{3});
 
 
         //TODO: Do we need to check for CKS Code Extension ?? (create hasCertificateKeySelection)
@@ -213,7 +235,11 @@ class MockX9146TlsServer
         //TODO[x9.146]: Change TlsExtensionsUtils.getCertficationKeySelection to return a vector of shorts instead of just one ckscode
 
 //        TlsExtensionsUtils.addCertificationKeySelection(serverExtensions, TlsExtensionsUtils.getCertificationKeySelection(clientExtensions));
-        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{2});
+        // if (TlsExtensionsUtils.getCertificationKeySelection(clientExtensions).contains(cksCode))
+        // {
+        //      throw new Exception("server cksCode not support client cksCode");
+        // }
+        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{cksCode});
 
         return super.getServerExtensions();
     }

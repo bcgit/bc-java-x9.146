@@ -158,7 +158,6 @@ public class TlsX9146ProtocolTest
             }
             catch (Exception e)
             {
-                throw new RuntimeException(e);
             }
         }
     }

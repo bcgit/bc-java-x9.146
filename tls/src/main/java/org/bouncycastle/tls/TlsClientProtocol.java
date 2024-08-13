@@ -1608,8 +1608,6 @@ public class TlsClientProtocol
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
         CertificateVerify certificateVerify = CertificateVerify.parse(tlsClientContext, buf);
-        System.out.println("alg: " + certificateVerify.getAlgorithm());
-        System.out.println("sig: " + Hex.toHexString(certificateVerify.getSignature()));
 
         assertEmpty(buf);
 
