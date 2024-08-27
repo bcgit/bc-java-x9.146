@@ -27,9 +27,9 @@ public class TlsX9146ProtocolEnumeratedTest
     static TlsClientProtocol openTlsConnection(String address, int port, TlsClient client) throws IOException
     {
         Socket s = new Socket(address, port);
-        System.out.println(s.getPort());
-        System.out.println(s.getInetAddress());
-        System.out.println(s.getLocalAddress());
+//        System.out.println(s.getPort());
+//        System.out.println(s.getInetAddress());
+//        System.out.println(s.getLocalAddress());
         TlsClientProtocol protocol = new TlsClientProtocol(s.getInputStream(), s.getOutputStream());
         protocol.connect(client);
         return protocol;
@@ -150,14 +150,14 @@ public class TlsX9146ProtocolEnumeratedTest
             String line;
             while ((line = stdoutReader.readLine()) != null)
             {
-                System.out.println(line);
+//                System.out.println(line);
             }
 
             // Read any errors from the attempted command
             BufferedReader stderrReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
             while ((line = stderrReader.readLine()) != null)
             {
-                System.err.println(line);
+//                System.err.println(line);
             }
 
             // Wait for the process to complete
@@ -392,10 +392,10 @@ public class TlsX9146ProtocolEnumeratedTest
         serverThread.start();
 
         // Optionally, wait for the server thread to be ready or sleep for some time
-         Thread.sleep(1000); // For example, wait 1 second
+//         Thread.sleep(1000); // For example, wait 1 second
 
         // Run client logic after starting the server
-        clientWithWolfServer(2, 2, 3, 1, 1);
+        clientWithWolfServer(0, 2, 3, 1, 1);
 
         // Optionally, wait for the server to finish or forcibly terminate it
         // serverThread.join(); // Wait for the server thread to finish
@@ -425,8 +425,8 @@ public class TlsX9146ProtocolEnumeratedTest
         int count = Streams.readFully(clientProtocol.getInputStream(), echoBuf);
         byte[] echo = Arrays.copyOf(echoBuf, count);
 
-        System.out.println("data: " + Hex.toHexString(data));
-        System.out.println("echo: " + Hex.toHexString(echo));
+//        System.out.println("data: " + Hex.toHexString(data));
+//        System.out.println("echo: " + Hex.toHexString(echo));
 
 
         assertTrue(Arrays.areEqual("I hear you fa shizzle!".getBytes(), echo));

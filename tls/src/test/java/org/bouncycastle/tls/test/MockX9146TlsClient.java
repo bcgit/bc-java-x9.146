@@ -57,7 +57,6 @@ class MockX9146TlsClient
     MockX9146TlsClient(TlsSession session)
     {
         super(new BcTlsCrypto());
-
         this.session = session;
         selectedCipherSuites = super.getSupportedCipherSuites();
 
@@ -144,7 +143,10 @@ class MockX9146TlsClient
             TlsExtensionsUtils.addMaxFragmentLengthExtension(clientExtensions, MaxFragmentLength.pow2_9);
             TlsExtensionsUtils.addPaddingExtension(clientExtensions, context.getCrypto().getSecureRandom().nextInt(16));
             TlsExtensionsUtils.addTruncatedHMacExtension(clientExtensions);
-            TlsExtensionsUtils.addCertificationKeySelection(clientExtensions, cksCode);
+            if (cksCode != 0)
+            {
+                TlsExtensionsUtils.addCertificationKeySelection(clientExtensions, cksCode);
+            }
         }
         return clientExtensions;
     }
