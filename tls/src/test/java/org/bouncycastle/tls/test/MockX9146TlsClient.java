@@ -1,6 +1,7 @@
 package org.bouncycastle.tls.test;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.PrintStream;
 import java.util.Hashtable;
 import java.util.Vector;
@@ -39,6 +40,8 @@ class MockX9146TlsClient
     short cksCode = 0;
     int[] selectedCipherSuites = null;
 
+    boolean DEBUG = false;
+
     public void setSelectedCipherSuites(int[] selectedCipherSuites)
     {
         this.selectedCipherSuites = selectedCipherSuites;
@@ -59,7 +62,6 @@ class MockX9146TlsClient
         super(new BcTlsCrypto());
         this.session = session;
         selectedCipherSuites = super.getSupportedCipherSuites();
-
     }
 
     protected Vector getProtocolNames()
@@ -77,24 +79,30 @@ class MockX9146TlsClient
 
     public void notifyAlertRaised(short alertLevel, short alertDescription, String message, Throwable cause)
     {
-        PrintStream out = (alertLevel == AlertLevel.fatal) ? System.err : System.out;
-        out.println("TLS client raised alert: " + AlertLevel.getText(alertLevel)
-                + ", " + AlertDescription.getText(alertDescription));
-        if (message != null)
+        if(DEBUG)
         {
-            out.println("> " + message);
-        }
-        if (cause != null)
-        {
-            cause.printStackTrace(out);
+            PrintStream out = (alertLevel == AlertLevel.fatal) ? System.err : System.out;
+            out.println("TLS client raised alert: " + AlertLevel.getText(alertLevel)
+                    + ", " + AlertDescription.getText(alertDescription));
+            if (message != null)
+            {
+                out.println("> " + message);
+            }
+            if (cause != null)
+            {
+                cause.printStackTrace(out);
+            }
         }
     }
 
     public void notifyAlertReceived(short alertLevel, short alertDescription)
     {
-        PrintStream out = (alertLevel == AlertLevel.fatal) ? System.err : System.out;
-        out.println("TLS client received alert: " + AlertLevel.getText(alertLevel)
-                + ", " + AlertDescription.getText(alertDescription));
+        if(DEBUG)
+        {
+            PrintStream out = (alertLevel == AlertLevel.fatal) ? System.err : System.out;
+            out.println("TLS client received alert: " + AlertLevel.getText(alertLevel)
+                    + ", " + AlertDescription.getText(alertDescription));
+        }
     }
 
     protected Vector getSupportedSignatureAlgorithms()
@@ -154,8 +162,10 @@ class MockX9146TlsClient
     public void notifyServerVersion(ProtocolVersion serverVersion) throws IOException
     {
         super.notifyServerVersion(serverVersion);
-
-        System.out.println("TLS client negotiated " + serverVersion);
+        if(DEBUG)
+        {
+            System.out.println("TLS client negotiated " + serverVersion);
+        }
     }
 
     public TlsAuthentication getAuthentication() throws IOException
@@ -166,7 +176,7 @@ class MockX9146TlsClient
             {
                 TlsCertificate[] chain = serverCertificate.getCertificate().getCertificateList();
 
-                System.out.println("TLS client received server certificate chain of length " + chain.length);
+//                System.out.println("TLS client received server certificate chain of length " + chain.length);
 //                Certificate prev = Certificate.getInstance(chain[0].getEncoded()); // TODO: check if 0 is ca or ee
                 for (int i = 0; i != chain.length; i++)
                 {
@@ -224,7 +234,7 @@ class MockX9146TlsClient
         super.notifyHandshakeComplete();
 
         ProtocolName protocolName = context.getSecurityParametersConnection().getApplicationProtocol();
-        if (protocolName != null)
+        if (protocolName != null && DEBUG)
         {
             System.out.println("Client ALPN: " + protocolName.getUtf8Decoding());
         }
@@ -237,29 +247,38 @@ class MockX9146TlsClient
                 byte[] newSessionID = newSession.getSessionID();
                 String hex = hex(newSessionID);
 
-                if (this.session != null && Arrays.areEqual(this.session.getSessionID(), newSessionID))
+                if(DEBUG)
                 {
-                    System.out.println("Client resumed session: " + hex);
-                }
-                else
-                {
-                    System.out.println("Client established session: " + hex);
+                    if (this.session != null && Arrays.areEqual(this.session.getSessionID(), newSessionID))
+                    {
+                        System.out.println("Client resumed session: " + hex);
+                    }
+                    else
+                    {
+                        System.out.println("Client established session: " + hex);
+                    }
                 }
 
                 this.session = newSession;
             }
 
             byte[] tlsServerEndPoint = context.exportChannelBinding(ChannelBinding.tls_server_end_point);
-            if (null != tlsServerEndPoint)
+            if (null != tlsServerEndPoint && DEBUG)
             {
                 System.out.println("Client 'tls-server-end-point': " + hex(tlsServerEndPoint));
             }
 
             byte[] tlsUnique = context.exportChannelBinding(ChannelBinding.tls_unique);
-            System.out.println("Client 'tls-unique': " + hex(tlsUnique));
+            if(DEBUG)
+            {
+                System.out.println("Client 'tls-unique': " + hex(tlsUnique));
+            }
 
             byte[] tlsExporter = context.exportChannelBinding(ChannelBinding.tls_exporter);
-            System.out.println("Client 'tls-exporter': " + hex(tlsExporter));
+            if(DEBUG)
+            {
+                System.out.println("Client 'tls-exporter': " + hex(tlsExporter));
+            }
         }
     }
 

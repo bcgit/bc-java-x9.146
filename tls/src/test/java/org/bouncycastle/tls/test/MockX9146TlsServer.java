@@ -35,6 +35,7 @@ class MockX9146TlsServer
 
     int[] selectedCipherSuites = null;
     byte cksCode = 0;
+    boolean DEBUG = true;
 
     public void setSelectedCipherSuites(int[] selectedCipherSuites)
     {
@@ -81,32 +82,39 @@ class MockX9146TlsServer
 
     public void notifyAlertRaised(short alertLevel, short alertDescription, String message, Throwable cause)
     {
-        PrintStream out = (alertLevel == AlertLevel.fatal) ? System.err : System.out;
-        out.println("TLS server raised alert: " + AlertLevel.getText(alertLevel)
-            + ", " + AlertDescription.getText(alertDescription));
-        if (message != null)
+        if(DEBUG)
         {
-            out.println("> " + message);
-        }
-        if (cause != null)
-        {
-            cause.printStackTrace(out);
+            PrintStream out = (alertLevel == AlertLevel.fatal) ? System.err : System.out;
+            out.println("TLS server raised alert: " + AlertLevel.getText(alertLevel)
+                    + ", " + AlertDescription.getText(alertDescription));
+            if (message != null)
+            {
+                out.println("> " + message);
+            }
+            if (cause != null)
+            {
+                cause.printStackTrace(out);
+            }
         }
     }
 
     public void notifyAlertReceived(short alertLevel, short alertDescription)
     {
-        PrintStream out = (alertLevel == AlertLevel.fatal) ? System.err : System.out;
-        out.println("TLS server received alert: " + AlertLevel.getText(alertLevel)
-            + ", " + AlertDescription.getText(alertDescription));
+        if(DEBUG)
+        {
+            PrintStream out = (alertLevel == AlertLevel.fatal) ? System.err : System.out;
+            out.println("TLS server received alert: " + AlertLevel.getText(alertLevel)
+                    + ", " + AlertDescription.getText(alertDescription));
+        }
     }
 
     public ProtocolVersion getServerVersion() throws IOException
     {
         ProtocolVersion serverVersion = super.getServerVersion();
-
-        System.out.println("TLS server negotiated " + serverVersion);
-
+        if(DEBUG)
+        {
+            System.out.println("TLS server negotiated " + serverVersion);
+        }
         return serverVersion;
     }
 
@@ -155,14 +163,19 @@ class MockX9146TlsServer
     public void notifyClientCertificate(org.bouncycastle.tls.Certificate clientCertificate) throws IOException
     {
         TlsCertificate[] chain = clientCertificate.getCertificateList();
-
-        System.out.println("TLS server received client certificate chain of length " + chain.length);
+        if(DEBUG)
+        {
+            System.out.println("TLS server received client certificate chain of length " + chain.length);
+        }
         for (int i = 0; i != chain.length; i++)
         {
             Certificate entry = Certificate.getInstance(chain[i].getEncoded());
             // TODO Create fingerprint based on certificate signature algorithm digest
-            System.out.println("    fingerprint:SHA-256 " + TlsTestUtils.fingerprint(entry) + " ("
-                + entry.getSubject() + ")");
+            if(DEBUG)
+            {
+                System.out.println("    fingerprint:SHA-256 " + TlsTestUtils.fingerprint(entry) + " ("
+                        + entry.getSubject() + ")");
+            }
         }
 
         boolean isEmpty = (clientCertificate == null || clientCertificate.isEmpty());
@@ -196,19 +209,26 @@ class MockX9146TlsServer
         super.notifyHandshakeComplete();
 
         ProtocolName protocolName = context.getSecurityParametersConnection().getApplicationProtocol();
-        if (protocolName != null)
+        if (protocolName != null && DEBUG)
         {
             System.out.println("Server ALPN: " + protocolName.getUtf8Decoding());
         }
 
         byte[] tlsServerEndPoint = context.exportChannelBinding(ChannelBinding.tls_server_end_point);
-        System.out.println("Server 'tls-server-end-point': " + hex(tlsServerEndPoint));
-
+        if(DEBUG)
+        {
+            System.out.println("Server 'tls-server-end-point': " + hex(tlsServerEndPoint));
+        }
         byte[] tlsUnique = context.exportChannelBinding(ChannelBinding.tls_unique);
-        System.out.println("Server 'tls-unique': " + hex(tlsUnique));
-
+        if(DEBUG)
+        {
+            System.out.println("Server 'tls-unique': " + hex(tlsUnique));
+        }
         byte[] tlsExporter = context.exportChannelBinding(ChannelBinding.tls_exporter);
-        System.out.println("Server 'tls-exporter': " + hex(tlsExporter));
+        if(DEBUG)
+        {
+            System.out.println("Server 'tls-exporter': " + hex(tlsExporter));
+        }
     }
 
     public void processClientExtensions(Hashtable clientExtensions) throws IOException
@@ -219,7 +239,7 @@ class MockX9146TlsServer
         }
 
         //DO I NEED TO DO THIS
-//        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, new byte[]{3});
+        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, new byte[]{3});
 
 
         //TODO: Do we need to check for CKS Code Extension ?? (create hasCertificateKeySelection)

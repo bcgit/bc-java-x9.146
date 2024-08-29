@@ -18,6 +18,7 @@ import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.logging.LogManager;
 
 import static java.lang.Thread.sleep;
 
@@ -162,7 +163,7 @@ public class TlsX9146ProtocolEnumeratedTest
 
             // Wait for the process to complete
             int exitCode = process.waitFor();
-            System.out.println("Process exited with code: " + exitCode);
+//            System.out.println("Process exited with code: " + exitCode);
 
         }
         catch (IOException e)
@@ -371,10 +372,33 @@ public class TlsX9146ProtocolEnumeratedTest
 
     }
 
-    public void testCustom()
-        throws Exception
+
+    public void testBCserverWOLFclient()
+            throws Exception
     {
 
+        Runnable serverTask = new Runnable() {
+            public void run() {
+                try {
+                    serverWithWolfClient(2, 2,3,1,1);
+                } catch (Exception e) {
+                    // Handle exceptions thrown by the server
+                    e.printStackTrace();
+                }
+            }
+        };
+
+        // Create and start the server thread
+//        Thread serverThread = new Thread(serverTask);
+//        serverThread.start();
+
+        runWolfSSLClient(2,3,1,1);
+
+//        serverThread.join();
+    }
+    public void testBCclientWOLFserver()
+        throws Exception
+    {
         // Using a Runnable to wrap the server execution logic
         Runnable serverTask = new Runnable() {
             public void run() {
@@ -391,16 +415,9 @@ public class TlsX9146ProtocolEnumeratedTest
         Thread serverThread = new Thread(serverTask);
         serverThread.start();
 
-        // Optionally, wait for the server thread to be ready or sleep for some time
-//         Thread.sleep(1000); // For example, wait 1 second
-
-        // Run client logic after starting the server
         clientWithWolfServer(0, 2, 3, 1, 1);
 
-        // Optionally, wait for the server to finish or forcibly terminate it
         // serverThread.join(); // Wait for the server thread to finish
-
-
     }
 
     public void clientWithWolfServer(int cks, int nativeCode, int alt, int km, int tls) throws Exception
@@ -442,7 +459,8 @@ public class TlsX9146ProtocolEnumeratedTest
     
         System.out.println("ServerSocket port: " + ss.getLocalPort());
         System.out.println("ServerSocket ip: " + ss.getInetAddress());
-    
+
+        sleep(1000);
         try {
             Socket s = ss.accept();
             TlsServerProtocol tlsServerProtocol = new TlsServerProtocol();

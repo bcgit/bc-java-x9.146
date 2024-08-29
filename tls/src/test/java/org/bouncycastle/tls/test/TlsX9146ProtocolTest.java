@@ -4,8 +4,6 @@ import junit.framework.TestCase;
 import org.bouncycastle.tls.CertificateKeySelectionType;
 import org.bouncycastle.tls.TlsClient;
 import org.bouncycastle.tls.TlsClientProtocol;
-import org.bouncycastle.tls.TlsExtensionsUtils;
-import org.bouncycastle.tls.TlsServer;
 import org.bouncycastle.tls.TlsServerProtocol;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.encoders.Hex;
@@ -15,7 +13,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
-import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 
@@ -42,10 +39,10 @@ public class TlsX9146ProtocolTest
 
 
         MockX9146TlsClient client = new MockX9146TlsClient(null);
-        client.setCksCode(CertificateKeySelectionType.cks_default);
+//        client.setCksCode(CertificateKeySelectionType.cks_default);
 //        client.setCksCode(CertificateKeySelectionType.cks_native);
 //        client.setCksCode(CertificateKeySelectionType.cks_alternate);
-//        client.setCksCode(CertificateKeySelectionType.cks_both);
+        client.setCksCode(CertificateKeySelectionType.cks_both);
 
         TlsClientProtocol clientProtocol = openTlsConnection("127.0.0.1", 11111, client);
 
@@ -86,10 +83,12 @@ public class TlsX9146ProtocolTest
             TlsServerProtocol tlsServerProtocol = new TlsServerProtocol();
             try {
                 tlsServerProtocol = new TlsServerProtocol(s.getInputStream(), s.getOutputStream());
-                tlsServerProtocol.accept(new MockX9146TlsServer());
+                MockX9146TlsServer server = new MockX9146TlsServer();
+                server.setCksCode(3);
+                tlsServerProtocol.accept(server);
             } finally {
                 tlsServerProtocol.close();
-//                s.close();
+                s.close();
             }
         } finally {
             ss.close();
@@ -112,9 +111,10 @@ public class TlsX9146ProtocolTest
         MockX9146TlsClient client = new MockX9146TlsClient(null);
 
         // Adds the CKS Code to the Hello Message
-        client.setCksCode(CertificateKeySelectionType.cks_both);
+//        client.setCksCode(CertificateKeySelectionType.cks_default);
+        client.setCksCode(CertificateKeySelectionType.cks_native);
 //        client.setCksCode(CertificateKeySelectionType.cks_alternate);
-//        client.setCksCode(CertificateKeySelectionType.cks_native);
+//        client.setCksCode(CertificateKeySelectionType.cks_both);
 
         clientProtocol.connect(client);
 
