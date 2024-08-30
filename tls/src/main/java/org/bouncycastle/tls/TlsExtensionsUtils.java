@@ -47,6 +47,7 @@ public class TlsExtensionsUtils
     public static final Integer EXT_truncated_hmac = Integers.valueOf(ExtensionType.truncated_hmac);
     public static final Integer EXT_trusted_ca_keys = Integers.valueOf(ExtensionType.trusted_ca_keys);
     public static final Integer EXT_certificate_key_selection = Integers.valueOf(ExtensionType.certificate_key_selection);
+    public static final Integer EXT_hybrid_scheme_type = Integers.valueOf(ExtensionType.certificate_key_selection);
 
     public static Hashtable ensureExtensionsInitialised(Hashtable extensions)
     {
