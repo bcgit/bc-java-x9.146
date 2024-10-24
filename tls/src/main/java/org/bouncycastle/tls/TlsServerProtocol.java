@@ -530,6 +530,10 @@ public class TlsServerProtocol
             clientHello.getExtensions());
         securityParameters.serverSupportedGroups = tlsServer.getSupportedGroups();
 
+        //TODO: check when to do this
+        securityParameters.hybridSchemeList = TlsExtensionsUtils.getHybridSchemeList(
+                clientHello.getExtensions());
+
         if (ProtocolVersion.TLSv13.isEqualOrEarlierVersionOf(serverVersion))
         {
             // See RFC 8446 D.4.
@@ -662,6 +666,9 @@ public class TlsServerProtocol
             }
 
             securityParameters.clientSupportedGroups = TlsExtensionsUtils.getSupportedGroupsExtension(clientExtensions);
+
+            //TODO: check when to do this
+            securityParameters.hybridSchemeList = TlsExtensionsUtils.getHybridSchemeList(clientExtensions);
 
             tlsServer.processClientExtensions(clientExtensions);
         }
@@ -1578,6 +1585,20 @@ public class TlsServerProtocol
         short cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientExtensions);
         securityParameters.cksCode = cksCode;
 
+        //TODO: check when this should be created!
+
+        if (!selectedPSK13)
+        {
+            TlsCredentialedSigner serverCredentials = TlsUtils.establish13ServerCredentials(tlsServer);
+            if (null == serverCredentials)
+            {
+                throw new TlsFatalAlert(AlertDescription.internal_error);
+            }
+            HybridSchemeSignature hybridSchemeSignature = TlsUtils.generateHybridSchemeSignature(tlsServerContext,
+                    serverCredentials, handshakeHash);
+            TlsExtensionsUtils.addHybridSchemeSignature(serverExtensions, hybridSchemeSignature);
+        }
+
         byte[] serverHelloTranscriptHash = TlsUtils.getCurrentPRFHash(handshakeHash);
 
         TlsUtils.establish13PhaseHandshake(tlsServerContext, serverHelloTranscriptHash, recordStream);
@@ -1649,7 +1670,6 @@ public class TlsServerProtocol
 
                 //TODO[x9.146]: How do we select which cksCode to use if multiple is sent?
                 // (find first mutual cksCode supported by both client and server?)
-
 
 
                 DigitallySigned certificateVerify = TlsUtils.generate13CertificateVerify(tlsServerContext,

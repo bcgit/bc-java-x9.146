@@ -5,6 +5,7 @@ import java.security.SecureRandom;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.params.ParametersWithRandom;
 import org.bouncycastle.pqc.crypto.MessageSigner;
+import org.bouncycastle.util.encoders.Hex;
 
 public class DilithiumSigner
     implements MessageSigner
@@ -48,6 +49,8 @@ public class DilithiumSigner
 
     public boolean verifySignature(byte[] message, byte[] signature)
     {
+        System.out.println("msg: " + Hex.toHexString(message));
+        System.out.println("sig: " + Hex.toHexString(signature));
         DilithiumEngine engine = pubKey.getParameters().getEngine(random);
 
         return engine.signOpen(message, signature, signature.length, pubKey.rho, pubKey.t1);

@@ -1611,6 +1611,18 @@ public class TlsClientProtocol
 
         assertEmpty(buf);
 
+
+
+        //TODO: 1.3.2
+        // check server extension if alternative algorithm is supported or not
+        // if supported and hybrid scheme was not sent throw an error
+        HybridSchemeSignature hybridSchemeSignature = TlsExtensionsUtils.getHybridSchemeSignature(serverExtensions);
+        if (hybridSchemeSignature != null)
+        {
+            //TODO: should i make a function for server and client separate
+            TlsUtils.verifyHybridSchemeSignature(hybridSchemeSignature, "TLS 1.3, server CertificateVerify",
+                    handshakeHash, tlsClientContext.getSecurityParametersHandshake().getPeerCertificate().getCertificateAt(0));
+        }
         short serverCKS = TlsExtensionsUtils.getCertificationKeySelection(serverExtensions);
         short clientCKS = TlsExtensionsUtils.getCertificationKeySelection(clientExtensions);
 
@@ -1879,6 +1891,9 @@ public class TlsClientProtocol
         }
 
         securityParameters.clientSupportedGroups = TlsExtensionsUtils.getSupportedGroupsExtension(clientExtensions);
+
+        //TODO: check when to add them
+        securityParameters.hybridSchemeList = TlsExtensionsUtils.getHybridSchemeList(clientExtensions);
 
         this.clientBinders = TlsUtils.addPreSharedKeyToClientHello(tlsClientContext, tlsClient, clientExtensions,
             offeredCipherSuites);

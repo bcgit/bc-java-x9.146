@@ -21,6 +21,8 @@ public class SecurityParameters
     int prfHashLength = -1;
     int verifyDataLength = -1;
     short cksCode = 0;
+    int[] hybridSchemeList = null;
+
     TlsSecret baseKeyClient = null;
     TlsSecret baseKeyServer = null;
     TlsSecret earlyExporterMasterSecret = null;
@@ -81,6 +83,7 @@ public class SecurityParameters
         this.serverSigAlgs = null;
         this.serverSigAlgsCert = null;
         this.serverSupportedGroups = null;
+        this.hybridSchemeList = null;
         this.statusRequestVersion = 0;
         this.cksCode = 0;
 
@@ -152,6 +155,10 @@ public class SecurityParameters
     public int[] getClientSupportedGroups()
     {
         return clientSupportedGroups;
+    }
+    public int[] getHybridSchemeList()
+    {
+        return hybridSchemeList;
     }
 
     public byte[] getConnectionIDLocal()

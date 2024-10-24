@@ -2425,6 +2425,48 @@ public class TlsUtils
         return new DigitallySigned(clientAuthAlgorithm, signature);
     }
 
+    static HybridSchemeSignature generateHybridSchemeSignature(TlsContext context, TlsCredentialedSigner credentialedSigner,
+                                              TlsHandshakeHash handshakeHash) throws IOException
+    {
+        // HybridSchemeList:
+        int[] hybridSchemeList = context.getSecurityParameters().hybridSchemeList;
+        if (hybridSchemeList == null)
+        {
+            return null;
+        }
+
+        //How should the server choose which hybrid scheme to choose from?
+        //TODO: check if server supports given schemes
+        int hybridIdentifier = hybridSchemeList[0];
+
+        int signatureScheme = SignatureScheme.from(credentialedSigner.getAltSignatureAndHashAlgorithm());
+
+        //TODO: check how to deal with other certificate formats,
+        // This is for dual X509 cert (i think)
+
+        // Generate Hybrid Scheme Signature values
+
+        // hybrid schemes was negotiated but the SignatureScheme related the secondary signature is not supported
+        // the HybridSchemeSignature can be omitted since it will not be verified.
+        String contextString = context.isServer()
+                ? "TLS 1.3, server CertificateVerify"
+                : "TLS 1.3, client CertificateVerify";
+
+        byte[] signature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
+                handshakeHash, credentialedSigner.getAltSignatureAndHashAlgorithm(),
+                CertificateKeySelectionType.cks_alternate);
+
+        System.out.println(credentialedSigner.getAltSignatureAndHashAlgorithm().toString());
+        HybridSchemeSignature hybridSchemeSignature = new HybridSchemeSignature(
+                hybridIdentifier,
+                signatureScheme,
+                signature
+        );
+        verifyHybridSchemeSignature(hybridSchemeSignature, contextString, handshakeHash, credentialedSigner.getCertificate().getCertificateAt(0));
+
+        return hybridSchemeSignature;
+    }
+
     static DigitallySigned generate13CertificateVerify(TlsContext context, TlsCredentialedSigner credentialedSigner,
         TlsHandshakeHash handshakeHash) throws IOException
     {
@@ -2620,6 +2662,64 @@ public class TlsUtils
             certificateVerify, cksCode);
     }
 
+    public static void verifyHybridSchemeSignature(HybridSchemeSignature hybridSchemeSignature, String contextString,
+                                                    TlsHandshakeHash handshakeHash, TlsCertificate certificate)
+            throws TlsFatalAlert
+    {
+        // Verify the CertificateVerify message contains a correct signature.
+        boolean verified = false;
+
+        //TODO: do other condition according to hybridIdentifier
+        int hybridIdentifier = hybridSchemeSignature.getHybridIdentifier();
+        switch (hybridIdentifier)
+        {
+        case HybridSchemeType.x509_dual_certs:
+            //TODO
+            break;
+        case HybridSchemeType.t_rec_x509_2019:
+            //TODO
+            break;
+        case HybridSchemeType.t_rec_x509_chamelion:
+            //TODO:
+            break;
+        case HybridSchemeType.none:
+            //TODO: check if should throw error or ignore hybrid verify all together
+        default:
+            break;
+        }
+
+        try
+        {
+            int signatureScheme = hybridSchemeSignature.getAlgorithm();
+            byte[] signature = hybridSchemeSignature.getSignature();
+
+            Tls13Verifier altVerifier = certificate.createAltVerifier(signatureScheme);
+
+            byte[] header = getCertificateVerifyHeader(contextString);
+            System.out.println("header: " + Hex.toHexString(header));
+            byte[] prfHash = getCurrentPRFHash(handshakeHash);
+            System.out.println("prfHash: " + Hex.toHexString(prfHash));
+
+            OutputStream output = altVerifier.getOutputStream();
+            output.write(header, 0, header.length);
+            output.write(prfHash, 0, prfHash.length);
+
+            verified = altVerifier.verifySignature(signature);
+        }
+        catch (TlsFatalAlert e)
+        {
+            throw e;
+        }
+        catch (Exception e)
+        {
+            throw new TlsFatalAlert(AlertDescription.decrypt_error, e);
+        }
+
+        if (!verified)
+        {
+            throw new TlsFatalAlert(AlertDescription.decrypt_error);
+        }
+    }
     private static void verify13CertificateVerify(Vector supportedAlgorithms, String contextString,
         TlsHandshakeHash handshakeHash, TlsCertificate certificate, CertificateVerify certificateVerify, short cksCode)
         throws IOException

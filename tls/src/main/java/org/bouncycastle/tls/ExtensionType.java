@@ -147,7 +147,17 @@ public class ExtensionType
      * X9.146
      */
     public static final int certificate_key_selection = 0xff92; // wolfSSL extension value
-    public static final int hybrid_scheme_type = 0xffff; //
+    public static final int hybrid_scheme_list = 0xffff; // X9.146
+    //Note: The presence of this extension in a ClientHello or ServerHello indicates that
+    // the entity supports specific types of hybrid signatures
+    // while the list of supported algorithms is still provided via the standard TLS extensions
+    // such as the signature_algorithms and signature_algorithms_cert ones.
+    public static final int hybrid_scheme_signature = 0xfefe; // X9.146
+    //Note:  The presence of this extension in the CertificateVerify message provides
+    // the additional signature from the hybrid scheme used.
+    // If supported, the entity validates the signature by using the secondary (hybrid) key.
+    // The secondary key can be provided as part of the certificate (e.g., as an extension)
+    // or via other means (e.g., secondary certificate, out-of-band data, etc.)
 
     public static String getName(int extensionType)
     {
