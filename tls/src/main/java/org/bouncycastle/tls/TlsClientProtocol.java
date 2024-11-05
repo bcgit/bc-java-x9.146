@@ -274,6 +274,10 @@ public class TlsClientProtocol
                     {
                         DigitallySigned certificateVerify = TlsUtils.generate13CertificateVerify(tlsClientContext,
                             clientCredentials, handshakeHash);
+
+//                        TODO is this server extension?
+//                        TlsExtensionsUtils.addHybridSchemeSignature(serverExtensions, hybridSchemeSignature);
+
                         send13CertificateVerifyMessage(certificateVerify);
                         this.connection_state = CS_CLIENT_CERTIFICATE_VERIFY;
                     }
@@ -1616,19 +1620,20 @@ public class TlsClientProtocol
         //TODO: 1.3.2
         // check server extension if alternative algorithm is supported or not
         // if supported and hybrid scheme was not sent throw an error
-        HybridSchemeSignature hybridSchemeSignature = TlsExtensionsUtils.getHybridSchemeSignature(serverExtensions);
-        if (hybridSchemeSignature != null)
-        {
-            //TODO: should i make a function for server and client separate
-            TlsUtils.verifyHybridSchemeSignature(hybridSchemeSignature, "TLS 1.3, server CertificateVerify",
-                    handshakeHash, tlsClientContext.getSecurityParametersHandshake().getPeerCertificate().getCertificateAt(0));
-        }
+
         short serverCKS = TlsExtensionsUtils.getCertificationKeySelection(serverExtensions);
         short clientCKS = TlsExtensionsUtils.getCertificationKeySelection(clientExtensions);
 
         // TODO: Throw error if server cks != client cks (check if native == default)
 
         TlsUtils.verify13CertificateVerifyServer(tlsClientContext, handshakeHash, certificateVerify, clientCKS);
+
+        HybridSchemeSignature hybridSchemeSignature = TlsExtensionsUtils.getHybridSchemeSignature(serverExtensions);
+        if (hybridSchemeSignature != null)
+        {
+            //TODO: should i make a function for server and client separate
+            TlsUtils.verifyHybridSchemeSignatureServer(tlsClientContext, handshakeHash, hybridSchemeSignature);
+        }
     }
 
     protected void receive13ServerFinished(ByteArrayInputStream buf)

@@ -16,6 +16,7 @@ import org.bouncycastle.tls.crypto.TlsCrypto;
 import org.bouncycastle.tls.crypto.TlsSecret;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Integers;
+import org.bouncycastle.util.encoders.Hex;
 
 public abstract class TlsProtocol
     implements TlsCloseable
@@ -945,6 +946,10 @@ public abstract class TlsProtocol
     protected void safeWriteRecord(short type, byte[] buf, int offset, int len)
         throws IOException
     {
+
+        {
+            System.out.println("safeWrite_" + HandshakeType.getName(type) + " : " + Hex.toHexString(buf, offset, len));
+        }
         try
         {
             recordStream.writeRecord(type, buf, offset, len);
@@ -1100,12 +1105,20 @@ public abstract class TlsProtocol
 
     void writeHandshakeMessage(byte[] buf, int off, int len) throws IOException
     {
+
         if (len < 4)
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
 
         short type = TlsUtils.readUint8(buf, off);
+
+
+        {
+//TODO: delete
+//            System.out.println(getContext().isServer()+"Type: " + ExtensionType.getName(type) + " : " + Hex.toHexString(buf, off, len));
+        }
+
         switch (type)
         {
         /*

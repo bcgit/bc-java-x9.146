@@ -15,6 +15,7 @@ import org.bouncycastle.tls.crypto.TlsECConfig;
 import org.bouncycastle.tls.crypto.TlsKemConfig;
 import org.bouncycastle.tls.crypto.TlsSecret;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.encoders.Hex;
 
 public class TlsServerProtocol
     extends TlsProtocol
@@ -1491,6 +1492,10 @@ public class TlsServerProtocol
         CertificateVerify certificateVerify = CertificateVerify.parse(tlsServerContext, buf);
 
         assertEmpty(buf);
+        //TODO: check
+        HybridSchemeSignature hybridSchemeSignature = TlsExtensionsUtils.getHybridSchemeSignature(serverExtensions);
+
+        TlsUtils.verifyHybridSchemeSignatureClient(tlsServerContext, handshakeHash, hybridSchemeSignature);
 
         TlsUtils.verify13CertificateVerifyClient(tlsServerContext, handshakeHash, certificateVerify);
     }
@@ -1585,20 +1590,6 @@ public class TlsServerProtocol
         short cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientExtensions);
         securityParameters.cksCode = cksCode;
 
-        //TODO: check when this should be created!
-
-        if (!selectedPSK13)
-        {
-            TlsCredentialedSigner serverCredentials = TlsUtils.establish13ServerCredentials(tlsServer);
-            if (null == serverCredentials)
-            {
-                throw new TlsFatalAlert(AlertDescription.internal_error);
-            }
-            HybridSchemeSignature hybridSchemeSignature = TlsUtils.generateHybridSchemeSignature(tlsServerContext,
-                    serverCredentials, handshakeHash);
-            TlsExtensionsUtils.addHybridSchemeSignature(serverExtensions, hybridSchemeSignature);
-        }
-
         byte[] serverHelloTranscriptHash = TlsUtils.getCurrentPRFHash(handshakeHash);
 
         TlsUtils.establish13PhaseHandshake(tlsServerContext, serverHelloTranscriptHash, recordStream);
@@ -1628,12 +1619,12 @@ public class TlsServerProtocol
                     }
     
                     TlsUtils.establishServerSigAlgs(securityParameters, certificateRequest);
-    
+
                     sendCertificateRequestMessage(certificateRequest);
                     this.connection_state = CS_SERVER_CERTIFICATE_REQUEST;
                 }
             }
-    
+
             TlsCredentialedSigner serverCredentials = TlsUtils.establish13ServerCredentials(tlsServer);
             if (null == serverCredentials)
             {
@@ -1654,8 +1645,14 @@ public class TlsServerProtocol
 
                 Certificate serverCertificate = serverCredentials.getCertificate();
                 send13CertificateMessage(serverCertificate);
+                //TODO: When generating the hybridSchemeSignature, do we use the prf Hash of the certificateMessage???
+                System.out.println(this.connection_state + ": " + Hex.toHexString(TlsUtils.getCurrentPRFHash(handshakeHash)));
+
+
                 securityParameters.tlsServerEndPoint = null;
                 this.connection_state = CS_SERVER_CERTIFICATE;
+                System.out.println(this.connection_state + ": " + Hex.toHexString(TlsUtils.getCurrentPRFHash(handshakeHash)));
+
             }
     
             // CertificateVerify
@@ -1671,6 +1668,14 @@ public class TlsServerProtocol
                 //TODO[x9.146]: How do we select which cksCode to use if multiple is sent?
                 // (find first mutual cksCode supported by both client and server?)
 
+                //HERE
+//                System.out.println(this.connection_state + ": " + Hex.toHexString(TlsUtils.getCurrentPRFHash(handshakeHash)));
+
+                HybridSchemeSignature hybridSchemeSignature = TlsUtils.generateHybridSchemeSignature(tlsServerContext, serverCredentials, handshakeHash);
+                TlsExtensionsUtils.addHybridSchemeSignature(serverExtensions, hybridSchemeSignature);
+
+                send13EncryptedExtensionsMessage(serverExtensions);
+                this.connection_state = CS_SERVER_ENCRYPTED_EXTENSIONS;
 
                 DigitallySigned certificateVerify = TlsUtils.generate13CertificateVerify(tlsServerContext,
                     serverCredentials, handshakeHash);
@@ -1678,6 +1683,8 @@ public class TlsServerProtocol
                 this.connection_state = CS_CLIENT_CERTIFICATE_VERIFY;
             }
         }
+
+
 
         // Finished
         {

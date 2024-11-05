@@ -2462,7 +2462,6 @@ public class TlsUtils
                 signatureScheme,
                 signature
         );
-        verifyHybridSchemeSignature(hybridSchemeSignature, contextString, handshakeHash, credentialedSigner.getCertificate().getCertificateAt(0));
 
         return hybridSchemeSignature;
     }
@@ -2550,6 +2549,10 @@ public class TlsUtils
 
             byte[] header = getCertificateVerifyHeader(contextString);
             byte[] prfHash = getCurrentPRFHash(handshakeHash);
+            System.out.println("In Generate");
+            System.out.println("header: " + Hex.toHexString(header));
+            System.out.println("prfHash: " + Hex.toHexString(prfHash));
+
 
             if (null != streamSigner)
             {
@@ -2662,8 +2665,28 @@ public class TlsUtils
             certificateVerify, cksCode);
     }
 
-    public static void verifyHybridSchemeSignature(HybridSchemeSignature hybridSchemeSignature, String contextString,
-                                                    TlsHandshakeHash handshakeHash, TlsCertificate certificate)
+    static void verifyHybridSchemeSignatureServer(TlsClientContext clientContext, TlsHandshakeHash handshakeHash, HybridSchemeSignature hybridSchemeSignature) throws IOException
+    {
+        SecurityParameters securityParameters = clientContext.getSecurityParametersHandshake();
+
+        Vector supportedAlgorithms = securityParameters.getClientSigAlgs();
+        TlsCertificate certificate = securityParameters.getPeerCertificate().getCertificateAt(0);
+
+        verifyHybridSchemeSignature(supportedAlgorithms, "TLS 1.3, server CertificateVerify", handshakeHash, certificate, hybridSchemeSignature);
+    }
+
+    static void verifyHybridSchemeSignatureClient(TlsServerContext serverContext, TlsHandshakeHash handshakeHash, HybridSchemeSignature hybridSchemeSignature) throws IOException
+    {
+        SecurityParameters securityParameters = serverContext.getSecurityParametersHandshake();
+
+        Vector supportedAlgorithms = securityParameters.getServerSigAlgs();
+        TlsCertificate certificate = securityParameters.getPeerCertificate().getCertificateAt(0);
+
+        verifyHybridSchemeSignature(supportedAlgorithms, "TLS 1.3, client CertificateVerify", handshakeHash, certificate, hybridSchemeSignature);
+    }
+
+    public static void verifyHybridSchemeSignature(Vector supportedAlgorithms, String contextString, TlsHandshakeHash handshakeHash,
+       TlsCertificate certificate, HybridSchemeSignature hybridSchemeSignature)
             throws TlsFatalAlert
     {
         // Verify the CertificateVerify message contains a correct signature.
@@ -2695,8 +2718,10 @@ public class TlsUtils
 
             Tls13Verifier altVerifier = certificate.createAltVerifier(signatureScheme);
 
+            System.out.println("In Verify");
             byte[] header = getCertificateVerifyHeader(contextString);
             System.out.println("header: " + Hex.toHexString(header));
+
             byte[] prfHash = getCurrentPRFHash(handshakeHash);
             System.out.println("prfHash: " + Hex.toHexString(prfHash));
 
@@ -2757,7 +2782,10 @@ public class TlsUtils
 
 
                 byte[] header = getCertificateVerifyHeader(contextString);
+                System.out.println("header: " + Hex.toHexString(header));
+
                 byte[] prfHash = getCurrentPRFHash(handshakeHash);
+                System.out.println("prfHash: " + Hex.toHexString(prfHash));
 
                 OutputStream output = verifier.getOutputStream();
                 output.write(header, 0, header.length);

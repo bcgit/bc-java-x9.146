@@ -2,6 +2,7 @@ package org.bouncycastle.tls.crypto.impl.bc;
 
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.tls.crypto.TlsHash;
+import org.bouncycastle.util.encoders.Hex;
 
 final class BcTlsHash
     implements TlsHash
@@ -31,6 +32,8 @@ final class BcTlsHash
     {
         byte[] rv = new byte[digest.getDigestSize()];
         digest.doFinal(rv, 0);
+
+//        System.out.println("Hash: " + Hex.toHexString(rv));
         return rv;
     }
 
