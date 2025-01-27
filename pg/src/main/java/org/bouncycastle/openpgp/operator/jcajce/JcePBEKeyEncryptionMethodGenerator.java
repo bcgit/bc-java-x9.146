@@ -15,11 +15,8 @@ import javax.crypto.spec.SecretKeySpec;
 import org.bouncycastle.bcpg.S2K;
 import org.bouncycastle.bcpg.SymmetricKeyUtils;
 import org.bouncycastle.crypto.InvalidCipherTextException;
-import org.bouncycastle.crypto.digests.SHA256Digest;
-import org.bouncycastle.crypto.generators.HKDFBytesGenerator;
 import org.bouncycastle.crypto.modes.AEADCipher;
 import org.bouncycastle.crypto.params.AEADParameters;
-import org.bouncycastle.crypto.params.HKDFParameters;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.jcajce.util.DefaultJcaJceHelper;
 import org.bouncycastle.jcajce.util.NamedJcaJceHelper;
@@ -86,6 +83,11 @@ public class JcePBEKeyEncryptionMethodGenerator
         super(passPhrase, new SHA1PGPDigestCalculator(), s2kCount);
     }
 
+    public JcePBEKeyEncryptionMethodGenerator(char[] passPhrase, S2K.Argon2Params params)
+    {
+        super(passPhrase, params);
+    }
+
     /**
      * Sets the JCE provider to source cryptographic primitives from.
      *
@@ -150,23 +152,13 @@ public class JcePBEKeyEncryptionMethodGenerator
     }
 
     protected byte[] generateV6KEK(int kekAlgorithm, byte[] ikm, byte[] info)
-         throws PGPException
      {
-         HKDFBytesGenerator hkdf = new HKDFBytesGenerator(new SHA256Digest());
-         hkdf.init(new HKDFParameters(ikm, null, info));
-
-         int kekLen = SymmetricKeyUtils.getKeyLengthInOctets(kekAlgorithm);
-         byte[] kek = new byte[kekLen];
-         hkdf.generateBytes(kek, 0, kek.length);
-         return kek;
+         return JceAEADUtil.generateHKDFBytes(ikm, null, info, SymmetricKeyUtils.getKeyLengthInOctets(kekAlgorithm));
      }
 
-     protected byte[] getEskAndTag(int kekAlgorithm, int aeadAlgorithm, byte[] sessionInfo, byte[] key, byte[] iv, byte[] info)
+     protected byte[] getEskAndTag(int kekAlgorithm, int aeadAlgorithm, byte[] sessionKey, byte[] key, byte[] iv, byte[] info)
          throws PGPException
      {
-         byte[] sessionKey = new byte[sessionInfo.length - 3];
-         System.arraycopy(sessionInfo, 1, sessionKey, 0, sessionKey.length);
-
          AEADCipher aeadCipher = BcAEADUtil.createAEADCipher(kekAlgorithm, aeadAlgorithm);
          aeadCipher.init(true, new AEADParameters(new KeyParameter(key), 128, iv, info));
          int outLen = aeadCipher.getOutputSize(sessionKey.length);

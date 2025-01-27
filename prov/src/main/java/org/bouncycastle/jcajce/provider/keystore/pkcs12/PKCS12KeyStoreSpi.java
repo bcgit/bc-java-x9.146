@@ -1264,45 +1264,49 @@ public class PKCS12KeyStoreSpi
         //
         // set the attributes on the key
         //
-        PKCS12BagAttributeCarrier bagAttr = (PKCS12BagAttributeCarrier)privKey;
         String alias = null;
         ASN1OctetString localId = null;
 
-        Enumeration e = b.getBagAttributes().getObjects();
-        while (e.hasMoreElements())
+        if (privKey instanceof PKCS12BagAttributeCarrier)
         {
-            ASN1Sequence sq = ASN1Sequence.getInstance(e.nextElement());
-            ASN1ObjectIdentifier aOid = ASN1ObjectIdentifier.getInstance(sq.getObjectAt(0));
-            ASN1Set attrSet = ASN1Set.getInstance(sq.getObjectAt(1));
-            ASN1Primitive attr = null;
+            PKCS12BagAttributeCarrier bagAttr = (PKCS12BagAttributeCarrier)privKey;
 
-            if (attrSet.size() > 0)
+            Enumeration e = b.getBagAttributes().getObjects();
+            while (e.hasMoreElements())
             {
-                attr = (ASN1Primitive)attrSet.getObjectAt(0);
+                ASN1Sequence sq = ASN1Sequence.getInstance(e.nextElement());
+                ASN1ObjectIdentifier aOid = ASN1ObjectIdentifier.getInstance(sq.getObjectAt(0));
+                ASN1Set attrSet = ASN1Set.getInstance(sq.getObjectAt(1));
+                ASN1Primitive attr = null;
 
-                ASN1Encodable existing = bagAttr.getBagAttribute(aOid);
-                if (existing != null)
+                if (attrSet.size() > 0)
                 {
-                    // OK, but the value has to be the same
-                    if (!existing.toASN1Primitive().equals(attr))
+                    attr = (ASN1Primitive)attrSet.getObjectAt(0);
+
+                    ASN1Encodable existing = bagAttr.getBagAttribute(aOid);
+                    if (existing != null)
                     {
-                        throw new IOException(
-                            "attempt to add existing attribute with different value");
+                        // OK, but the value has to be the same
+                        if (!existing.toASN1Primitive().equals(attr))
+                        {
+                            throw new IOException(
+                                "attempt to add existing attribute with different value");
+                        }
                     }
-                }
-                else
-                {
-                    bagAttr.setBagAttribute(aOid, attr);
-                }
+                    else
+                    {
+                        bagAttr.setBagAttribute(aOid, attr);
+                    }
 
-                if (aOid.equals(pkcs_9_at_friendlyName))
-                {
-                    alias = ((ASN1BMPString)attr).getString();
-                    keys.put(alias, privKey);
-                }
-                else if (aOid.equals(pkcs_9_at_localKeyId))
-                {
-                    localId = (ASN1OctetString)attr;
+                    if (aOid.equals(pkcs_9_at_friendlyName))
+                    {
+                        alias = ((ASN1BMPString)attr).getString();
+                        keys.put(alias, privKey);
+                    }
+                    else if (aOid.equals(pkcs_9_at_localKeyId))
+                    {
+                        localId = (ASN1OctetString)attr;
+                    }
                 }
             }
         }
@@ -1389,7 +1393,8 @@ public class PKCS12KeyStoreSpi
         else
         {
             bcParam = new PKCS12StoreParameter(((JDKPKCS12StoreParameter)param).getOutputStream(),
-                param.getProtectionParameter(), ((JDKPKCS12StoreParameter)param).isUseDEREncoding());
+                param.getProtectionParameter(), ((JDKPKCS12StoreParameter)param).isUseDEREncoding(),
+                    ((JDKPKCS12StoreParameter)param).isOverwriteFriendlyName());
         }
 
         char[] password;
@@ -1408,18 +1413,106 @@ public class PKCS12KeyStoreSpi
                 "No support for protection parameter of type " + protParam.getClass().getName());
         }
 
-        doStore(bcParam.getOutputStream(), password, bcParam.isForDEREncoding());
+        doStore(bcParam.getOutputStream(), password, bcParam.isForDEREncoding(), bcParam.isOverwriteFriendlyName());
     }
 
     public void engineStore(OutputStream stream, char[] password)
         throws IOException
     {
-        doStore(stream, password, false);
+        doStore(stream, password, false, true);
     }
 
-    private void doStore(OutputStream stream, char[] password, boolean useDEREncoding)
+    private void syncFriendlyName()
+    {
+        // TODO:delete comment
+        //  Since we cannot add any function to the KeyStore Api we will run code when saving the store
+        // to sync the friendlyNames with Alias depending on the storeParameter
+        /**
+         *     @Override
+         *     public void setFriendlyName(String alias, String newFriendlyName, char[] password) throws UnrecoverableKeyException, NoSuchAlgorithmException
+         *     {
+         *         if (alias.equals(newFriendlyName))
+         *         {
+         *             return;
+         *         }
+         *
+         *         if (engineIsKeyEntry(alias))
+         *         {
+         *             ((PKCS12BagAttributeCarrier)engineGetKey(alias, password)).setFriendlyName(newFriendlyName);
+         *             keyCerts.put(newFriendlyName, keyCerts.get(alias));
+         *             keyCerts.remove(alias);
+         *         }
+         *         else
+         *         {
+         *             certs.put(newFriendlyName, certs.get(alias));
+         *             certs.remove(alias);
+         *         }
+         *         ((PKCS12BagAttributeCarrier)engineGetCertificate(alias)).setFriendlyName(newFriendlyName);
+         *
+         *     }
+         */
+        Enumeration cs = keys.keys();
+
+        while (cs.hasMoreElements())
+        {
+            String keyId = (String) cs.nextElement();
+            PrivateKey key = (PrivateKey)keys.get(keyId);
+
+            if (key instanceof PKCS12BagAttributeCarrier)
+            {
+                ASN1Encodable friendlyName = ((PKCS12BagAttributeCarrier)key).getBagAttribute(PKCSObjectIdentifiers.pkcs_9_at_friendlyName);
+                if (friendlyName != null && !keyId.equals(friendlyName.toString()))
+                {
+                    keys.put(friendlyName.toString(), key);
+                    keys.remove(keyId);
+                }
+            }
+        }
+
+        cs = certs.keys();
+
+        while (cs.hasMoreElements())
+        {
+            String certId = (String) cs.nextElement();
+            Certificate cert = (Certificate)certs.get(certId);
+
+            if (cert instanceof PKCS12BagAttributeCarrier)
+            {
+                ASN1Encodable friendlyName = ((PKCS12BagAttributeCarrier)cert).getBagAttribute(PKCSObjectIdentifiers.pkcs_9_at_friendlyName);
+                if (friendlyName != null && !certId.equals(friendlyName.toString()))
+                {
+                    certs.put(friendlyName.toString(), cert);
+                    certs.remove(certId);
+                }
+            }
+        }
+        cs = keyCerts.keys();
+
+        while (cs.hasMoreElements())
+        {
+            String certId = (String) cs.nextElement();
+            Certificate cert = (Certificate)keyCerts.get(certId);
+
+            if (cert instanceof PKCS12BagAttributeCarrier)
+            {
+                ASN1Encodable friendlyName = ((PKCS12BagAttributeCarrier)cert).getBagAttribute(PKCSObjectIdentifiers.pkcs_9_at_friendlyName);
+                if (friendlyName != null && !certId.equals(friendlyName.toString()))
+                {
+                    keyCerts.put(friendlyName.toString(), cert);
+                    keyCerts.remove(certId);
+                }
+            }
+        }
+    }
+
+    private void doStore(OutputStream stream, char[] password, boolean useDEREncoding, boolean overwriteFriendlyName)
         throws IOException
     {
+        if (!overwriteFriendlyName)
+        {
+            syncFriendlyName();
+        }
+
         if (keys.size() == 0)
         {
             if (password == null)
@@ -1435,7 +1528,7 @@ public class PKCS12KeyStoreSpi
                         String certId = (String)cs.nextElement();
                         Certificate cert = (Certificate)certs.get(certId);
 
-                        SafeBag sBag = createSafeBag(certId, cert);
+                        SafeBag sBag = createSafeBag(certId, cert, overwriteFriendlyName);
 
                         certSeq.add(sBag);
                     }
@@ -1516,9 +1609,12 @@ public class PKCS12KeyStoreSpi
                 // make sure we are using the local alias on store
                 //
                 ASN1BMPString nm = (ASN1BMPString)bagAttrs.getBagAttribute(pkcs_9_at_friendlyName);
-                if (nm == null || !nm.getString().equals(name))
+                if (overwriteFriendlyName)
                 {
-                    bagAttrs.setBagAttribute(pkcs_9_at_friendlyName, new DERBMPString(name));
+                    if (nm == null || !nm.getString().equals(name))
+                    {
+                        bagAttrs.setBagAttribute(pkcs_9_at_friendlyName, new DERBMPString(name));
+                    }
                 }
 
                 //
@@ -1617,9 +1713,12 @@ public class PKCS12KeyStoreSpi
                     // make sure we are using the local alias on store
                     //
                     ASN1BMPString nm = (ASN1BMPString)bagAttrs.getBagAttribute(pkcs_9_at_friendlyName);
-                    if (nm == null || !nm.getString().equals(name))
+                    if (overwriteFriendlyName)
                     {
-                        bagAttrs.setBagAttribute(pkcs_9_at_friendlyName, new DERBMPString(name));
+                        if (nm == null || !nm.getString().equals(name))
+                        {
+                            bagAttrs.setBagAttribute(pkcs_9_at_friendlyName, new DERBMPString(name));
+                        }
                     }
 
                     //
@@ -1686,7 +1785,7 @@ public class PKCS12KeyStoreSpi
                     continue;
                 }
 
-                SafeBag sBag = createSafeBag(certId, cert);
+                SafeBag sBag = createSafeBag(certId, cert, overwriteFriendlyName);
 
                 certSeq.add(sBag);
 
@@ -1748,7 +1847,6 @@ public class PKCS12KeyStoreSpi
                         fName.add(new DERSequence(fSeq));
                     }
                 }
-
 
                 SafeBag sBag = new SafeBag(certBag, cBag.toASN1Primitive(), new DERSet(fName));
 
@@ -1815,7 +1913,7 @@ public class PKCS12KeyStoreSpi
         pfx.encodeTo(stream, useDEREncoding ? ASN1Encoding.DER : ASN1Encoding.BER);
     }
 
-    private SafeBag createSafeBag(String certId, Certificate cert)
+    private SafeBag createSafeBag(String certId, Certificate cert, boolean overwriteFriendlyName)
         throws CertificateEncodingException
     {
         CertBag cBag = new CertBag(
@@ -1831,11 +1929,14 @@ public class PKCS12KeyStoreSpi
             // make sure we are using the local alias on store
             //
             ASN1BMPString nm = (ASN1BMPString)bagAttrs.getBagAttribute(pkcs_9_at_friendlyName);
-            if (nm == null || !nm.getString().equals(certId))
+            if (overwriteFriendlyName)
             {
-                if (certId != null)
+                if (nm == null || !nm.getString().equals(certId))
                 {
-                    bagAttrs.setBagAttribute(pkcs_9_at_friendlyName, new DERBMPString(certId));
+                    if (certId != null)
+                    {
+                        bagAttrs.setBagAttribute(pkcs_9_at_friendlyName, new DERBMPString(certId));
+                    }
                 }
             }
 
@@ -1854,6 +1955,11 @@ public class PKCS12KeyStoreSpi
                     continue;
                 }
 
+                if (oid.equals(MiscObjectIdentifiers.id_oracle_pkcs12_trusted_key_usage))
+                {
+                    continue;
+                }
+                
                 ASN1EncodableVector fSeq = new ASN1EncodableVector();
 
                 fSeq.add(oid);
@@ -1878,36 +1984,21 @@ public class PKCS12KeyStoreSpi
         if (cert instanceof X509Certificate)
         {
             TBSCertificate tbsCert = TBSCertificate.getInstance(((X509Certificate)cert).getTBSCertificate());
-            Extensions exts = tbsCert.getExtensions();
-            if (exts != null)
+
+            ASN1OctetString eku = Extensions.getExtensionValue(tbsCert.getExtensions(),
+                Extension.extendedKeyUsage);
+
+            DERSet attrValue;
+            if (eku != null)
             {
-                Extension extUsage = exts.getExtension(Extension.extendedKeyUsage);
-                if (extUsage != null)
-                {
-                    ASN1EncodableVector fSeq = new ASN1EncodableVector();
-
-                    // oracle trusted key usage OID.
-                    fSeq.add(MiscObjectIdentifiers.id_oracle_pkcs12_trusted_key_usage);
-                    fSeq.add(new DERSet(ExtendedKeyUsage.getInstance(extUsage.getParsedValue()).getUsages()));
-                    fName.add(new DERSequence(fSeq));
-                }
-                else
-                {
-                    ASN1EncodableVector fSeq = new ASN1EncodableVector();
-
-                    fSeq.add(MiscObjectIdentifiers.id_oracle_pkcs12_trusted_key_usage);
-                    fSeq.add(new DERSet(KeyPurposeId.anyExtendedKeyUsage));
-                    fName.add(new DERSequence(fSeq));
-                }
+                attrValue = new DERSet(ExtendedKeyUsage.getInstance(eku.getOctets()).getUsages());
             }
             else
             {
-                ASN1EncodableVector fSeq = new ASN1EncodableVector();
-
-                fSeq.add(MiscObjectIdentifiers.id_oracle_pkcs12_trusted_key_usage);
-                fSeq.add(new DERSet(KeyPurposeId.anyExtendedKeyUsage));
-                fName.add(new DERSequence(fSeq));
+                attrValue = new DERSet(KeyPurposeId.anyExtendedKeyUsage);
             }
+
+            fName.add(new DERSequence(MiscObjectIdentifiers.id_oracle_pkcs12_trusted_key_usage, attrValue));
         }
 
         return new SafeBag(certBag, cBag.toASN1Primitive(), new DERSet(fName));
@@ -2051,7 +2142,7 @@ public class PKCS12KeyStoreSpi
 
         public Enumeration keys()
         {
-            return orig.keys();
+            return new Hashtable(orig).keys();
         }
 
         public Object remove(String alias)

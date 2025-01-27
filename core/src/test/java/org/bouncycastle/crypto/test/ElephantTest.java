@@ -10,7 +10,6 @@ import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.DataLengthException;
 import org.bouncycastle.crypto.engines.ElephantEngine;
 import org.bouncycastle.crypto.modes.AEADCipher;
-import org.bouncycastle.crypto.params.AEADParameters;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.crypto.params.ParametersWithIV;
 import org.bouncycastle.test.TestResourceFinder;
@@ -28,19 +27,52 @@ public class ElephantTest
     public void performTest()
         throws Exception
     {
+        CipherTest.checkAEADCipherMultipleBlocks(this, 1025, 41, 10, 128, 12, new ElephantEngine(ElephantEngine.ElephantParameters.elephant160));
+        CipherTest.checkAEADCipherMultipleBlocks(this, 1025, 41, 10, 128, 12, new ElephantEngine(ElephantEngine.ElephantParameters.elephant176));
+        CipherTest.checkAEADCipherMultipleBlocks(this, 1025, 41, 10, 128, 12, new ElephantEngine(ElephantEngine.ElephantParameters.elephant200));
+        CipherTest.checkAEADParemeter(this, 16, 12, 8, 20, new ElephantEngine(ElephantEngine.ElephantParameters.elephant160));
+        CipherTest.checkAEADParemeter(this, 16, 12, 8, 22, new ElephantEngine(ElephantEngine.ElephantParameters.elephant176));
+        CipherTest.checkAEADParemeter(this, 16, 12, 16, 25, new ElephantEngine(ElephantEngine.ElephantParameters.elephant200));
+        CipherTest.checkAEADCipherOutputSize(this, 16, 12, 20, 8, new ElephantEngine(ElephantEngine.ElephantParameters.elephant160));
+        CipherTest.checkAEADCipherOutputSize(this, 16, 12, 22, 8, new ElephantEngine(ElephantEngine.ElephantParameters.elephant176));
+        CipherTest.checkAEADCipherOutputSize(this, 16, 12, 25, 16, new ElephantEngine(ElephantEngine.ElephantParameters.elephant200));
+//        //testVectors(ElephantEngine.ElephantParameters.elephant160, "v160_2");
+        ElephantEngine elephant = new ElephantEngine(ElephantEngine.ElephantParameters.elephant200);
+        testExceptions(elephant, elephant.getKeyBytesSize(), elephant.getIVBytesSize(), elephant.getBlockSize());
+        testParameters(elephant, 16, 12, 16);
+        CipherTest.checkCipher(10, 12, 40, 128, new CipherTest.Instance()
+        {
+            public AEADCipher createInstance()
+            {
+                return new ElephantEngine(ElephantEngine.ElephantParameters.elephant160);
+            }
+        });
+        CipherTest.checkCipher(10, 12, 40, 128, new CipherTest.Instance()
+        {
+            public AEADCipher createInstance()
+            {
+                return new ElephantEngine(ElephantEngine.ElephantParameters.elephant176);
+            }
+        });
+        CipherTest.checkCipher(10, 12, 40, 128, new CipherTest.Instance()
+        {
+            public AEADCipher createInstance()
+            {
+                return new ElephantEngine(ElephantEngine.ElephantParameters.elephant200);
+            }
+        });
         testVectors(ElephantEngine.ElephantParameters.elephant200, "v200");
         testVectors(ElephantEngine.ElephantParameters.elephant160, "v160");
         testVectors(ElephantEngine.ElephantParameters.elephant176, "v176");
 
-        ElephantEngine elephant = new ElephantEngine(ElephantEngine.ElephantParameters.elephant160);
+
+        elephant = new ElephantEngine(ElephantEngine.ElephantParameters.elephant160);
         testExceptions(elephant, elephant.getKeyBytesSize(), elephant.getIVBytesSize(), elephant.getBlockSize());
         testParameters(elephant, 16, 12, 8);
         elephant = new ElephantEngine(ElephantEngine.ElephantParameters.elephant176);
         testExceptions(elephant, elephant.getKeyBytesSize(), elephant.getIVBytesSize(), elephant.getBlockSize());
         testParameters(elephant, 16, 12, 8);
-        elephant = new ElephantEngine(ElephantEngine.ElephantParameters.elephant200);
-        testExceptions(elephant, elephant.getKeyBytesSize(), elephant.getIVBytesSize(), elephant.getBlockSize());
-        testParameters(elephant, 16, 12, 16);
+
     }
 
 
@@ -60,7 +92,7 @@ public class ElephantTest
             int a = line.indexOf('=');
             if (a < 0)
             {
-//                if (!map.get("Count").equals("859"))
+//                if (!map.get("Count").equals("34"))
 //                {
 //                    continue;
 //                }
@@ -106,7 +138,7 @@ public class ElephantTest
                 map.put(line.substring(0, a).trim(), line.substring(a + 1).trim());
             }
         }
-       // System.out.println("Elephant AEAD pass");
+        // System.out.println("Elephant AEAD pass");
     }
 
     private void testExceptions(AEADCipher aeadBlockCipher, int keysize, int ivsize, int blocksize)
@@ -195,17 +227,8 @@ public class ElephantTest
             //expected
         }
 
-        try
-        {
-            aeadBlockCipher.init(true, new AEADParameters(new KeyParameter(k), 0, iv));
-            fail(aeadBlockCipher.getAlgorithmName() + " wrong type of CipherParameters");
-        }
-        catch (IllegalArgumentException e)
-        {
-            //expected
-        }
-
         aeadBlockCipher.init(true, params);
+        c1 = new byte[aeadBlockCipher.getOutputSize(0)];
         try
         {
             aeadBlockCipher.doFinal(c1, m.length);
@@ -352,7 +375,7 @@ public class ElephantTest
             //expected;
         }
 
-        byte[] m7 = new byte[blocksize * 2];
+        byte[] m7 = new byte[blocksize * 3];
         for (int i = 0; i < m7.length; ++i)
         {
             m7[i] = (byte)rand.nextInt();
@@ -370,17 +393,22 @@ public class ElephantTest
         offset = aeadBlockCipher.processBytes(m7, 0, blocksize, c8, 0);
         offset += aeadBlockCipher.processBytes(m7, blocksize, m7.length - blocksize, c8, offset);
         aeadBlockCipher.doFinal(c8, offset);
-        aeadBlockCipher.init(true, params);
-        int split = rand.nextInt(blocksize * 2);
-        aeadBlockCipher.processAADBytes(aad2, 0, aad2.length);
-        offset = aeadBlockCipher.processBytes(m7, 0, split, c9, 0);
-        offset += aeadBlockCipher.processBytes(m7, split, m7.length - split, c9, offset);
-        aeadBlockCipher.doFinal(c9, offset);
-        if (!areEqual(c7, c8) || !areEqual(c7, c9))
+
+        // random split for several times
+        for (int split = 0; split < blocksize * 3; ++split)
         {
-            fail(aeadBlockCipher.getAlgorithmName() + ": Splitting input of plaintext should output the same ciphertext");
+            aeadBlockCipher.init(true, params);
+            aeadBlockCipher.processAADBytes(aad2, 0, aad2.length);
+            offset = aeadBlockCipher.processBytes(m7, 0, split, c9, 0);
+            offset += aeadBlockCipher.processBytes(m7, split, m7.length - split, c9, offset);
+            aeadBlockCipher.doFinal(c9, offset);
+            if (!areEqual(c7, c8) || !areEqual(c7, c9))
+            {
+                fail(aeadBlockCipher.getAlgorithmName() + ": Splitting input of plaintext should output the same ciphertext");
+            }
         }
-       // System.out.println(aeadBlockCipher.getAlgorithmName() + " test Exceptions pass");
+
+        // System.out.println(aeadBlockCipher.getAlgorithmName() + " test Exceptions pass");
     }
 
     private void testParameters(ElephantEngine isap, int keySize, int ivSize, int macSize)
@@ -397,7 +425,7 @@ public class ElephantTest
         {
             fail(isap.getAlgorithmName() + ": mac bytes of " + isap.getAlgorithmName() + " is not correct");
         }
-       // System.out.println(isap.getAlgorithmName() + " test Parameters pass");
+        // System.out.println(isap.getAlgorithmName() + " test Parameters pass");
     }
 
 
@@ -410,7 +438,5 @@ public class ElephantTest
     {
         runTest(new ElephantTest());
     }
-
-
 }
 

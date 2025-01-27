@@ -46,29 +46,11 @@ public class SignatureScheme
     public static final int sm2sig_sm3 = 0x0708;
 
     /*
-     * x9.164 OQS values for dilithium
+     * draft-tls-westerbaan-mldsa-00
      */
-    public static final int dilithiumr3_2 = 0xFED0;
-    public static final int dilithiumr3_3 = 0xFED1;
-    public static final int dilithiumr3_5 = 0xFED2;
-    /*
-     * x9.164 OQS values for falcon
-     */
-    public static final int falcon_512 = 0xFEAE;
-    public static final int falcon_1024 = 0xFEB1;
-
-    /*
-     * x9.164 OQS values for hybrid
-     */
-    public static final int hybrid_p256_dilithiumr3_2 = 0xFEA1;
-    public static final int hybrid_rsa3072_dilithiumr3_2 = 0xFEA2;
-    public static final int hybrid_p384_dilithiumr3_3 = 0xFEA4;
-    public static final int hybrid_p521_dilithiumr3_5 = 0xFEA6;
-    public static final int hybrid_p256_falcon_512 = 0xFEAF;
-    public static final int hybrid_rsa3072_falcon_512 = 0xFEB0;
-    public static final int hybrid_p521_falcon_1024 = 0xFEB2;
-
-
+    public static final int DRAFT_mldsa44 = 0x0904;
+    public static final int DRAFT_mldsa65 = 0x0905;
+    public static final int DRAFT_mldsa87 = 0x0906;
 
     /*
      * RFC 8446 reserved for private use (0xFE00..0xFFFF)
@@ -95,6 +77,9 @@ public class SignatureScheme
         {
         case ed25519:
         case ed448:
+        case DRAFT_mldsa44:
+        case DRAFT_mldsa65:
+        case DRAFT_mldsa87:
             return -1;
         case ecdsa_brainpoolP256r1tls13_sha256:
         case rsa_pss_pss_sha256:
@@ -171,6 +156,12 @@ public class SignatureScheme
             return "ecdsa_brainpoolP512r1tls13_sha512";
         case sm2sig_sm3:
             return "sm2sig_sm3";
+        case DRAFT_mldsa44:
+            return "DRAFT_mldsa44";
+        case DRAFT_mldsa65:
+            return "DRAFT_mldsa65";
+        case DRAFT_mldsa87:
+            return "DRAFT_mldsa87";
         default:
             return "UNKNOWN";
         }
@@ -263,22 +254,13 @@ public class SignatureScheme
         }
     }
 
-    public static boolean isPQ(int signatureScheme)
+    public static boolean isMLDSA(int signatureScheme)
     {
         switch (signatureScheme)
         {
-        case dilithiumr3_2:
-        case dilithiumr3_3:
-        case dilithiumr3_5:
-        case falcon_512:
-        case falcon_1024:
-        case hybrid_p256_dilithiumr3_2:
-        case hybrid_rsa3072_dilithiumr3_2:
-        case hybrid_p384_dilithiumr3_3:
-        case hybrid_p521_dilithiumr3_5:
-        case hybrid_p256_falcon_512:
-        case hybrid_rsa3072_falcon_512:
-        case hybrid_p521_falcon_1024:
+        case DRAFT_mldsa44:
+        case DRAFT_mldsa65:
+        case DRAFT_mldsa87:
             return true;
         default:
             return false;

@@ -10,7 +10,6 @@ class DilithiumEngine
 {
     private final SecureRandom random;
 
-    private final SHAKEDigest shake128Digest = new SHAKEDigest(128);
     private final SHAKEDigest shake256Digest = new SHAKEDigest(256);
 
     public final static int DilithiumN = 256;
@@ -152,11 +151,6 @@ class DilithiumEngine
         return this.shake256Digest;
     }
 
-    SHAKEDigest getShake128Digest()
-    {
-        return this.shake128Digest;
-    }
-
     DilithiumEngine(int mode, SecureRandom random, boolean usingAes)
     {
         this.DilithiumMode = mode;
@@ -245,24 +239,28 @@ class DilithiumEngine
         }
     }
 
-    public byte[][] generateKeyPair()
+    //Internal functions are deterministic. No randomness is sampled inside them
+    public byte[][] generateKeyPairInternal(byte[] seed)
     {
-        byte[] seedBuf = new byte[SeedBytes];
         byte[] buf = new byte[2 * SeedBytes + CrhBytes];
         byte[] tr = new byte[TrBytes];
 
         byte[] rho = new byte[SeedBytes],
-            rhoPrime = new byte[CrhBytes],
-            key = new byte[SeedBytes];
+                rhoPrime = new byte[CrhBytes],
+                key = new byte[SeedBytes];
 
         PolyVecMatrix aMatrix = new PolyVecMatrix(this);
 
         PolyVecL s1 = new PolyVecL(this), s1hat;
         PolyVecK s2 = new PolyVecK(this), t1 = new PolyVecK(this), t0 = new PolyVecK(this);
 
-        random.nextBytes(seedBuf);
 
-        shake256Digest.update(seedBuf, 0, SeedBytes);
+
+        shake256Digest.update(seed, 0, SeedBytes);
+
+        //Domain separation
+        shake256Digest.update((byte)DilithiumK);
+        shake256Digest.update((byte)DilithiumL);
 
         shake256Digest.doFinal(buf, 0, 2 * SeedBytes + CrhBytes);
         // System.out.print("buf = ");
@@ -316,11 +314,11 @@ class DilithiumEngine
         shake256Digest.doFinal(tr, 0, TrBytes);
 
         byte[][] sk = Packing.packSecretKey(rho, tr, key, t0, s1, s2, this);
-        
+
         return new byte[][]{ sk[0], sk[1], sk[2], sk[3], sk[4], sk[5], encT1};
     }
 
-    public byte[] signSignature(byte[] msg, int msglen, byte[] rho, byte[] key, byte[] tr, byte[] t0Enc, byte[] s1Enc, byte[] s2Enc)
+    public byte[] signSignatureInternal(byte[] msg, int msglen, byte[] rho, byte[] key, byte[] tr, byte[] t0Enc, byte[] s1Enc, byte[] s2Enc, byte[] rnd)
     {
         int n;
         byte[] outSig = new byte[CryptoBytes + msglen];
@@ -337,11 +335,7 @@ class DilithiumEngine
         this.shake256Digest.update(msg, 0, msglen);
         this.shake256Digest.doFinal(mu, 0, CrhBytes);
 
-        byte[] rnd = new byte[RndBytes];
-        if (random != null)
-        {
-            random.nextBytes(rnd);
-        }
+
 
         byte[] keyMu = Arrays.copyOf(key, SeedBytes + RndBytes + CrhBytes);
         System.arraycopy(rnd, 0, keyMu, SeedBytes, RndBytes);
@@ -425,17 +419,12 @@ class DilithiumEngine
         return null;
     }
 
-    public byte[] sign(byte[] msg, int mlen, byte[] rho, byte[] key, byte[] tr, byte[] t0, byte[] s1, byte[] s2)
-    {
-        return signSignature(msg, mlen, rho, key, tr, t0, s1, s2);
-    }
-
-    public boolean signVerify(byte[] sig, int siglen, byte[] msg, int msglen, byte[] rho, byte[] encT1)
+    public boolean signVerifyInternal(byte[] sig, int siglen, byte[] msg, int msglen, byte[] rho, byte[] encT1)
     {
         byte[] buf,
-            mu = new byte[CrhBytes],
-            c,
-            c2 = new byte[DilithiumCTilde];
+                mu = new byte[CrhBytes],
+                c,
+                c2 = new byte[DilithiumCTilde];
         Poly cp = new Poly(this);
         PolyVecMatrix aMatrix = new PolyVecMatrix(this);
         PolyVecL z = new PolyVecL(this);
@@ -541,8 +530,50 @@ class DilithiumEngine
         return Arrays.constantTimeAreEqual(c, c2);
     }
 
+
+
+    public byte[][] generateKeyPair()
+    {
+        byte[] seedBuf = new byte[SeedBytes];
+        random.nextBytes(seedBuf);
+        return generateKeyPairInternal(seedBuf);
+
+    }
+
+    public byte[] signSignature(byte[] msg, int msglen, byte[] rho, byte[] key, byte[] tr, byte[] t0Enc, byte[] s1Enc, byte[] s2Enc)
+    {
+        byte[] rnd = new byte[RndBytes];
+        if (random != null)
+        {
+            random.nextBytes(rnd);
+        }
+        return signSignatureInternal(msg, msglen, rho, key, tr, t0Enc, s1Enc, s2Enc, rnd);
+    }
+
+    public byte[] sign(byte[] msg, int mlen, byte[] rho, byte[] key, byte[] tr, byte[] t0, byte[] s1, byte[] s2)
+    {
+        return signSignature(msg, mlen, rho, key, tr, t0, s1, s2);
+    }
+
+    public boolean signVerify(byte[] sig, int siglen, byte[] msg, int msglen, byte[] rho, byte[] encT1)
+    {
+        //TODO: add domain separation
+        // M' <- BytesToBits( IntegerToBytes(0, 1) || IntegerToBytes(|ctx|, 1) || ctx ) || M
+        return signVerifyInternal(sig, siglen, msg, msglen, rho, encT1);
+    }
+
     public boolean signOpen(byte[] msg, byte[] signedMsg, int signedMsglen, byte[] rho, byte[] t1)
     {
+        //TODO: add domain separation
+        // M' <- BytesToBits( IntegerToBytes(0, 1) || IntegerToBytes(|ctx|, 1) || ctx ) || M
         return signVerify(signedMsg, signedMsglen, msg, msg.length, rho, t1);
     }
+
+    // HashML-DSA
+    //TODO: Generate a "pre-hash" ML-DSA signature
+//    public byte[] hashSign(byte[] sk, byte[] message, byte[] ctx, Digest ph) {}
+    //TODO: Verify a pre-hash HashML-DSA signature
+//    public boolean hashVerify(byte[] pk, byte[] message, byte[] sig) {}
+
+
 }

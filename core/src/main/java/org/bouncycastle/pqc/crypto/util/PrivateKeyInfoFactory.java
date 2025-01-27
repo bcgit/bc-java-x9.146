@@ -3,9 +3,11 @@ package org.bouncycastle.pqc.crypto.util;
 import java.io.IOException;
 
 import org.bouncycastle.asn1.ASN1EncodableVector;
+import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.DERTaggedObject;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -25,13 +27,14 @@ import org.bouncycastle.pqc.crypto.bike.BIKEPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.cmce.CMCEPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.crystals.kyber.KyberPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.frodo.FrodoPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.lms.Composer;
 import org.bouncycastle.pqc.crypto.lms.HSSPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.lms.LMSPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.mldsa.MLDSAPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.mlkem.MLKEMPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.newhope.NHPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.ntru.NTRUPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.NTRULPRimePrivateKeyParameters;
@@ -39,6 +42,7 @@ import org.bouncycastle.pqc.crypto.ntruprime.SNTRUPrimePrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.picnic.PicnicPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.rainbow.RainbowPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.saber.SABERPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.sphincs.SPHINCSPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.BDS;
@@ -136,10 +140,18 @@ public class PrivateKeyInfoFactory
         else if (privateKey instanceof SPHINCSPlusPrivateKeyParameters)
         {
             SPHINCSPlusPrivateKeyParameters params = (SPHINCSPlusPrivateKeyParameters)privateKey;
-
+                                                               
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.sphincsPlusOidLookup(params.getParameters()));
 
             return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(params.getEncoded()), attributes, params.getPublicKey());
+        }
+        else if (privateKey instanceof SLHDSAPrivateKeyParameters)
+        {
+            SLHDSAPrivateKeyParameters params = (SLHDSAPrivateKeyParameters)privateKey;
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.slhdsaOidLookup(params.getParameters()));
+
+            return new PrivateKeyInfo(algorithmIdentifier, params.getEncoded(), attributes, params.getPublicKey());
         }
         else if (privateKey instanceof PicnicPrivateKeyParameters)
         {
@@ -230,13 +242,23 @@ public class PrivateKeyInfoFactory
 
             return new PrivateKeyInfo(algorithmIdentifier, falconPriv, attributes);
         }
-        else if (privateKey instanceof KyberPrivateKeyParameters)
+        else if (privateKey instanceof MLKEMPrivateKeyParameters)
         {
-            KyberPrivateKeyParameters params = (KyberPrivateKeyParameters)privateKey;
+            MLKEMPrivateKeyParameters params = (MLKEMPrivateKeyParameters)privateKey;
             
-            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.kyberOidLookup(params.getParameters()));
-
-            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(params.getEncoded()), attributes);
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.mlkemOidLookup(params.getParameters()));
+                                                  
+            return new PrivateKeyInfo(algorithmIdentifier, getBasicPQCEncoding(params.getSeed(), params.getEncoded()), attributes);
+//            byte[] seed = params.getSeed();
+//
+//            if (seed == null)
+//            {
+//                return new PrivateKeyInfo(algorithmIdentifier, params.getEncoded(), attributes);
+//            }
+//            else
+//            {
+//                return new PrivateKeyInfo(algorithmIdentifier, seed, attributes);
+//            }
         }
         else if (privateKey instanceof NTRULPRimePrivateKeyParameters)
         {
@@ -268,6 +290,27 @@ public class PrivateKeyInfoFactory
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.sntruprimeOidLookup(params.getParameters()));
 
             return new PrivateKeyInfo(algorithmIdentifier, new DERSequence(v), attributes);
+        }
+        else if (privateKey instanceof MLDSAPrivateKeyParameters)
+        {
+            MLDSAPrivateKeyParameters params = (MLDSAPrivateKeyParameters)privateKey;
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.mldsaOidLookup(params.getParameters()));
+
+            return new PrivateKeyInfo(algorithmIdentifier, getBasicPQCEncoding(params.getSeed(), params.getEncoded()), attributes);
+//            byte[] seed = params.getSeed();
+//            if (seed == null)
+//            {
+//                MLDSAPublicKeyParameters pubParams = params.getPublicKeyParameters();
+//
+//                return new PrivateKeyInfo(algorithmIdentifier, params.getEncoded(), attributes, pubParams.getEncoded());
+//            }
+//            else
+//            {
+//                MLDSAPublicKeyParameters pubParams = params.getPublicKeyParameters();
+//
+//                return new PrivateKeyInfo(algorithmIdentifier, seed, attributes, pubParams.getEncoded());
+//            }
         }
         else if (privateKey instanceof DilithiumPrivateKeyParameters)
         {
@@ -354,6 +397,23 @@ public class PrivateKeyInfoFactory
         {
             return new XMSSPrivateKey(index, secretKeySeed, secretKeyPRF, publicSeed, root, bdsStateBinary);
         }
+    }
+
+    private static ASN1Sequence getBasicPQCEncoding(byte[] seed, byte[] expanded)
+    {
+        ASN1EncodableVector v = new ASN1EncodableVector(2);
+        
+        if (seed != null)
+        {
+            v.add(new DEROctetString(seed));
+        }
+
+        if (expanded != null)
+        {
+            v.add(new DERTaggedObject(false, 1, new DEROctetString(expanded)));
+        }
+
+        return new DERSequence(v);
     }
 
     private static XMSSMTPrivateKey xmssmtCreateKeyStructure(XMSSMTPrivateKeyParameters keyParams)

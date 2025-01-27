@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
+import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.io.Streams;
 
 /**
@@ -128,8 +129,8 @@ public class SecretKeyPacket
      * @param newPacketFormat packet format
      * @throws IOException if the secret key packet cannot be parsed
      *
-     * @see <a href="https://www.ietf.org/archive/id/draft-ietf-openpgp-crypto-refresh-13.html#name-secret-key-packet-formats">
-     *     C-R - Secret-Key Packet Formats</a>
+     * @see <a href="https://www.rfc-editor.org/rfc/rfc9580.html#name-secret-key-packet-formats">
+     *     OpenPGP - Secret-Key Packet Formats</a>
      * @see <a href="https://www.ietf.org/archive/id/draft-koch-librepgp-01.html#name-secret-key-packet-formats">
      *     LibrePGP - Secret-Key Packet Formats</a>
      * @see <a href="https://datatracker.ietf.org/doc/draft-dkg-openpgp-hardware-secrets/">
@@ -348,7 +349,7 @@ public class SecretKeyPacket
         this.aeadAlgorithm = aeadAlgorithm;
         this.s2kUsage = s2kUsage;
         this.s2k = s2k;
-        this.iv = iv;
+        this.iv = Arrays.clone(iv);
         this.secKeyData = secKeyData;
 
         if (s2k != null && s2k.getType() == S2K.ARGON_2 && s2kUsage != USAGE_AEAD)
@@ -398,7 +399,7 @@ public class SecretKeyPacket
      */
     public byte[] getIV()
     {
-        return iv;
+        return Arrays.clone(iv);
     }
 
     /**

@@ -19,8 +19,10 @@ import org.bouncycastle.bcpg.Ed448SecretBCPGKey;
 import org.bouncycastle.bcpg.EdSecretBCPGKey;
 import org.bouncycastle.bcpg.ElGamalSecretBCPGKey;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
+import org.bouncycastle.bcpg.KeyIdentifier;
 import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
 import org.bouncycastle.bcpg.PublicKeyPacket;
+import org.bouncycastle.bcpg.PublicKeyUtils;
 import org.bouncycastle.bcpg.PublicSubkeyPacket;
 import org.bouncycastle.bcpg.RSASecretBCPGKey;
 import org.bouncycastle.bcpg.S2K;
@@ -417,11 +419,7 @@ public class PGPSecretKey
      */
     public boolean isSigningKey()
     {
-        int algorithm = pub.getAlgorithm();
-
-        return ((algorithm == PGPPublicKey.RSA_GENERAL) || (algorithm == PGPPublicKey.RSA_SIGN)
-            || (algorithm == PGPPublicKey.DSA) || (algorithm == PGPPublicKey.ECDSA) || (algorithm == PGPPublicKey.EDDSA_LEGACY)
-            || (algorithm == PGPPublicKey.ELGAMAL_GENERAL) || (algorithm == PGPPublicKey.Ed448) || (algorithm == PGPPublicKey.Ed25519));
+        return PublicKeyUtils.isSigningAlgorithm(pub.getAlgorithm());
     }
 
     /**
@@ -459,12 +457,13 @@ public class PGPSecretKey
     /**
      * Return the AEAD algorithm the key is encrypted with.
      * Returns <pre>0</pre> if no AEAD is used.
+     *
      * @return aead key encryption algorithm
      */
     public int getAEADKeyEncryptionAlgorithm()
     {
         return secret.getAeadAlgorithm();
-    }    
+    }
 
     /**
      * Return the keyID of the public key associated with this key.
@@ -474,6 +473,16 @@ public class PGPSecretKey
     public long getKeyID()
     {
         return pub.getKeyID();
+    }
+
+    /**
+     * Return a {@link KeyIdentifier} for this key.
+     *
+     * @return identifier
+     */
+    public KeyIdentifier getKeyIdentifier()
+    {
+        return this.getPublicKey().getKeyIdentifier();
     }
 
     /**
@@ -488,6 +497,13 @@ public class PGPSecretKey
 
     /**
      * Return the S2K usage associated with this key.
+     * This value indicates, how the secret key material is protected:
+     * <ul>
+     *     <li>{@link SecretKeyPacket#USAGE_NONE}: Unprotected</li>
+     *     <li>{@link SecretKeyPacket#USAGE_CHECKSUM}: Password-protected using malleable CFB (deprecated)</li>
+     *     <li>{@link SecretKeyPacket#USAGE_SHA1}: Password-protected using CFB</li>
+     *     <li>{@link SecretKeyPacket#USAGE_AEAD}: Password-protected using AEAD (recommended)</li>
+     * </ul>
      *
      * @return the key's S2K usage
      */
@@ -794,10 +810,7 @@ public class PGPSecretKey
 
         if (pub.subSigs == null)        // is not a sub key
         {
-            for (int i = 0; i != pub.keySigs.size(); i++)
-            {
-                ((PGPSignature)pub.keySigs.get(i)).encode(out);
-            }
+            Util.encodePGPSignatures(out, pub.keySigs, false);
 
             for (int i = 0; i != pub.ids.size(); i++)
             {
@@ -820,19 +833,12 @@ public class PGPSecretKey
                 }
 
                 List<PGPSignature> sigs = (List<PGPSignature>)pub.idSigs.get(i);
-
-                for (int j = 0; j != sigs.size(); j++)
-                {
-                    ((PGPSignature)sigs.get(j)).encode(out);
-                }
+                Util.encodePGPSignatures(out, sigs, false);
             }
         }
         else
         {
-            for (int j = 0; j != pub.subSigs.size(); j++)
-            {
-                ((PGPSignature)pub.subSigs.get(j)).encode(out);
-            }
+            Util.encodePGPSignatures(out, pub.subSigs, false);
         }
     }
 
@@ -991,7 +997,15 @@ public class PGPSecretKey
 
         SecretKeyPacket secret;
 
-        secret = generateSecretKeyPacket(!(key.secret instanceof SecretSubkeyPacket), key.secret.getPublicKeyPacket(), newEncAlgorithm, s2kUsage, s2k, iv, keyData);
+        if (newKeyEncryptor!= null && newKeyEncryptor.getAeadAlgorithm() > 0)
+        {
+            s2kUsage = SecretKeyPacket.USAGE_AEAD;
+            secret = generateSecretKeyPacket(!(key.secret instanceof SecretSubkeyPacket), key.secret.getPublicKeyPacket(), newEncAlgorithm, newKeyEncryptor.getAeadAlgorithm(), s2kUsage, s2k, iv, keyData);
+        }
+        else
+        {
+            secret = generateSecretKeyPacket(!(key.secret instanceof SecretSubkeyPacket), key.secret.getPublicKeyPacket(), newEncAlgorithm, s2kUsage, s2k, iv, keyData);
+        }
 
         return new PGPSecretKey(secret, key.pub);
     }

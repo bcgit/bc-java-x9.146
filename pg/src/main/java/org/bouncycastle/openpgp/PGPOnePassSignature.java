@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import org.bouncycastle.bcpg.BCPGInputStream;
 import org.bouncycastle.bcpg.BCPGOutputStream;
 import org.bouncycastle.bcpg.HashUtils;
+import org.bouncycastle.bcpg.KeyIdentifier;
 import org.bouncycastle.bcpg.OnePassSignaturePacket;
 import org.bouncycastle.bcpg.Packet;
 import org.bouncycastle.bcpg.SignaturePacket;
@@ -175,6 +176,16 @@ public class PGPOnePassSignature
     }
 
     /**
+     * Return a {@link KeyIdentifier} identifying this {@link PGPOnePassSignature}.
+     *
+     * @return key identifier
+     */
+    public KeyIdentifier getKeyIdentifier()
+    {
+        return new KeyIdentifier(getFingerprint(), getKeyID());
+    }
+
+    /**
      * Return the salt used in the corresponding signature.
      * Only for {@link OnePassSignaturePacket#VERSION_6} packets.
      * @return salt
@@ -200,8 +211,8 @@ public class PGPOnePassSignature
     }
 
     /**
-     * Return true, if the signature is contains any signatures that follow.
-     * An bracketing OPS is followed by additional OPS packets and is calculated over all the data between itself
+     * Return true, if the signature contains any signatures that follow.
+     * A bracketing OPS is followed by additional OPS packets and is calculated over all the data between itself
      * and its corresponding signature (it is an attestation for contained signatures).
      *
      * @return true if containing, false otherwise

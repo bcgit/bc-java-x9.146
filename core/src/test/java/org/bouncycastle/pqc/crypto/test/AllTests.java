@@ -19,6 +19,8 @@ public class AllTests
     {
         TestSuite suite = new TestSuite("Lightweight PQ Crypto Tests");
 
+        suite.addTestSuite(LMSTest.class);
+        suite.addTestSuite(HSSTest.class);
         suite.addTestSuite(XMSSMTPrivateKeyTest.class);
         suite.addTestSuite(XMSSMTPublicKeyTest.class);
         suite.addTestSuite(XMSSMTSignatureTest.class);
@@ -37,8 +39,9 @@ public class AllTests
         suite.addTestSuite(NTRUTest.class);
         suite.addTestSuite(NTRUParametersTest.class);
         suite.addTestSuite(FalconTest.class);
-        suite.addTestSuite(CrystalsKyberTest.class);
+        suite.addTestSuite(MLKEMTest.class);
         suite.addTestSuite(CrystalsDilithiumTest.class);
+        suite.addTestSuite(MLDSATest.class);
         suite.addTestSuite(NTRULPRimeTest.class);
         suite.addTestSuite(SNTRUPrimeTest.class);
         suite.addTestSuite(BIKETest.class);
@@ -47,6 +50,7 @@ public class AllTests
         suite.addTestSuite(GeMSSTest.class);
         suite.addTestSuite(XWingTest.class);
         suite.addTestSuite(AllTests.SimpleTestTest.class);
+        suite.addTestSuite(SLHDSATest.class);
 
         return new BCTestSetup(suite);
     }

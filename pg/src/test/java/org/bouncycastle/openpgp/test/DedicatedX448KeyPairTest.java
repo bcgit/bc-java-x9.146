@@ -1,21 +1,52 @@
 package org.bouncycastle.openpgp.test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.util.Date;
+
+import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
 import org.bouncycastle.bcpg.PublicKeyPacket;
+import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
 import org.bouncycastle.bcpg.X448PublicBCPGKey;
 import org.bouncycastle.bcpg.X448SecretBCPGKey;
-import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
 import org.bouncycastle.crypto.generators.X448KeyPairGenerator;
 import org.bouncycastle.crypto.params.X448KeyGenerationParameters;
+import org.bouncycastle.jcajce.spec.EdDSAParameterSpec;
 import org.bouncycastle.jcajce.spec.XDHParameterSpec;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.openpgp.PGPEncryptedDataGenerator;
+import org.bouncycastle.openpgp.PGPEncryptedDataList;
 import org.bouncycastle.openpgp.PGPException;
+import org.bouncycastle.openpgp.PGPKeyPair;
+import org.bouncycastle.openpgp.PGPLiteralData;
+import org.bouncycastle.openpgp.PGPLiteralDataGenerator;
+import org.bouncycastle.openpgp.PGPObjectFactory;
+import org.bouncycastle.openpgp.PGPPublicKeyEncryptedData;
+import org.bouncycastle.openpgp.bc.BcPGPObjectFactory;
+import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;
+import org.bouncycastle.openpgp.operator.PGPDataEncryptorBuilder;
+import org.bouncycastle.openpgp.operator.PublicKeyDataDecryptorFactory;
+import org.bouncycastle.openpgp.operator.PublicKeyKeyEncryptionMethodGenerator;
+import org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder;
 import org.bouncycastle.openpgp.operator.bc.BcPGPKeyPair;
+import org.bouncycastle.openpgp.operator.bc.BcPublicKeyDataDecryptorFactory;
+import org.bouncycastle.openpgp.operator.bc.BcPublicKeyKeyEncryptionMethodGenerator;
 import org.bouncycastle.openpgp.operator.jcajce.JcaPGPKeyPair;
-
-import java.io.IOException;
-import java.security.*;
-import java.util.Date;
+import org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder;
+import org.bouncycastle.openpgp.operator.jcajce.JcePublicKeyDataDecryptorFactoryBuilder;
+import org.bouncycastle.openpgp.operator.jcajce.JcePublicKeyKeyEncryptionMethodGenerator;
+import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Strings;
+import org.bouncycastle.util.io.Streams;
 
 public class DedicatedX448KeyPairTest
         extends AbstractPgpKeyPairTest
@@ -32,6 +63,21 @@ public class DedicatedX448KeyPairTest
     {
         testConversionOfJcaKeyPair();
         testConversionOfBcKeyPair();
+        testV4MessageEncryptionDecryptionWithJcaKey();
+        testV4MessageEncryptionDecryptionWithBcKey();
+
+        testBitStrength();
+    }
+
+    private void testBitStrength()
+            throws NoSuchAlgorithmException, InvalidAlgorithmParameterException, PGPException
+    {
+        Date date = currentTimeRounded();
+        KeyPairGenerator gen = KeyPairGenerator.getInstance("XDH", new BouncyCastleProvider());
+        gen.initialize(new XDHParameterSpec("X448"));
+        KeyPair kp = gen.generateKeyPair();
+        JcaPGPKeyPair k = new JcaPGPKeyPair(PublicKeyPacket.VERSION_6, PublicKeyAlgorithmTags.X448, kp, date);
+        isEquals("X448 key size mismatch", 448, k.getPublicKey().getBitStrength());
     }
 
     private void testConversionOfJcaKeyPair()
@@ -42,8 +88,9 @@ public class DedicatedX448KeyPairTest
         gen.initialize(new XDHParameterSpec("X448"));
         KeyPair kp = gen.generateKeyPair();
 
-        for (int version: new int[]{PublicKeyPacket.VERSION_4, PublicKeyPacket.VERSION_6})
+        for (int idx = 0; idx != 2; idx ++)
         {
+            int version = (idx == 0) ? PublicKeyPacket.VERSION_4 : PublicKeyPacket.VERSION_6;
             JcaPGPKeyPair j1 = new JcaPGPKeyPair(version, PublicKeyAlgorithmTags.X448, kp, date);
             byte[] pubEnc = j1.getPublicKey().getEncoded();
             byte[] privEnc = j1.getPrivateKey().getPrivateKeyDataPacket().getEncoded();
@@ -89,8 +136,9 @@ public class DedicatedX448KeyPairTest
         gen.init(new X448KeyGenerationParameters(new SecureRandom()));
         AsymmetricCipherKeyPair kp = gen.generateKeyPair();
 
-        for (int version: new int[]{PublicKeyPacket.VERSION_4, PublicKeyPacket.VERSION_6})
+        for (int idx = 0; idx != 2; idx ++)
         {
+            int version = (idx == 0) ? PublicKeyPacket.VERSION_4 : PublicKeyPacket.VERSION_6;
             BcPGPKeyPair b1 = new BcPGPKeyPair(version, PublicKeyAlgorithmTags.X448, kp, date);
             byte[] pubEnc = b1.getPublicKey().getEncoded();
             byte[] privEnc = b1.getPrivateKey().getPrivateKeyDataPacket().getEncoded();
@@ -126,6 +174,96 @@ public class DedicatedX448KeyPairTest
             isEquals("Creation time is preserved",
                 date.getTime(), j2.getPublicKey().getCreationTime().getTime());
         }
+    }
+
+    private void testV4MessageEncryptionDecryptionWithJcaKey()
+        throws PGPException, NoSuchAlgorithmException, InvalidAlgorithmParameterException, IOException
+    {
+        BouncyCastleProvider provider = new BouncyCastleProvider();
+
+        Date date = currentTimeRounded();
+        KeyPairGenerator gen = KeyPairGenerator.getInstance("XDH", provider);
+        gen.initialize(new XDHParameterSpec("X448"));
+        KeyPair kp = gen.generateKeyPair();
+        PGPKeyPair keyPair = new JcaPGPKeyPair(PublicKeyAlgorithmTags.X448, kp, date);
+
+        byte[] data = Strings.toUTF8ByteArray("Hello, World!\n");
+
+        PGPDataEncryptorBuilder encBuilder = new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.AES_256)
+            .setProvider(provider);
+        PGPEncryptedDataGenerator encGen = new PGPEncryptedDataGenerator(encBuilder);
+        PublicKeyKeyEncryptionMethodGenerator metGen = new JcePublicKeyKeyEncryptionMethodGenerator(keyPair.getPublicKey())
+            .setProvider(provider);
+        encGen.addMethod(metGen);
+        PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
+
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+        OutputStream encOut = encGen.open(bOut, new byte[4096]);
+        OutputStream litOut = litGen.open(encOut, PGPLiteralData.BINARY, "", PGPLiteralData.NOW, new byte[4096]);
+        litOut.write(data);
+        litGen.close();
+        encGen.close();
+
+        byte[] encrypted = bOut.toByteArray();
+
+        ByteArrayInputStream bIn = new ByteArrayInputStream(encrypted);
+        PGPObjectFactory objectFactory = new JcaPGPObjectFactory(bIn);
+        PGPEncryptedDataList encDataList = (PGPEncryptedDataList) objectFactory.nextObject();
+        PGPPublicKeyEncryptedData encData = (PGPPublicKeyEncryptedData) encDataList.get(0);
+        PublicKeyDataDecryptorFactory decFactory = new JcePublicKeyDataDecryptorFactoryBuilder()
+            .setProvider(provider)
+            .build(keyPair.getPrivateKey());
+        InputStream decIn = encData.getDataStream(decFactory);
+        objectFactory = new JcaPGPObjectFactory(decIn);
+        PGPLiteralData lit = (PGPLiteralData) objectFactory.nextObject();
+        InputStream litIn = lit.getDataStream();
+        byte[] plaintext = Streams.readAll(litIn);
+        litIn.close();
+        decIn.close();
+
+        isTrue(Arrays.areEqual(data, plaintext));
+    }
+
+    private void testV4MessageEncryptionDecryptionWithBcKey()
+        throws PGPException, IOException
+    {
+        Date date = currentTimeRounded();
+        X448KeyPairGenerator gen = new X448KeyPairGenerator();
+        gen.init(new X448KeyGenerationParameters(new SecureRandom()));
+        AsymmetricCipherKeyPair kp = gen.generateKeyPair();
+        BcPGPKeyPair keyPair = new BcPGPKeyPair(PublicKeyAlgorithmTags.X448, kp, date);
+
+        byte[] data = Strings.toUTF8ByteArray("Hello, World!\n");
+
+        PGPDataEncryptorBuilder encBuilder = new BcPGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.AES_256);
+        PGPEncryptedDataGenerator encGen = new PGPEncryptedDataGenerator(encBuilder);
+        PublicKeyKeyEncryptionMethodGenerator metGen = new BcPublicKeyKeyEncryptionMethodGenerator(keyPair.getPublicKey());
+        encGen.addMethod(metGen);
+        PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
+
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+        OutputStream encOut = encGen.open(bOut, new byte[4096]);
+        OutputStream litOut = litGen.open(encOut, PGPLiteralData.BINARY, "", PGPLiteralData.NOW, new byte[4096]);
+        litOut.write(data);
+        litGen.close();
+        encGen.close();
+
+        byte[] encrypted = bOut.toByteArray();
+
+        ByteArrayInputStream bIn = new ByteArrayInputStream(encrypted);
+        PGPObjectFactory objectFactory = new BcPGPObjectFactory(bIn);
+        PGPEncryptedDataList encDataList = (PGPEncryptedDataList)objectFactory.nextObject();
+        PGPPublicKeyEncryptedData encData = (PGPPublicKeyEncryptedData)encDataList.get(0);
+        PublicKeyDataDecryptorFactory decFactory = new BcPublicKeyDataDecryptorFactory(keyPair.getPrivateKey());
+        InputStream decIn = encData.getDataStream(decFactory);
+        objectFactory = new BcPGPObjectFactory(decIn);
+        PGPLiteralData lit = (PGPLiteralData)objectFactory.nextObject();
+        InputStream litIn = lit.getDataStream();
+        byte[] plaintext = Streams.readAll(litIn);
+        litIn.close();
+        decIn.close();
+
+        isTrue(Arrays.areEqual(data, plaintext));
     }
 
     public static void main(String[] args)
