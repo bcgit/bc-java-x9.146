@@ -20,27 +20,38 @@ public class SignatureAndHashAlgorithm
     public static final SignatureAndHashAlgorithm ed448 =
         create(SignatureScheme.ed448);
 
-    public static final SignatureAndHashAlgorithm dilithiumr3_2 =
-        create(SignatureScheme.dilithiumr3_2);
-    public static final SignatureAndHashAlgorithm dilithiumr3_3 =
-        create(SignatureScheme.dilithiumr3_3);
-    public static final SignatureAndHashAlgorithm dilithiumr3_5 =
-        create(SignatureScheme.dilithiumr3_5);
+    //TODO[x9145]: add falcon
+    public static final SignatureAndHashAlgorithm DRAFT_mldsa44 =
+        create(SignatureScheme.DRAFT_mldsa44);
+    public static final SignatureAndHashAlgorithm DRAFT_mldsa65 =
+            create(SignatureScheme.DRAFT_mldsa65);
+    public static final SignatureAndHashAlgorithm DRAFT_mldsa87 =
+            create(SignatureScheme.DRAFT_mldsa87);
+    public static final SignatureAndHashAlgorithm mldsa44_ecdsa_secp256r1_sha256 =
+            create(SignatureScheme.mldsa44_ecdsa_secp256r1_sha256);
+    public static final SignatureAndHashAlgorithm mldsa65_ecdsa_secp384r1_sha384 =
+            create(SignatureScheme.mldsa65_ecdsa_secp384r1_sha384);
+    public static final SignatureAndHashAlgorithm mldsa87_ecdsa_secp521r1_sha51 =
+            create(SignatureScheme.mldsa87_ecdsa_secp521r1_sha51);
+    public static final SignatureAndHashAlgorithm mldsa44_ed25519 =
+            create(SignatureScheme.mldsa44_ed25519);
+    public static final SignatureAndHashAlgorithm mldsa65_ed25519 =
+            create(SignatureScheme.mldsa65_ed25519);
+    public static final SignatureAndHashAlgorithm mldsa44_rsa2048_pkcs1_sha256 =
+            create(SignatureScheme.mldsa44_rsa2048_pkcs1_sha256);
+    public static final SignatureAndHashAlgorithm mldsa65_rsa3072_pkcs1_sha256 =
+            create(SignatureScheme.mldsa65_rsa3072_pkcs1_sha256);
+    public static final SignatureAndHashAlgorithm mldsa65_rsa4096_pkcs1_sha384 =
+            create(SignatureScheme.mldsa65_rsa4096_pkcs1_sha384);
+    public static final SignatureAndHashAlgorithm mldsa44_rsa2048_pss_pss_sha256 =
+            create(SignatureScheme.mldsa44_rsa2048_pss_pss_sha256);
+    public static final SignatureAndHashAlgorithm mldsa65_rsa3072_pss_pss_sha256 =
+            create(SignatureScheme.mldsa65_rsa3072_pss_pss_sha256);
+    public static final SignatureAndHashAlgorithm mldsa65_rsa4096_pss_pss_sha384 =
+            create(SignatureScheme.mldsa65_rsa4096_pss_pss_sha384);
+    public static final SignatureAndHashAlgorithm mldsa87_ed448 =
+            create(SignatureScheme.mldsa87_ed448);
 
-    public static final SignatureAndHashAlgorithm falcon_512 =
-        create(SignatureScheme.falcon_512);
-    public static final SignatureAndHashAlgorithm falcon_1024 =
-        create(SignatureScheme.falcon_1024);
-
-    //TODO[x9146]: make an alt signature here and have hyrbids no relay on other methods to figure out alt signature!
-    public static final  SignatureAndHashAlgorithm hybrid_p256_dilithiumr3_2 = create(SignatureScheme.hybrid_p256_dilithiumr3_2);
-    public static final  SignatureAndHashAlgorithm hybrid_rsa3072_dilithiumr3_2 = create(SignatureScheme.hybrid_rsa3072_dilithiumr3_2);
-    public static final  SignatureAndHashAlgorithm hybrid_p384_dilithiumr3_3 = create(SignatureScheme.hybrid_p384_dilithiumr3_3);
-    public static final  SignatureAndHashAlgorithm hybrid_p521_dilithiumr3_5 = create(SignatureScheme.hybrid_p521_dilithiumr3_5);
-
-    public static final  SignatureAndHashAlgorithm hybrid_p256_falcon_512 = create(SignatureScheme.hybrid_p256_falcon_512);
-    public static final  SignatureAndHashAlgorithm hybrid_rsa3072_falcon_512 = create(SignatureScheme.hybrid_rsa3072_falcon_512);
-    public static final  SignatureAndHashAlgorithm hybrid_p521_falcon_1024 = create(SignatureScheme.hybrid_p521_falcon_1024);
     public static final SignatureAndHashAlgorithm gostr34102012_256 =
         create(HashAlgorithm.Intrinsic, SignatureAlgorithm.gostr34102012_256);
     public static final SignatureAndHashAlgorithm gostr34102012_512 =
@@ -58,19 +69,20 @@ public class SignatureAndHashAlgorithm
     public static final SignatureAndHashAlgorithm rsa_pss_pss_sha512 =
         create(SignatureScheme.rsa_pss_pss_sha512);
 
+//TODO[x9145]: No hash algorithm, find another way
     public static SignatureAndHashAlgorithm getHybrid(SignatureAndHashAlgorithm nativeAlg, SignatureAndHashAlgorithm altAlg)
     {
-        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp256r1_sha256)) && altAlg.equals(dilithiumr3_2))
+        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp256r1_sha256)) && altAlg.equals(SignatureAndHashAlgorithm.getInstanceIntrinsic(SignatureAlgorithm.custom_mldsa44)))
         {
-            return hybrid_p256_dilithiumr3_2;
+            return SignatureAndHashAlgorithm.mldsa44_ecdsa_secp256r1_sha256;
         }
-        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp384r1_sha384)) && altAlg.equals(dilithiumr3_3))
+        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp384r1_sha384)) && altAlg.equals(SignatureAndHashAlgorithm.getInstanceIntrinsic(SignatureAlgorithm.custom_mldsa65)))
         {
-            return hybrid_p384_dilithiumr3_3;
+            return SignatureAndHashAlgorithm.mldsa65_ecdsa_secp384r1_sha384;
         }
-        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp521r1_sha512)) && altAlg.equals(dilithiumr3_5))
+        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp521r1_sha512)) && altAlg.equals(SignatureAndHashAlgorithm.getInstanceIntrinsic(SignatureAlgorithm.custom_mldsa87)))
         {
-            return hybrid_p521_dilithiumr3_5;
+            return SignatureAndHashAlgorithm.mldsa87_ecdsa_secp521r1_sha51;
         }
         return null;
     }
@@ -115,16 +127,37 @@ public class SignatureAndHashAlgorithm
             return ecdsa_brainpoolP384r1tls13_sha384;
         case SignatureAlgorithm.ecdsa_brainpoolP512r1tls13_sha512:
             return ecdsa_brainpoolP512r1tls13_sha512;
-        case SignatureAlgorithm.falcon_512:
-            return falcon_512;
-        case SignatureAlgorithm.falcon_1024:
-            return falcon_1024;
-        case SignatureAlgorithm.dilithiumr3_2:
-            return dilithiumr3_2;
-        case SignatureAlgorithm.dilithiumr3_3:
-            return dilithiumr3_3;
-        case SignatureAlgorithm.dilithiumr3_5:
-            return dilithiumr3_5;
+        case SignatureAlgorithm.custom_mldsa44:
+            return DRAFT_mldsa44;
+        case SignatureAlgorithm.custom_mldsa65:
+            return DRAFT_mldsa65;
+        case SignatureAlgorithm.custom_mldsa87:
+            return DRAFT_mldsa87;
+        case SignatureAlgorithm.custom_mldsa44_ecdsa_secp256r1_sha256:
+            return mldsa44_ecdsa_secp256r1_sha256;
+        case SignatureAlgorithm.custom_mldsa65_ecdsa_secp384r1_sha384:
+            return mldsa65_ecdsa_secp384r1_sha384;
+        case SignatureAlgorithm.custom_mldsa87_ecdsa_secp521r1_sha51:
+            return mldsa87_ecdsa_secp521r1_sha51;
+        case SignatureAlgorithm.custom_mldsa44_ed25519:
+            return mldsa44_ed25519;
+        case SignatureAlgorithm.custom_mldsa65_ed25519:
+            return mldsa65_ed25519;
+        case SignatureAlgorithm.custom_mldsa44_rsa2048_pkcs1_sha256:
+            return mldsa44_rsa2048_pkcs1_sha256;
+        case SignatureAlgorithm.custom_mldsa65_rsa3072_pkcs1_sha256:
+            return mldsa65_rsa3072_pkcs1_sha256;
+        case SignatureAlgorithm.custom_mldsa65_rsa4096_pkcs1_sha384:
+            return mldsa65_rsa4096_pkcs1_sha384;
+        case SignatureAlgorithm.custom_mldsa44_rsa2048_pss_pss_sha256:
+            return mldsa44_rsa2048_pss_pss_sha256;
+        case SignatureAlgorithm.custom_mldsa65_rsa3072_pss_pss_sha256:
+            return mldsa65_rsa3072_pss_pss_sha256;
+        case SignatureAlgorithm.custom_mldsa65_rsa4096_pss_pss_sha384:
+            return mldsa65_rsa4096_pss_pss_sha384;
+        case SignatureAlgorithm.custom_mldsa87_ed448:
+            return mldsa87_ed448;
+        //TODO[x9146]: add falcon
         default:
             return create(HashAlgorithm.Intrinsic, signatureAlgorithm);
         }

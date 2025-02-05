@@ -1,5 +1,6 @@
 package org.bouncycastle.tls.crypto.impl.bc;
 
+import org.bouncycastle.crypto.Signer;
 import org.bouncycastle.crypto.io.SignerOutputStream;
 import org.bouncycastle.pqc.crypto.MessageSigner;
 import org.bouncycastle.tls.crypto.Tls13Verifier;
@@ -13,8 +14,20 @@ public class BcTls13PQVerifier
 {
 
     private final ByteArrayOutputStream output;
-    private final MessageSigner verifier;
+    private final MessageSigner verifierBeta;
+    private final Signer verifier;
 
+    public BcTls13PQVerifier(Signer verifier)
+    {
+        if (verifier == null)
+        {
+            throw new NullPointerException("'verifier' cannot be null");
+        }
+
+        this.verifierBeta = null;
+        this.verifier = verifier;
+        this.output = new ByteArrayOutputStream();
+    }
     public BcTls13PQVerifier(MessageSigner verifier)
     {
         if (verifier == null)
@@ -22,7 +35,8 @@ public class BcTls13PQVerifier
             throw new NullPointerException("'verifier' cannot be null");
         }
 
-        this.verifier = verifier;
+        this.verifierBeta = verifier;
+        this.verifier = null;
         this.output = new ByteArrayOutputStream();
     }
 
@@ -33,6 +47,15 @@ public class BcTls13PQVerifier
 
     public final boolean verifySignature(byte[] signature) throws IOException
     {
-        return verifier.verifySignature(output.toByteArray(), signature);
+        if (verifierBeta != null)
+        {
+            return verifierBeta.verifySignature(output.toByteArray(), signature);
+        }
+        else
+        {
+            byte[] message = output.toByteArray();
+            verifier.update(message, 0, message.length);
+            return verifier.verifySignature(signature);
+        }
     }
 }

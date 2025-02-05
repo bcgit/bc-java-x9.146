@@ -1,22 +1,17 @@
 package org.bouncycastle.tls.crypto.impl.bc;
 
 import org.bouncycastle.crypto.Signer;
-import org.bouncycastle.crypto.io.SignerOutputStream;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
 import org.bouncycastle.pqc.crypto.MessageSigner;
-import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumSigner;
-import org.bouncycastle.pqc.crypto.falcon.FalconPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconSigner;
+import org.bouncycastle.pqc.crypto.mldsa.MLDSASigner;
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
 import org.bouncycastle.tls.SignatureScheme;
 import org.bouncycastle.tls.TlsFatalAlert;
-import org.bouncycastle.tls.crypto.Tls13Verifier;
 import org.bouncycastle.tls.crypto.TlsStreamSigner;
 
 import java.io.IOException;
-import java.io.OutputStream;
 
 final class BcTlsPQSigner extends BcTlsSigner
 {
@@ -43,72 +38,62 @@ final class BcTlsPQSigner extends BcTlsSigner
         }
 
         //TODO[x9.146]: do I need crypto hash algorithm?
-        MessageSigner signer;
 
         switch (signatureScheme)
         {
-        case SignatureScheme.dilithiumr3_2:
-        case SignatureScheme.dilithiumr3_3:
-        case SignatureScheme.dilithiumr3_5:
-        case SignatureScheme.hybrid_p256_dilithiumr3_2:
-        case SignatureScheme.hybrid_rsa3072_dilithiumr3_2:
-        case SignatureScheme.hybrid_p384_dilithiumr3_3:
-        case SignatureScheme.hybrid_p521_dilithiumr3_5:
+        case SignatureScheme.DRAFT_mldsa44:
+        case SignatureScheme.DRAFT_mldsa65:
+        case SignatureScheme.DRAFT_mldsa87:
         {
-            signer = new DilithiumSigner();
+            Signer signer = new MLDSASigner();
             signer.init(true, privateKey);
-            break;
+            try
+            {
+                signer.update(hash, 0, hash.length);
+                return signer.generateSignature();
+            }
+            catch (Exception e)
+            {
+                throw new TlsFatalAlert(AlertDescription.certificate_unknown, e);
+            }
         }
-        case SignatureScheme.falcon_512:
-        case SignatureScheme.falcon_1024:
-        case SignatureScheme.hybrid_p256_falcon_512:
-        case SignatureScheme.hybrid_rsa3072_falcon_512:
-        case SignatureScheme.hybrid_p521_falcon_1024:
+        case SignatureScheme.X9146_falcon512:
+        case SignatureScheme.X9146_falcon1024:
         {
-            signer = new FalconSigner();
+            MessageSigner signer = new FalconSigner();
             signer.init(true, privateKey);
-            break;
+            return signer.generateSignature(hash);
         }
         default:
             throw new TlsFatalAlert(AlertDescription.certificate_unknown);
         }
         // Should message be attached to signature?
-        return signer.generateSignature(hash);
 
     }
 
     @Override
     public TlsStreamSigner getStreamSigner(SignatureAndHashAlgorithm algorithm)
     {
-        MessageSigner signer;
         switch (signatureScheme)
         {
-            case SignatureScheme.dilithiumr3_2:
-            case SignatureScheme.dilithiumr3_3:
-            case SignatureScheme.dilithiumr3_5:
-            case SignatureScheme.hybrid_p256_dilithiumr3_2:
-            case SignatureScheme.hybrid_rsa3072_dilithiumr3_2:
-            case SignatureScheme.hybrid_p384_dilithiumr3_3:
-            case SignatureScheme.hybrid_p521_dilithiumr3_5:
+            case SignatureScheme.DRAFT_mldsa44:
+            case SignatureScheme.DRAFT_mldsa65:
+            case SignatureScheme.DRAFT_mldsa87:
             {
-                signer = new DilithiumSigner();
+                Signer signer = new MLDSASigner();
                 signer.init(true, privateKey);
-                break;
+                return new BcTlsPQStreamSigner(signer);
             }
-            case SignatureScheme.falcon_512:
-            case SignatureScheme.falcon_1024:
-            case SignatureScheme.hybrid_p256_falcon_512:
-            case SignatureScheme.hybrid_rsa3072_falcon_512:
-            case SignatureScheme.hybrid_p521_falcon_1024:
+            case SignatureScheme.X9146_falcon512:
+            case SignatureScheme.X9146_falcon1024:
             {
-                signer = new FalconSigner();
+                MessageSigner signer = new FalconSigner();
                 signer.init(true, privateKey);
-                break;
+                return new BcTlsPQStreamSigner(signer);
             }
             default:
                 return null; //throw exp?
         }
-        return new BcTlsPQStreamSigner(signer);
     }
 
 

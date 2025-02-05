@@ -7,7 +7,9 @@ import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.KeyUsage;
+import org.bouncycastle.asn1.x509.SubjectAltPublicKeyInfo;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.Signer;
@@ -26,6 +28,9 @@ import org.bouncycastle.crypto.signers.Ed448Signer;
 import org.bouncycastle.crypto.signers.PSSSigner;
 import org.bouncycastle.crypto.signers.RSADigestSigner;
 import org.bouncycastle.crypto.util.PublicKeyFactory;
+import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.falcon.FalconPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.falcon.FalconSigner;
 import org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters;
 import org.bouncycastle.pqc.crypto.mldsa.MLDSAPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.mldsa.MLDSASigner;
@@ -154,6 +159,178 @@ public class BcTlsRawKeyCertificate
         }
     }
 
+    public Tls13Verifier createAltVerifier(int signatureScheme) throws IOException
+    {
+        SubjectAltPublicKeyInfo altPublicKeyInfo = SubjectAltPublicKeyInfo.getInstance(getExtension(Extension.subjectAltPublicKeyInfo));
+        SubjectPublicKeyInfo altKeyInfo =  new SubjectPublicKeyInfo(
+                altPublicKeyInfo.getAlgorithm(),
+                altPublicKeyInfo.getSubjectAltPublicKey()
+        );
+        return createAltVerifier(altKeyInfo, signatureScheme);
+    }
+
+    public Tls13Verifier createAltVerifier(SubjectPublicKeyInfo keyInfo, int signatureScheme) throws IOException
+    {
+        validateKeyUsage(KeyUsage.digitalSignature);
+
+        switch (signatureScheme)
+        {
+            case SignatureScheme.ecdsa_brainpoolP256r1tls13_sha256:
+            case SignatureScheme.ecdsa_brainpoolP384r1tls13_sha384:
+            case SignatureScheme.ecdsa_brainpoolP512r1tls13_sha512:
+            case SignatureScheme.ecdsa_secp256r1_sha256:
+            case SignatureScheme.ecdsa_secp384r1_sha384:
+            case SignatureScheme.ecdsa_secp521r1_sha512:
+            case SignatureScheme.ecdsa_sha1:
+            {
+                int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+                Digest digest = crypto.createDigest(cryptoHashAlgorithm);
+
+                Signer verifier = new DSADigestSigner(new ECDSASigner(), digest);
+                verifier.init(false, getPubKeyEC(keyInfo));
+
+                return new BcTls13Verifier(verifier);
+            }
+
+            case SignatureScheme.ed25519:
+            {
+                Ed25519Signer verifier = new Ed25519Signer();
+                verifier.init(false, getPubKeyEd25519(keyInfo));
+
+                return new BcTls13Verifier(verifier);
+            }
+
+            case SignatureScheme.ed448:
+            {
+                Ed448Signer verifier = new Ed448Signer(TlsUtils.EMPTY_BYTES);
+                verifier.init(false, getPubKeyEd448(keyInfo));
+
+                return new BcTls13Verifier(verifier);
+            }
+
+            case SignatureScheme.rsa_pkcs1_sha1:
+            case SignatureScheme.rsa_pkcs1_sha256:
+            case SignatureScheme.rsa_pkcs1_sha384:
+            case SignatureScheme.rsa_pkcs1_sha512:
+            {
+                validateRSA_PKCS1();
+
+                int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+                Digest digest = crypto.createDigest(cryptoHashAlgorithm);
+
+                RSADigestSigner verifier = new RSADigestSigner(digest, TlsCryptoUtils.getOIDForHash(cryptoHashAlgorithm));
+                verifier.init(false, getPubKeyRSA(keyInfo));
+
+                return new BcTls13Verifier(verifier);
+            }
+
+            case SignatureScheme.rsa_pss_pss_sha256:
+            case SignatureScheme.rsa_pss_pss_sha384:
+            case SignatureScheme.rsa_pss_pss_sha512:
+            {
+                validateRSA_PSS_PSS(SignatureScheme.getSignatureAlgorithm(signatureScheme));
+
+                int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+                Digest digest = crypto.createDigest(cryptoHashAlgorithm);
+
+                PSSSigner verifier = new PSSSigner(new RSAEngine(), digest, digest.getDigestSize());
+                verifier.init(false, getPubKeyRSA(keyInfo));
+
+                return new BcTls13Verifier(verifier);
+            }
+
+            case SignatureScheme.rsa_pss_rsae_sha256:
+            case SignatureScheme.rsa_pss_rsae_sha384:
+            case SignatureScheme.rsa_pss_rsae_sha512:
+            {
+                validateRSA_PSS_RSAE();
+
+                int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+                Digest digest = crypto.createDigest(cryptoHashAlgorithm);
+
+                PSSSigner verifier = new PSSSigner(new RSAEngine(), digest, digest.getDigestSize());
+                verifier.init(false, getPubKeyRSA(keyInfo));
+
+                return new BcTls13Verifier(verifier);
+            }
+            case SignatureScheme.DRAFT_mldsa44:
+            case SignatureScheme.DRAFT_mldsa65:
+            case SignatureScheme.DRAFT_mldsa87:
+            {
+                MLDSASigner verifier = new MLDSASigner();
+                MLDSAPublicKeyParameters pubKey = getPubKeyMLDSA(keyInfo);
+                verifier.init(false, getPubKeyMLDSA(keyInfo));
+
+                return new BcTls13PQVerifier(verifier);
+            }
+//            case SignatureScheme.dilithiumr3_2:
+//            case SignatureScheme.dilithiumr3_3:
+//            case SignatureScheme.dilithiumr3_5:
+//            {
+//                DilithiumSigner verifier = new DilithiumSigner();
+//                DilithiumPublicKeyParameters pubKey = getPubKeyDilithium(keyInfo);
+//                verifier.init(false, getPubKeyDilithium(keyInfo));
+//
+//                return new BcTls13PQVerifier(verifier);
+//            }
+            case SignatureScheme.mldsa44_ecdsa_secp256r1_sha256:
+            case SignatureScheme.mldsa65_ecdsa_secp384r1_sha384:
+            case SignatureScheme.mldsa44_ed25519:
+//            case SignatureScheme.mldsa44_rsa2048_pkcs1_sha256:
+//            case SignatureScheme.mldsa44_rsa2048_pss_pss_sha256:
+                return createAltVerifier(SignatureScheme.DRAFT_mldsa44);
+            case SignatureScheme.mldsa65_ed25519:
+//            case SignatureScheme.mldsa65_rsa3072_pkcs1_sha256:
+//            case SignatureScheme.mldsa65_rsa4096_pkcs1_sha384:
+//            case SignatureScheme.mldsa65_rsa3072_pss_pss_sha256:
+//            case SignatureScheme.mldsa65_rsa4096_pss_pss_sha384:
+                return createAltVerifier(SignatureScheme.DRAFT_mldsa65);
+            case SignatureScheme.mldsa87_ecdsa_secp521r1_sha51:
+            case SignatureScheme.mldsa87_ed448:
+                return createAltVerifier(SignatureScheme.DRAFT_mldsa87);
+
+//            case SignatureScheme.X9146_falcon512:
+//            case SignatureScheme.X9146_falcon1024:
+//            {
+//                FalconSigner verifier = new FalconSigner();
+//                FalconPublicKeyParameters pubKey = getPubKeyFalcon(keyInfo);
+//                verifier.init(false, getPubKeyFalcon(keyInfo));
+//
+//                return new BcTls13PQVerifier(verifier);
+//            }
+            //TODO[x9146]: alt will always be pqc
+//            case SignatureScheme.OQS_P256_MLDSA44:
+//            case SignatureScheme.OQS_RSA3072_MLDSA44:
+//                return createAltVerifier(keyInfo, SignatureScheme.DRAFT_mldsa44);
+//            case SignatureScheme.OQS_P384_MLDSA65:
+//                return createAltVerifier(keyInfo, SignatureScheme.DRAFT_mldsa65);
+//            case SignatureScheme.OQS_P521_MLDSA87:
+//                return createAltVerifier(keyInfo, SignatureScheme.DRAFT_mldsa87);
+//            case SignatureScheme.X9146_HYBRID_P256_falcon512:
+//            case SignatureScheme.X9146_HYBRID_RSA3072_falcon512:
+//                return createAltVerifier(keyInfo, SignatureScheme.X9146_falcon512);
+//            case SignatureScheme.X9146_HYBRID_P521_falcon1024:
+//                return createAltVerifier(keyInfo, SignatureScheme.X9146_falcon1024);
+
+
+            // TODO[RFC 8998]
+//        case SignatureScheme.sm2sig_sm3:
+//        {
+//            ParametersWithID parametersWithID = new ParametersWithID(getPubKeyEC(),
+//                Strings.toByteArray("TLSv1.3+GM+Cipher+Suite"));
+//
+//            SM2Signer verifier = new SM2Signer();
+//            verifier.init(false, parametersWithID);
+//
+//            return new BcTls13Verifier(verifier);
+//        }
+
+            default:
+                throw new TlsFatalAlert(AlertDescription.certificate_unknown);
+        }
+    }
+
+
     public Tls13Verifier createVerifier(int signatureScheme) throws IOException
     {
         validateKeyUsage(KeyUsage.digitalSignature);
@@ -239,6 +416,7 @@ public class BcTlsRawKeyCertificate
             return new BcTls13Verifier(verifier);
         }
 
+
         // TODO[RFC 8998]
 //        case SignatureScheme.sm2sig_sm3:
 //        {
@@ -269,10 +447,52 @@ public class BcTlsRawKeyCertificate
             MLDSASigner verifier = new MLDSASigner();
             verifier.init(false, publicKey);
 
-            return new BcTls13Verifier(verifier);
+            return new BcTls13Verifier(verifier);//TODO: maybe PQCVerifier instead?
         }
+//        case SignatureScheme.dilithiumr3_2:
+//        case SignatureScheme.dilithiumr3_3:
+//        case SignatureScheme.dilithiumr3_5:
+//        {
+//            DilithiumSigner verifier = new DilithiumSigner();
+//            verifier.init(false, getPubKeyDilithium());
 
-        default:
+//            return new BcTls13PQVerifier(verifier);
+//        }
+
+        //Hybrid part
+        case SignatureScheme.mldsa44_ecdsa_secp256r1_sha256:
+            return createVerifier(SignatureScheme.ecdsa_secp256r1_sha256);
+        case SignatureScheme.mldsa65_ecdsa_secp384r1_sha384:
+            return createVerifier(SignatureScheme.ecdsa_secp384r1_sha384);
+        case SignatureScheme.mldsa87_ecdsa_secp521r1_sha51:
+            return createVerifier(SignatureScheme.ecdsa_secp521r1_sha512);
+        case SignatureScheme.mldsa44_ed25519:
+        case SignatureScheme.mldsa65_ed25519:
+            return createVerifier(SignatureScheme.ed25519);
+        case SignatureScheme.mldsa87_ed448:
+            return createVerifier(SignatureScheme.ed448);
+        //TODO[x9146]: add corresponding rsa verifier
+//        case SignatureScheme.mldsa44_rsa2048_pkcs1_sha256:
+//        case SignatureScheme.mldsa44_rsa2048_pss_pss_sha256:
+//        case SignatureScheme.mldsa65_rsa3072_pkcs1_sha256:
+//        case SignatureScheme.mldsa65_rsa4096_pkcs1_sha384:
+//        case SignatureScheme.mldsa65_rsa3072_pss_pss_sha256:
+//        case SignatureScheme.mldsa65_rsa4096_pss_pss_sha384:
+
+            //TODO[x9146]: nonalt will always be native
+//        case SignatureScheme.OQS_P256_MLDSA44:
+//        case SignatureScheme.X9146_HYBRID_P256_falcon512:
+//            return createVerifier(SignatureScheme.ecdsa_secp256r1_sha256);
+//        case SignatureScheme.OQS_P384_MLDSA65:
+//            return createVerifier(SignatureScheme.ecdsa_secp384r1_sha384);
+//        case SignatureScheme.OQS_P521_MLDSA87:
+//        case SignatureScheme.X9146_HYBRID_P521_falcon1024:
+//            return createVerifier(SignatureScheme.ecdsa_secp521r1_sha512);
+//        case SignatureScheme.OQS_RSA3072_MLDSA44:
+//        case SignatureScheme.X9146_HYBRID_RSA3072_falcon512:
+//            return createVerifier(SignatureScheme.rsa_pss_pss_sha256);
+
+            default:
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
     }
@@ -297,7 +517,17 @@ public class BcTlsRawKeyCertificate
         return null;
     }
 
+    public String getAltSigAlgOID()
+    {
+        return null;
+    }
+
     public ASN1Encodable getSigAlgParams()
+    {
+        return null;
+    }
+
+    public ASN1Encodable getAltSigAlgParams() throws IOException
     {
         return null;
     }
@@ -352,88 +582,144 @@ public class BcTlsRawKeyCertificate
         return -1;
     }
 
-    public DHPublicKeyParameters getPubKeyDH() throws IOException
+    public DHPublicKeyParameters getPubKeyDH(SubjectPublicKeyInfo keyInfo) throws IOException
     {
         try
         {
-            return (DHPublicKeyParameters)getPublicKey();
+            return (DHPublicKeyParameters)getPublicKey(keyInfo);
         }
         catch (ClassCastException e)
         {
             throw new TlsFatalAlert(AlertDescription.certificate_unknown, "Public key not DH", e);
         }
     }
+    public DHPublicKeyParameters getPubKeyDH() throws IOException
+    {
+        return getPubKeyDH(this.keyInfo);
+    }
 
-    public DSAPublicKeyParameters getPubKeyDSS() throws IOException
+    public DSAPublicKeyParameters getPubKeyDSS(SubjectPublicKeyInfo keyInfo) throws IOException
     {
         try
         {
-            return (DSAPublicKeyParameters)getPublicKey();
+            return (DSAPublicKeyParameters)getPublicKey(keyInfo);
         }
         catch (ClassCastException e)
         {
             throw new TlsFatalAlert(AlertDescription.certificate_unknown, "Public key not DSS", e);
         }
     }
+    public DSAPublicKeyParameters getPubKeyDSS() throws IOException
+    {
+        return getPubKeyDSS(this.keyInfo);
+    }
 
-    public ECPublicKeyParameters getPubKeyEC() throws IOException
+    private ECPublicKeyParameters getPubKeyEC(SubjectPublicKeyInfo keyInfo) throws IOException
     {
         try
         {
-            return (ECPublicKeyParameters)getPublicKey();
+            return (ECPublicKeyParameters)getPublicKey(keyInfo);
         }
         catch (ClassCastException e)
         {
             throw new TlsFatalAlert(AlertDescription.certificate_unknown, "Public key not EC", e);
         }
     }
+    public ECPublicKeyParameters getPubKeyEC() throws IOException
+    {
+        return getPubKeyEC(this.keyInfo);
+    }
 
-    public Ed25519PublicKeyParameters getPubKeyEd25519() throws IOException
+    private Ed25519PublicKeyParameters getPubKeyEd25519(SubjectPublicKeyInfo keyInfo) throws IOException
     {
         try
         {
-            return (Ed25519PublicKeyParameters)getPublicKey();
+            return (Ed25519PublicKeyParameters)getPublicKey(keyInfo);
         }
         catch (ClassCastException e)
         {
             throw new TlsFatalAlert(AlertDescription.certificate_unknown, "Public key not Ed25519", e);
         }
     }
+    public Ed25519PublicKeyParameters getPubKeyEd25519() throws IOException
+    {
+        return getPubKeyEd25519(this.keyInfo);
+    }
 
-    public Ed448PublicKeyParameters getPubKeyEd448() throws IOException
+    private Ed448PublicKeyParameters getPubKeyEd448(SubjectPublicKeyInfo keyInfo) throws IOException
     {
         try
         {
-            return (Ed448PublicKeyParameters)getPublicKey();
+            return (Ed448PublicKeyParameters)getPublicKey(keyInfo);
         }
         catch (ClassCastException e)
         {
             throw new TlsFatalAlert(AlertDescription.certificate_unknown, "Public key not Ed448", e);
         }
     }
-
-    public MLDSAPublicKeyParameters getPubKeyMLDSA() throws IOException
+    private FalconPublicKeyParameters getPubKeyFalcon(SubjectPublicKeyInfo keyInfo) throws IOException
     {
         try
         {
-            return (MLDSAPublicKeyParameters)getPublicKey();
+            return (FalconPublicKeyParameters) getPQCPublicKey(keyInfo);
+        }
+        catch (ClassCastException e)
+        {
+            throw new TlsFatalAlert(AlertDescription.certificate_unknown, e);
+        }
+    }
+    public Ed448PublicKeyParameters getPubKeyEd448() throws IOException
+    {
+        return getPubKeyEd448(this.keyInfo);
+    }
+
+    private DilithiumPublicKeyParameters getPubKeyDilithium(SubjectPublicKeyInfo keyInfo) throws IOException
+    {
+        try
+        {
+            return (DilithiumPublicKeyParameters) getPQCPublicKey(keyInfo);
+        }
+        catch (ClassCastException e)
+        {
+            throw new TlsFatalAlert(AlertDescription.certificate_unknown, e);
+        }
+    }
+
+    public DilithiumPublicKeyParameters getPubKeyDilithium() throws IOException
+    {
+        return getPubKeyDilithium(this.keyInfo);
+    }
+
+    public MLDSAPublicKeyParameters getPubKeyMLDSA(SubjectPublicKeyInfo keyInfo) throws IOException
+    {
+        try
+        {
+            return (MLDSAPublicKeyParameters)getPQCPublicKey(keyInfo);
         }
         catch (ClassCastException e)
         {
             throw new TlsFatalAlert(AlertDescription.certificate_unknown, "Public key not ML-DSA", e);
         }
     }
+    public MLDSAPublicKeyParameters getPubKeyMLDSA() throws IOException
+    {
+        return getPubKeyMLDSA(this.keyInfo);
+    }
 
-    public RSAKeyParameters getPubKeyRSA() throws IOException
+    private RSAKeyParameters getPubKeyRSA(SubjectPublicKeyInfo keyInfo) throws IOException
     {
         try
         {
-            return (RSAKeyParameters)getPublicKey();
+            return (RSAKeyParameters)getPublicKey(keyInfo);
         }
         catch (ClassCastException e)
         {
             throw new TlsFatalAlert(AlertDescription.certificate_unknown, "Public key not RSA", e);
         }
+    }
+    public RSAKeyParameters getPubKeyRSA() throws IOException
+    {
+        return getPubKeyRSA(this.keyInfo);
     }
 
     public boolean supportsSignatureAlgorithm(short signatureAlgorithm) throws IOException
@@ -468,7 +754,7 @@ public class BcTlsRawKeyCertificate
         throw new TlsFatalAlert(AlertDescription.internal_error);
     }
 
-    protected AsymmetricKeyParameter getPublicKey() throws IOException
+    protected AsymmetricKeyParameter getPublicKey(SubjectPublicKeyInfo keyInfo) throws IOException
     {
         try
         {
@@ -478,6 +764,25 @@ public class BcTlsRawKeyCertificate
         {
             throw new TlsFatalAlert(AlertDescription.unsupported_certificate, e);
         }
+    }
+    protected AsymmetricKeyParameter getPublicKey() throws IOException
+    {
+        return getPublicKey(this.keyInfo);
+    }
+    protected AsymmetricKeyParameter getPQCPublicKey(SubjectPublicKeyInfo keyInfo) throws IOException
+    {
+        try
+        {
+            return org.bouncycastle.pqc.crypto.util.PublicKeyFactory.createKey(keyInfo);
+        }
+        catch (RuntimeException e)
+        {
+            throw new TlsFatalAlert(AlertDescription.unsupported_certificate, e);
+        }
+    }
+    protected AsymmetricKeyParameter getPQCPublicKey() throws IOException
+    {
+        return getPublicKey(this.keyInfo);
     }
 
     protected boolean supportsKeyUsage(int keyUsageBit)

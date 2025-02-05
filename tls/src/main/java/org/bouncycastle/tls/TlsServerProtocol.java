@@ -430,7 +430,7 @@ public class TlsServerProtocol
         short cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientHelloExtensions);
         if (cksCode != 0)
         {
-//            TlsExtensionsUtils.addCertificationKeySelection(serverHelloExtensions, cksCode);
+            TlsExtensionsUtils.addCertificationKeySelection(serverHelloExtensions, cksCode);
         }
 
         this.serverExtensions = serverEncryptedExtensions;
@@ -531,9 +531,10 @@ public class TlsServerProtocol
             clientHello.getExtensions());
         securityParameters.serverSupportedGroups = tlsServer.getSupportedGroups();
 
+        //TODO[x9.146]: new extension, need more testing/publishing
         //TODO: check when to do this
-        securityParameters.hybridSchemeList = TlsExtensionsUtils.getHybridSchemeList(
-                clientHello.getExtensions());
+//        securityParameters.hybridSchemeList = TlsExtensionsUtils.getHybridSchemeList(
+//                clientHello.getExtensions());
 
         if (ProtocolVersion.TLSv13.isEqualOrEarlierVersionOf(serverVersion))
         {
@@ -668,8 +669,9 @@ public class TlsServerProtocol
 
             securityParameters.clientSupportedGroups = TlsExtensionsUtils.getSupportedGroupsExtension(clientExtensions);
 
+            //TODO[x9.146]: new extension, need more testing/publishing
             //TODO: check when to do this
-            securityParameters.hybridSchemeList = TlsExtensionsUtils.getHybridSchemeList(clientExtensions);
+//            securityParameters.hybridSchemeList = TlsExtensionsUtils.getHybridSchemeList(clientExtensions);
 
             tlsServer.processClientExtensions(clientExtensions);
         }
@@ -1492,10 +1494,10 @@ public class TlsServerProtocol
         CertificateVerify certificateVerify = CertificateVerify.parse(tlsServerContext, buf);
 
         assertEmpty(buf);
+        //TODO[x9.146]: new extension, need more testing/publishing
         //TODO: check
-        HybridSchemeSignature hybridSchemeSignature = TlsExtensionsUtils.getHybridSchemeSignature(serverExtensions);
-
-        TlsUtils.verifyHybridSchemeSignatureClient(tlsServerContext, handshakeHash, hybridSchemeSignature);
+//        HybridSchemeSignature hybridSchemeSignature = TlsExtensionsUtils.getHybridSchemeSignature(serverExtensions);
+//        TlsUtils.verifyHybridSchemeSignatureClient(tlsServerContext, handshakeHash, hybridSchemeSignature);
 
         TlsUtils.verify13CertificateVerifyClient(tlsServerContext, handshakeHash, certificateVerify);
     }
@@ -1671,11 +1673,12 @@ public class TlsServerProtocol
                 //HERE
 //                System.out.println(this.connection_state + ": " + Hex.toHexString(TlsUtils.getCurrentPRFHash(handshakeHash)));
 
-                HybridSchemeSignature hybridSchemeSignature = TlsUtils.generateHybridSchemeSignature(tlsServerContext, serverCredentials, handshakeHash);
-                TlsExtensionsUtils.addHybridSchemeSignature(serverExtensions, hybridSchemeSignature);
+                //TODO[x9.146]: new extension, need more testing/publishing
+//                HybridSchemeSignature hybridSchemeSignature = TlsUtils.generateHybridSchemeSignature(tlsServerContext, serverCredentials, handshakeHash);
+//                TlsExtensionsUtils.addHybridSchemeSignature(serverExtensions, hybridSchemeSignature);
 
-                send13EncryptedExtensionsMessage(serverExtensions);
-                this.connection_state = CS_SERVER_ENCRYPTED_EXTENSIONS;
+//                send13EncryptedExtensionsMessage(serverExtensions);
+//                this.connection_state = CS_SERVER_ENCRYPTED_EXTENSIONS;
 
                 DigitallySigned certificateVerify = TlsUtils.generate13CertificateVerify(tlsServerContext,
                     serverCredentials, handshakeHash);

@@ -15,6 +15,7 @@ import org.bouncycastle.tls.ChannelBinding;
 import org.bouncycastle.tls.CipherSuite;
 import org.bouncycastle.tls.ClientCertificateType;
 import org.bouncycastle.tls.DefaultTlsClient;
+import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.MaxFragmentLength;
 import org.bouncycastle.tls.ProtocolName;
 import org.bouncycastle.tls.ProtocolVersion;
@@ -110,16 +111,28 @@ class MockX9146TlsClient
         Vector defaultVector = TlsUtils.getDefaultSupportedSignatureAlgorithms(context);
         //TODO use addIfSupported?
 
-        // DILITHIUM
-        defaultVector.add(SignatureAndHashAlgorithm.dilithiumr3_2);
-        defaultVector.add(SignatureAndHashAlgorithm.dilithiumr3_3);
-        defaultVector.add(SignatureAndHashAlgorithm.dilithiumr3_5);
+        // ML-DSA
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa44));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa87));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa44_ecdsa_secp256r1_sha256));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_ecdsa_secp384r1_sha384));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa87_ecdsa_secp521r1_sha51));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa44_ed25519));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_ed25519));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa44_rsa2048_pkcs1_sha256));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_rsa3072_pkcs1_sha256));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_rsa4096_pkcs1_sha384));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa44_rsa2048_pss_pss_sha256));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_rsa3072_pss_pss_sha256));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_rsa4096_pss_pss_sha384));
+        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa87_ed448));
 
         // Hybrid
         // ecdsa-dilithium
-        defaultVector.add(SignatureAndHashAlgorithm.hybrid_p256_dilithiumr3_2);
-        defaultVector.add(SignatureAndHashAlgorithm.hybrid_p384_dilithiumr3_3);
-        defaultVector.add(SignatureAndHashAlgorithm.hybrid_p521_dilithiumr3_5);
+//        defaultVector.add(SignatureAndHashAlgorithm.hybrid_p256_id_ml_dsa_44);
+//        defaultVector.add(SignatureAndHashAlgorithm.hybrid_p384_id_ml_dsa_65);
+//        defaultVector.add(SignatureAndHashAlgorithm.hybrid_p521_id_ml_dsa_87);
         // rsa-dilithium
 //        defaultVector.add(SignatureAndHashAlgorithm.hybrid_rsa3072_dilithiumr3_2);
         // ecdsa-falcon
@@ -151,10 +164,11 @@ class MockX9146TlsClient
             TlsExtensionsUtils.addMaxFragmentLengthExtension(clientExtensions, MaxFragmentLength.pow2_9);
             TlsExtensionsUtils.addPaddingExtension(clientExtensions, context.getCrypto().getSecureRandom().nextInt(16));
             TlsExtensionsUtils.addTruncatedHMacExtension(clientExtensions);
-            if (cksCode != 0)
-            {
-                TlsExtensionsUtils.addCertificationKeySelection(clientExtensions, cksCode);
-            }
+            //TODO: why does adding the CKS extension break the tls connection?
+//            if (cksCode != 0)
+//            {
+//                TlsExtensionsUtils.addCertificationKeySelection(clientExtensions, cksCode);
+//            }
         }
         return clientExtensions;
     }

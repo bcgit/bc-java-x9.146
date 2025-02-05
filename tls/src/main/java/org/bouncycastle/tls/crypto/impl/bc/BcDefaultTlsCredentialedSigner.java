@@ -6,6 +6,8 @@ import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters;
 import org.bouncycastle.crypto.params.Ed448PrivateKeyParameters;
 import org.bouncycastle.crypto.params.RSAKeyParameters;
+import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.falcon.FalconPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.mldsa.MLDSAPrivateKeyParameters;
 import org.bouncycastle.tls.Certificate;
 import org.bouncycastle.tls.DefaultTlsCredentialedSigner;
@@ -77,6 +79,7 @@ public class BcDefaultTlsCredentialedSigner
         {
             if (signatureAndHashAlgorithm != null)
             {
+                // try
                 TlsSigner signer = BcTlsMLDSASigner.create(crypto, (MLDSAPrivateKeyParameters)privateKey,
                     SignatureScheme.from(signatureAndHashAlgorithm));
                 if (signer != null)
@@ -85,7 +88,16 @@ public class BcDefaultTlsCredentialedSigner
                 }
             }
 
+
             throw new IllegalArgumentException("ML-DSA private key of wrong type for signature algorithm");
+        }
+        //TODO[x9.146]: should we have a class for each signer or have a general pq signer?
+        else if (privateKey instanceof DilithiumPrivateKeyParameters ||
+                privateKey instanceof FalconPrivateKeyParameters)
+        {
+            int signatureScheme = SignatureScheme.from(signatureAndHashAlgorithm);
+
+            return new BcTlsPQSigner(crypto, privateKey, signatureScheme);
         }
         else
         {
@@ -98,5 +110,14 @@ public class BcDefaultTlsCredentialedSigner
     {
         super(cryptoParams, makeSigner(crypto, privateKey, certificate, signatureAndHashAlgorithm), certificate,
             signatureAndHashAlgorithm);
+    }
+
+    public BcDefaultTlsCredentialedSigner(TlsCryptoParameters cryptoParams, BcTlsCrypto crypto,
+                                          AsymmetricKeyParameter privateKey, AsymmetricKeyParameter altPrivateKey, Certificate certificate,
+                                          SignatureAndHashAlgorithm signatureAndHashAlgorithm, SignatureAndHashAlgorithm altSignatureAndHashAlgorithm)
+    {
+        super(cryptoParams, makeSigner(crypto, privateKey, certificate, signatureAndHashAlgorithm),
+                makeSigner(crypto, altPrivateKey, certificate, altSignatureAndHashAlgorithm),
+                certificate, signatureAndHashAlgorithm, altSignatureAndHashAlgorithm);
     }
 }

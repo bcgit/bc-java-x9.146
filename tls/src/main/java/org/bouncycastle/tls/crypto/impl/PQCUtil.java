@@ -57,6 +57,23 @@ public class PQCUtil
         throw new IllegalArgumentException();
     }
 
+//    public static int getX9146MLDSASignatureScheme(MLDSAParameters parameters)
+//    {
+//        if (MLDSAParameters.ml_dsa_44 == parameters)
+//        {
+//            return SignatureScheme.X9146_mldsa44;
+//        }
+//        if (MLDSAParameters.ml_dsa_65 == parameters)
+//        {
+//            return SignatureScheme.X9146_mldsa65;
+//        }
+//        if (MLDSAParameters.ml_dsa_87 == parameters)
+//        {
+//            return SignatureScheme.X9146_mldsa87;
+//        }
+//        throw new IllegalArgumentException();
+//    }
+
     public static boolean supportsMLDSA(AlgorithmIdentifier pubKeyAlgID, ASN1ObjectIdentifier algorithm)
     {
         return pubKeyAlgID.getAlgorithm().equals(algorithm)

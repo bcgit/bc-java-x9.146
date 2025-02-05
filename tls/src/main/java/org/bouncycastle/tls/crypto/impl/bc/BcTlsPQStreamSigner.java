@@ -16,13 +16,22 @@ class BcTlsPQStreamSigner
     implements TlsStreamSigner
 {
     private final ByteArrayOutputStream output;
-    private final MessageSigner signer;
+    private final MessageSigner signerBeta;
+    private final Signer signer;
 
 
     BcTlsPQStreamSigner(MessageSigner signer)
     {
         this.output = new ByteArrayOutputStream();
 
+        this.signerBeta = signer;
+        this.signer = null;
+    }
+    BcTlsPQStreamSigner(Signer signer)
+    {
+        this.output = new ByteArrayOutputStream();
+
+        this.signerBeta = null;
         this.signer = signer;
     }
 
@@ -35,7 +44,16 @@ class BcTlsPQStreamSigner
     {
         try
         {
-            return signer.generateSignature(output.toByteArray());
+            if (signerBeta != null)
+            {
+                return signerBeta.generateSignature(output.toByteArray());
+            }
+            else
+            {
+                byte[] out = output.toByteArray();
+                signer.update(out, 0, out.length);
+                return signer.generateSignature();
+            }
         }
         catch (Exception e)
         {

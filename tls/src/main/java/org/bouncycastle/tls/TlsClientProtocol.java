@@ -1611,6 +1611,7 @@ public class TlsClientProtocol
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
+
         CertificateVerify certificateVerify = CertificateVerify.parse(tlsClientContext, buf);
 
         assertEmpty(buf);
@@ -1628,12 +1629,13 @@ public class TlsClientProtocol
 
         TlsUtils.verify13CertificateVerifyServer(tlsClientContext, handshakeHash, certificateVerify, clientCKS);
 
-        HybridSchemeSignature hybridSchemeSignature = TlsExtensionsUtils.getHybridSchemeSignature(serverExtensions);
-        if (hybridSchemeSignature != null)
-        {
-            //TODO: should i make a function for server and client separate
-            TlsUtils.verifyHybridSchemeSignatureServer(tlsClientContext, handshakeHash, hybridSchemeSignature);
-        }
+        //TODO[x9.146]: new extension, need more testing/publishing
+//        HybridSchemeSignature hybridSchemeSignature = TlsExtensionsUtils.getHybridSchemeSignature(serverExtensions);
+//        if (hybridSchemeSignature != null)
+//        {
+//            //TODO: should i make a function for server and client separate
+//            TlsUtils.verifyHybridSchemeSignatureServer(tlsClientContext, handshakeHash, hybridSchemeSignature);
+//        }
     }
 
     protected void receive13ServerFinished(ByteArrayInputStream buf)

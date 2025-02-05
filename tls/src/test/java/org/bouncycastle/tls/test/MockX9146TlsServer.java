@@ -1,14 +1,10 @@
 package org.bouncycastle.tls.test;
 
-import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.Certificate;
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.AlertLevel;
-import org.bouncycastle.tls.CertificateKeySelectionType;
 import org.bouncycastle.tls.CertificateRequest;
 import org.bouncycastle.tls.ChannelBinding;
-import org.bouncycastle.tls.CipherSuite;
-import org.bouncycastle.tls.ClientCertificateType;
 import org.bouncycastle.tls.DefaultTlsServer;
 import org.bouncycastle.tls.ProtocolName;
 import org.bouncycastle.tls.ProtocolVersion;
@@ -239,7 +235,8 @@ class MockX9146TlsServer
         }
 
         //DO I NEED TO DO THIS
-        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, new byte[]{3});
+//        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, new byte[]{0, 1, 2, 3});
+//        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, new byte[]{cksCode});
 
 
         //TODO: Do we need to check for CKS Code Extension ?? (create hasCertificateKeySelection)
@@ -260,6 +257,7 @@ class MockX9146TlsServer
         //      throw new Exception("server cksCode not support client cksCode");
         // }
         TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{cksCode});
+//        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{3, 2, 1});
 
         return super.getServerExtensions();
     }
@@ -289,7 +287,7 @@ class MockX9146TlsServer
 
 
         return TlsTestUtils.loadDualSignerCredentials(context, clientSigAlgs,
-                SignatureAlgorithm.ecdsa, SignatureAlgorithm.dilithiumr3_2,
+                SignatureAlgorithm.ecdsa, SignatureAlgorithm.custom_mldsa44,
                 "x9146/server-P256-mldsa44-cert.pem",
                 "x9146/server-P256-key.pem", "x9146/server-mldsa44-key-pq.pem");
     }

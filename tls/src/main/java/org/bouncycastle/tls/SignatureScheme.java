@@ -52,6 +52,49 @@ public class SignatureScheme
     public static final int DRAFT_mldsa65 = 0x0905;
     public static final int DRAFT_mldsa87 = 0x0906;
 
+
+    /*
+     * draft-reddy-tls-composite-mldsa-01
+     */
+    public static final int mldsa44_ecdsa_secp256r1_sha256 = 0x0907;
+    public static final int mldsa65_ecdsa_secp384r1_sha384 = 0x0908;
+    public static final int mldsa87_ecdsa_secp521r1_sha51 = 0x0909; // changed this to _secp521r1_sha51 instead of _secp384r1_sha384
+    public static final int mldsa44_ed25519 = 0x090A;
+    public static final int mldsa65_ed25519 = 0x090B;
+    public static final int mldsa44_rsa2048_pkcs1_sha256 = 0x090C;
+    public static final int mldsa65_rsa3072_pkcs1_sha256 = 0x090D;
+    public static final int mldsa65_rsa4096_pkcs1_sha384 = 0x090E;
+    public static final int mldsa44_rsa2048_pss_pss_sha256 = 0x090F;
+    public static final int mldsa65_rsa3072_pss_pss_sha256 = 0x0910;
+    public static final int mldsa65_rsa4096_pss_pss_sha384 = 0x0911;
+    public static final int mldsa87_ed448 = 0x0912;
+    /*
+     * x9.164 OQS values for ml dsa
+     */
+//    public static final int X9146_mldsa44 = 0xFED0;
+//    public static final int X9146_mldsa65 = 0xFED1;
+//    public static final int X9146_mldsa87 = 0xFED2;
+    /*
+     * x9.164 OQS values for falcon
+     */
+    public static final int X9146_falcon512 = 0xFEAE;
+    public static final int X9146_falcon1024 = 0xFEB1;
+
+    /*
+     * x9.164 OQS values for hybrid
+     */
+//    public static final int OQS_P256_MLDSA44 = 0xFF06;
+//    public static final int OQS_RSA3072_MLDSA44 = 0xFF07;
+//    public static final int OQS_P384_MLDSA65 = 0xFF08;
+//    public static final int OQS_P521_MLDSA87 = 0xFF09;
+//
+//
+//    public static final int X9146_HYBRID_P256_falcon512 = 0xFEAF;
+//    public static final int X9146_HYBRID_RSA3072_falcon512 = 0xFEB0;
+//    public static final int X9146_HYBRID_P521_falcon1024 = 0xFEB2;
+
+
+
     /*
      * RFC 8446 reserved for private use (0xFE00..0xFFFF)
      */
@@ -61,6 +104,11 @@ public class SignatureScheme
         if (null == sigAndHashAlg)
         {
             throw new NullPointerException();
+        }
+
+        if (SignatureAlgorithm.isMLDSA(sigAndHashAlg.getSignature()))
+        {
+            return SignatureAlgorithm.getSignatureScheme(sigAndHashAlg.getSignature());
         }
 
         return from(sigAndHashAlg.getHash(), sigAndHashAlg.getSignature());
@@ -215,12 +263,23 @@ public class SignatureScheme
 
     public static short getHashAlgorithm(int signatureScheme)
     {
+        if(isMLDSA(signatureScheme))
+        {
+            return HashAlgorithm.Intrinsic;
+        }
+
         return (short)((signatureScheme >>> 8) & 0xFF);
     }
 
     public static short getSignatureAlgorithm(int signatureScheme)
     {
         // TODO[RFC 8998] sm2sig_sm3
+
+        if(isMLDSA(signatureScheme))
+        {
+            signatureScheme = getMLDSASignatureAlgorithm(signatureScheme);
+        }
+
         return (short)(signatureScheme & 0xFF);
     }
 
@@ -254,6 +313,46 @@ public class SignatureScheme
         }
     }
 
+    public static short getMLDSASignatureAlgorithm(int signatureScheme)
+    {
+        switch (signatureScheme)
+        {
+            case SignatureScheme.DRAFT_mldsa44:
+                return SignatureAlgorithm.custom_mldsa44;
+            case mldsa44_ecdsa_secp256r1_sha256:
+                return SignatureAlgorithm.custom_mldsa44_ecdsa_secp256r1_sha256;
+            case mldsa44_ed25519:
+                return SignatureAlgorithm.custom_mldsa44_ed25519;
+            case mldsa44_rsa2048_pkcs1_sha256:
+                return SignatureAlgorithm.custom_mldsa44_rsa2048_pkcs1_sha256;
+            case mldsa44_rsa2048_pss_pss_sha256:
+                return SignatureAlgorithm.custom_mldsa44_rsa2048_pss_pss_sha256;
+
+            case SignatureScheme.DRAFT_mldsa65:
+                return SignatureAlgorithm.custom_mldsa65;
+            case mldsa65_ecdsa_secp384r1_sha384:
+                return SignatureAlgorithm.custom_mldsa65_ecdsa_secp384r1_sha384;
+            case mldsa65_ed25519:
+                return SignatureAlgorithm.custom_mldsa65_ed25519;
+            case mldsa65_rsa3072_pkcs1_sha256:
+                return SignatureAlgorithm.custom_mldsa65_rsa3072_pkcs1_sha256;
+            case mldsa65_rsa4096_pkcs1_sha384:
+                return SignatureAlgorithm.custom_mldsa65_rsa4096_pkcs1_sha384;
+            case mldsa65_rsa3072_pss_pss_sha256:
+                return SignatureAlgorithm.custom_mldsa65_rsa3072_pss_pss_sha256;
+            case mldsa65_rsa4096_pss_pss_sha384:
+                return SignatureAlgorithm.custom_mldsa65_rsa4096_pss_pss_sha384;
+            case SignatureScheme.DRAFT_mldsa87:
+                return SignatureAlgorithm.custom_mldsa87;
+            case mldsa87_ecdsa_secp521r1_sha51:
+                return SignatureAlgorithm.custom_mldsa87_ecdsa_secp521r1_sha51;
+            case mldsa87_ed448:
+                return SignatureAlgorithm.custom_mldsa87_ed448;
+            default:
+                return -1;
+        }
+    }
+
     public static boolean isMLDSA(int signatureScheme)
     {
         switch (signatureScheme)
@@ -261,9 +360,36 @@ public class SignatureScheme
         case DRAFT_mldsa44:
         case DRAFT_mldsa65:
         case DRAFT_mldsa87:
+        case mldsa44_ecdsa_secp256r1_sha256:
+        case mldsa65_ecdsa_secp384r1_sha384:
+        case mldsa87_ecdsa_secp521r1_sha51:
+        case mldsa44_ed25519:
+        case mldsa65_ed25519:
+        case mldsa44_rsa2048_pkcs1_sha256:
+        case mldsa65_rsa3072_pkcs1_sha256:
+        case mldsa65_rsa4096_pkcs1_sha384:
+        case mldsa44_rsa2048_pss_pss_sha256:
+        case mldsa65_rsa3072_pss_pss_sha256:
+        case mldsa65_rsa4096_pss_pss_sha384:
+        case mldsa87_ed448:
             return true;
         default:
             return false;
+        }
+    }
+
+    public static boolean isPQ(int signatureScheme)
+    {
+        switch (signatureScheme)
+        {
+            case DRAFT_mldsa44:
+            case DRAFT_mldsa65:
+            case DRAFT_mldsa87:
+            case X9146_falcon512:
+            case X9146_falcon1024:
+                return true;
+            default:
+                return false;
         }
     }
 

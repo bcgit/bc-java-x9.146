@@ -15,7 +15,8 @@ public class BcTlsMLDSASigner
 {
     public static BcTlsMLDSASigner create(BcTlsCrypto crypto, MLDSAPrivateKeyParameters privateKey, int signatureScheme)
     {
-        if (signatureScheme != PQCUtil.getMLDSASignatureScheme(privateKey.getParameters()))
+        if (signatureScheme != PQCUtil.getMLDSASignatureScheme(privateKey.getParameters()) /*&&
+            signatureScheme != PQCUtil.getX9146MLDSASignatureScheme(privateKey.getParameters())*/)
         {
             return null;
         }
