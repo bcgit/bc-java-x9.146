@@ -49,6 +49,7 @@ dependencies {
     implementation project(':prov')
     implementation project(':util')
     implementation project(':pkix')
+    implementation project(':core')
 
     java9Implementation project(':prov')
     java9Implementation project(':util')

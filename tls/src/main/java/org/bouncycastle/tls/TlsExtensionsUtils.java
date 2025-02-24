@@ -562,6 +562,12 @@ public class TlsExtensionsUtils
         byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_hybrid_scheme_list);
         return extensionData == null ? null : readHybridSchemeList(extensionData);
     }
+
+    public static boolean hasCertificationKeySelections(Hashtable extensions) throws IOException
+    {
+        byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_certificate_key_selection);
+        return extensionData != null;
+    }
     public static boolean hasClientCertificateURLExtension(Hashtable extensions) throws IOException
     {
         byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_client_certificate_url);

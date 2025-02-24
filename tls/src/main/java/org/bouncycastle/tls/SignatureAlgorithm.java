@@ -40,31 +40,6 @@ public class SignatureAlgorithm
     public static final short gostr34102012_256 = 64;
     public static final short gostr34102012_512 = 65;
 
-    /*
-     * custom values to link mldsa
-     */
-    public static final short falcon_512 = 12;
-    public static final short falcon_1024 = 13;
-    public static final short custom_mldsa44 = 0x94;
-    public static final short custom_mldsa65 = 0x95;
-    public static final short custom_mldsa87 = 0x96;
-
-    public static final short custom_mldsa44_ecdsa_secp256r1_sha256 = 0x97;
-    public static final short custom_mldsa65_ecdsa_secp384r1_sha384 = 0x98;
-    public static final short custom_mldsa87_ecdsa_secp521r1_sha51 = 0x99;
-    public static final short custom_mldsa44_ed25519 = 0x9A;
-    public static final short custom_mldsa65_ed25519 = 0x9B;
-    public static final short custom_mldsa44_rsa2048_pkcs1_sha256 = 0x9C;
-    public static final short custom_mldsa65_rsa3072_pkcs1_sha256 = 0x9D;
-    public static final short custom_mldsa65_rsa4096_pkcs1_sha384 = 0x9E;
-    public static final short custom_mldsa44_rsa2048_pss_pss_sha256 = 0x9F;
-    public static final short custom_mldsa65_rsa3072_pss_pss_sha256 = 0xA0;
-    public static final short custom_mldsa65_rsa4096_pss_pss_sha384 = 0xA1;
-    public static final short custom_mldsa87_ed448 = 0xA2;
-
-//    public static final short id_ml_dsa_44 = 0xD0;
-//    public static final short id_ml_dsa_65 = 0xD1;
-//    public static final short id_ml_dsa_87 = 0xD2;
 
     public static short getClientCertificateType(short signatureAlgorithm)
     {
@@ -93,79 +68,11 @@ public class SignatureAlgorithm
         case SignatureAlgorithm.gostr34102012_512:
             return ClientCertificateType.gost_sign512;
 
-//        case SignatureAlgorithm.dilithiumr3_2:
-//        case SignatureAlgorithm.dilithiumr3_3:
-//        case SignatureAlgorithm.dilithiumr3_5:
-
         default:
             return -1;
         }
     }
 
-
-
-    public static int getSignatureScheme(short signatureAlgorithm)
-    {
-        switch (signatureAlgorithm)
-        {
-        case custom_mldsa44:
-            return SignatureScheme.DRAFT_mldsa44;
-        case custom_mldsa44_ecdsa_secp256r1_sha256:
-            return SignatureScheme.mldsa44_ecdsa_secp256r1_sha256;
-        case custom_mldsa44_ed25519:
-            return SignatureScheme.mldsa44_ed25519;
-        case custom_mldsa44_rsa2048_pkcs1_sha256:
-            return SignatureScheme.mldsa44_rsa2048_pkcs1_sha256;
-        case custom_mldsa44_rsa2048_pss_pss_sha256:
-            return SignatureScheme.mldsa44_rsa2048_pss_pss_sha256;
-        case custom_mldsa65:
-            return SignatureScheme.DRAFT_mldsa65;
-        case custom_mldsa65_ecdsa_secp384r1_sha384:
-            return SignatureScheme.mldsa65_ecdsa_secp384r1_sha384;
-        case custom_mldsa65_ed25519:
-            return SignatureScheme.mldsa65_ed25519;
-        case custom_mldsa65_rsa3072_pkcs1_sha256:
-            return SignatureScheme.mldsa65_rsa3072_pkcs1_sha256;
-        case custom_mldsa65_rsa4096_pkcs1_sha384:
-            return SignatureScheme.mldsa65_rsa4096_pkcs1_sha384;
-        case custom_mldsa65_rsa3072_pss_pss_sha256:
-            return SignatureScheme.mldsa65_rsa3072_pss_pss_sha256;
-        case custom_mldsa65_rsa4096_pss_pss_sha384:
-            return SignatureScheme.mldsa65_rsa4096_pss_pss_sha384;
-        case custom_mldsa87:
-            return SignatureScheme.DRAFT_mldsa87;
-        case custom_mldsa87_ecdsa_secp521r1_sha51:
-            return SignatureScheme.mldsa87_ecdsa_secp521r1_sha51;
-        case custom_mldsa87_ed448:
-            return SignatureScheme.mldsa87_ed448;
-        default:
-            return -1;
-        }
-    }
-    public static boolean isMLDSA(short signatureAlgorithm)
-    {
-        switch (signatureAlgorithm)
-        {
-        case custom_mldsa44:
-        case custom_mldsa65:
-        case custom_mldsa87:
-        case custom_mldsa44_ecdsa_secp256r1_sha256:
-        case custom_mldsa65_ecdsa_secp384r1_sha384:
-        case custom_mldsa87_ecdsa_secp521r1_sha51:
-        case custom_mldsa44_ed25519:
-        case custom_mldsa65_ed25519:
-        case custom_mldsa44_rsa2048_pkcs1_sha256:
-        case custom_mldsa65_rsa3072_pkcs1_sha256:
-        case custom_mldsa65_rsa4096_pkcs1_sha384:
-        case custom_mldsa44_rsa2048_pss_pss_sha256:
-        case custom_mldsa65_rsa3072_pss_pss_sha256:
-        case custom_mldsa65_rsa4096_pss_pss_sha384:
-        case custom_mldsa87_ed448:
-                return true;
-        default:
-            return false;
-        }
-    }
 
     public static String getName(short signatureAlgorithm)
     {
@@ -205,12 +112,6 @@ public class SignatureAlgorithm
             return "gostr34102012_256";
         case gostr34102012_512:
             return "gostr34102012_512";
-        case custom_mldsa44:
-            return "DRAFT_mldsa44";
-        case custom_mldsa65:
-            return "DRAFT_mldsa65";
-        case custom_mldsa87:
-            return "DRAFT_mldsa87";
         default:
             return "UNKNOWN";
         }

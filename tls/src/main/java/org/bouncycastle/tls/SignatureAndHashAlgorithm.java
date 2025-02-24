@@ -21,6 +21,24 @@ public class SignatureAndHashAlgorithm
         create(SignatureScheme.ed448);
 
     //TODO[x9145]: add falcon
+    public static final SignatureAndHashAlgorithm OQS_CODEPOINT_P256_MLDSA44 =
+            create(SignatureScheme.OQS_CODEPOINT_P256_MLDSA44);
+    public static final SignatureAndHashAlgorithm OQS_CODEPOINT_RSA3072_MLDSA44 =
+            create(SignatureScheme.OQS_CODEPOINT_RSA3072_MLDSA44);
+    public static final SignatureAndHashAlgorithm OQS_CODEPOINT_P384_MLDSA65 =
+            create(SignatureScheme.OQS_CODEPOINT_P384_MLDSA65);
+    public static final SignatureAndHashAlgorithm OQS_CODEPOINT_P521_MLDSA87 =
+            create(SignatureScheme.OQS_CODEPOINT_P521_MLDSA87);
+    public static final SignatureAndHashAlgorithm WOLFSSL_HYBRID_P256_MLDSA_LEVEL2 =
+            create(SignatureScheme.WOLFSSL_HYBRID_P256_MLDSA_LEVEL2);
+    public static final SignatureAndHashAlgorithm WOLFSSL_HYBRID_RSA3072_MLDSA_LEVEL2 =
+            create(SignatureScheme.WOLFSSL_HYBRID_RSA3072_MLDSA_LEVEL2);
+    public static final SignatureAndHashAlgorithm WOLFSSL_HYBRID_P384_MLDSA_LEVEL3 =
+            create(SignatureScheme.WOLFSSL_HYBRID_P384_MLDSA_LEVEL3);
+    public static final SignatureAndHashAlgorithm WOLFSSL_HYBRID_P521_MLDSA_LEVEL5 =
+            create(SignatureScheme.WOLFSSL_HYBRID_P521_MLDSA_LEVEL5);
+
+
     public static final SignatureAndHashAlgorithm DRAFT_mldsa44 =
         create(SignatureScheme.DRAFT_mldsa44);
     public static final SignatureAndHashAlgorithm DRAFT_mldsa65 =
@@ -72,17 +90,17 @@ public class SignatureAndHashAlgorithm
 //TODO[x9145]: No hash algorithm, find another way
     public static SignatureAndHashAlgorithm getHybrid(SignatureAndHashAlgorithm nativeAlg, SignatureAndHashAlgorithm altAlg)
     {
-        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp256r1_sha256)) && altAlg.equals(SignatureAndHashAlgorithm.getInstanceIntrinsic(SignatureAlgorithm.custom_mldsa44)))
+        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp256r1_sha256)) && altAlg.equals(SignatureAndHashAlgorithm.DRAFT_mldsa44))
         {
-            return SignatureAndHashAlgorithm.mldsa44_ecdsa_secp256r1_sha256;
+            return SignatureAndHashAlgorithm.WOLFSSL_HYBRID_P256_MLDSA_LEVEL2;
         }
-        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp384r1_sha384)) && altAlg.equals(SignatureAndHashAlgorithm.getInstanceIntrinsic(SignatureAlgorithm.custom_mldsa65)))
+        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp384r1_sha384)) && altAlg.equals(SignatureAndHashAlgorithm.DRAFT_mldsa65))
         {
-            return SignatureAndHashAlgorithm.mldsa65_ecdsa_secp384r1_sha384;
+            return SignatureAndHashAlgorithm.WOLFSSL_HYBRID_P384_MLDSA_LEVEL3;
         }
-        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp521r1_sha512)) && altAlg.equals(SignatureAndHashAlgorithm.getInstanceIntrinsic(SignatureAlgorithm.custom_mldsa87)))
+        if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp521r1_sha512)) && altAlg.equals(SignatureAndHashAlgorithm.DRAFT_mldsa87))
         {
-            return SignatureAndHashAlgorithm.mldsa87_ecdsa_secp521r1_sha51;
+            return SignatureAndHashAlgorithm.WOLFSSL_HYBRID_P521_MLDSA_LEVEL5;
         }
         return null;
     }
@@ -127,36 +145,6 @@ public class SignatureAndHashAlgorithm
             return ecdsa_brainpoolP384r1tls13_sha384;
         case SignatureAlgorithm.ecdsa_brainpoolP512r1tls13_sha512:
             return ecdsa_brainpoolP512r1tls13_sha512;
-        case SignatureAlgorithm.custom_mldsa44:
-            return DRAFT_mldsa44;
-        case SignatureAlgorithm.custom_mldsa65:
-            return DRAFT_mldsa65;
-        case SignatureAlgorithm.custom_mldsa87:
-            return DRAFT_mldsa87;
-        case SignatureAlgorithm.custom_mldsa44_ecdsa_secp256r1_sha256:
-            return mldsa44_ecdsa_secp256r1_sha256;
-        case SignatureAlgorithm.custom_mldsa65_ecdsa_secp384r1_sha384:
-            return mldsa65_ecdsa_secp384r1_sha384;
-        case SignatureAlgorithm.custom_mldsa87_ecdsa_secp521r1_sha51:
-            return mldsa87_ecdsa_secp521r1_sha51;
-        case SignatureAlgorithm.custom_mldsa44_ed25519:
-            return mldsa44_ed25519;
-        case SignatureAlgorithm.custom_mldsa65_ed25519:
-            return mldsa65_ed25519;
-        case SignatureAlgorithm.custom_mldsa44_rsa2048_pkcs1_sha256:
-            return mldsa44_rsa2048_pkcs1_sha256;
-        case SignatureAlgorithm.custom_mldsa65_rsa3072_pkcs1_sha256:
-            return mldsa65_rsa3072_pkcs1_sha256;
-        case SignatureAlgorithm.custom_mldsa65_rsa4096_pkcs1_sha384:
-            return mldsa65_rsa4096_pkcs1_sha384;
-        case SignatureAlgorithm.custom_mldsa44_rsa2048_pss_pss_sha256:
-            return mldsa44_rsa2048_pss_pss_sha256;
-        case SignatureAlgorithm.custom_mldsa65_rsa3072_pss_pss_sha256:
-            return mldsa65_rsa3072_pss_pss_sha256;
-        case SignatureAlgorithm.custom_mldsa65_rsa4096_pss_pss_sha384:
-            return mldsa65_rsa4096_pss_pss_sha384;
-        case SignatureAlgorithm.custom_mldsa87_ed448:
-            return mldsa87_ed448;
         //TODO[x9146]: add falcon
         default:
             return create(HashAlgorithm.Intrinsic, signatureAlgorithm);

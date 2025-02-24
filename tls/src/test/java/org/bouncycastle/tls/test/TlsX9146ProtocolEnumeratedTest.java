@@ -60,16 +60,16 @@ public class TlsX9146ProtocolEnumeratedTest
         switch (cks)
         {
             case 0:
-                bcServer.setCksCode(CertificateKeySelectionType.cks_default);
+                bcServer.setSupportedCksCode(CertificateKeySelectionType.cks_default);
                 break;
             case 1:
-                bcServer.setCksCode(CertificateKeySelectionType.cks_native);
+                bcServer.setSupportedCksCode(CertificateKeySelectionType.cks_native);
                 break;
             case 2:
-                bcServer.setCksCode(CertificateKeySelectionType.cks_alternate);
+                bcServer.setSupportedCksCode(CertificateKeySelectionType.cks_alternate);
                 break;
             case 3:
-                bcServer.setCksCode(CertificateKeySelectionType.cks_both);
+                bcServer.setSupportedCksCode(CertificateKeySelectionType.cks_both);
                 break;
         }
     }

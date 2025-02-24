@@ -273,6 +273,9 @@ public class BcTlsRawKeyCertificate
 //
 //                return new BcTls13PQVerifier(verifier);
 //            }
+            case SignatureScheme.OQS_CODEPOINT_P256_MLDSA44:
+            case SignatureScheme.WOLFSSL_HYBRID_P256_MLDSA_LEVEL2:
+            case SignatureScheme.WOLFSSL_HYBRID_RSA3072_MLDSA_LEVEL2:
             case SignatureScheme.mldsa44_ecdsa_secp256r1_sha256:
             case SignatureScheme.mldsa65_ecdsa_secp384r1_sha384:
             case SignatureScheme.mldsa44_ed25519:
@@ -280,11 +283,15 @@ public class BcTlsRawKeyCertificate
 //            case SignatureScheme.mldsa44_rsa2048_pss_pss_sha256:
                 return createAltVerifier(SignatureScheme.DRAFT_mldsa44);
             case SignatureScheme.mldsa65_ed25519:
+            case SignatureScheme.WOLFSSL_HYBRID_P384_MLDSA_LEVEL3:
+            case SignatureScheme.OQS_CODEPOINT_P384_MLDSA65:
 //            case SignatureScheme.mldsa65_rsa3072_pkcs1_sha256:
 //            case SignatureScheme.mldsa65_rsa4096_pkcs1_sha384:
 //            case SignatureScheme.mldsa65_rsa3072_pss_pss_sha256:
 //            case SignatureScheme.mldsa65_rsa4096_pss_pss_sha384:
                 return createAltVerifier(SignatureScheme.DRAFT_mldsa65);
+            case SignatureScheme.OQS_CODEPOINT_P521_MLDSA87:
+            case SignatureScheme.WOLFSSL_HYBRID_P521_MLDSA_LEVEL5:
             case SignatureScheme.mldsa87_ecdsa_secp521r1_sha51:
             case SignatureScheme.mldsa87_ed448:
                 return createAltVerifier(SignatureScheme.DRAFT_mldsa87);
@@ -460,6 +467,16 @@ public class BcTlsRawKeyCertificate
 //        }
 
         //Hybrid part
+        case SignatureScheme.OQS_CODEPOINT_P256_MLDSA44:
+        case SignatureScheme.WOLFSSL_HYBRID_P256_MLDSA_LEVEL2:
+            return createVerifier(SignatureScheme.ecdsa_secp256r1_sha256);
+        case SignatureScheme.OQS_CODEPOINT_P384_MLDSA65:
+        case SignatureScheme.WOLFSSL_HYBRID_P384_MLDSA_LEVEL3:
+            return createVerifier(SignatureScheme.ecdsa_secp384r1_sha384);
+        case SignatureScheme.OQS_CODEPOINT_P521_MLDSA87:
+        case SignatureScheme.WOLFSSL_HYBRID_P521_MLDSA_LEVEL5:
+            return createVerifier(SignatureScheme.ecdsa_secp521r1_sha512);
+
         case SignatureScheme.mldsa44_ecdsa_secp256r1_sha256:
             return createVerifier(SignatureScheme.ecdsa_secp256r1_sha256);
         case SignatureScheme.mldsa65_ecdsa_secp384r1_sha384:

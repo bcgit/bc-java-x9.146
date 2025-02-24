@@ -426,12 +426,14 @@ public class TlsServerProtocol
 
         TlsUtils.establish13PhaseSecrets(tlsServerContext, pskEarlySecret, sharedSecret);
 
-        // X9.146 Add CKS extension
+        // X9.146 Add CKS extension to serverHelloExt
         short cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientHelloExtensions);
-        if (cksCode != 0)
-        {
-            TlsExtensionsUtils.addCertificationKeySelection(serverHelloExtensions, cksCode);
-        }
+        //TODO[x9147]: This throws an error for wolfssl client!
+//        if (cksCode != 0)
+//        {
+//            TlsExtensionsUtils.addCertificationKeySelection(serverHelloExtensions, cksCode);
+//            TlsExtensionsUtils.addCertificationKeySelections(serverHelloExtensions, new byte[] {3, 2, 1});
+//        }
 
         this.serverExtensions = serverEncryptedExtensions;
 

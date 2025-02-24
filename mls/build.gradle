@@ -43,6 +43,7 @@ dependencies {
     implementation(files("../test/libs/grpc-protobuf-lite-1.58.0.jar"))
     implementation(files("../test/libs/failureaccess-1.0.1.jar"))
     implementation(files("../test/libs/grpc-protobuf-1.58.0.jar"))
+    implementation project(':core')
 
     //Compile
     compileOnly(files("../test/libs/grpc-services-1.58.0.jar"))

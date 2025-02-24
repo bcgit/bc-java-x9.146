@@ -133,9 +133,10 @@ public class TlsUtils
         addCertSigAlgOID(h, EdECObjectIdentifiers.id_Ed25519, SignatureAndHashAlgorithm.ed25519);
         addCertSigAlgOID(h, EdECObjectIdentifiers.id_Ed448, SignatureAndHashAlgorithm.ed448);
 
-        addCertSigAlgOID(h, NISTObjectIdentifiers.id_ml_dsa_44, HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa44);
-        addCertSigAlgOID(h, NISTObjectIdentifiers.id_ml_dsa_65, HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65);
-        addCertSigAlgOID(h, NISTObjectIdentifiers.id_ml_dsa_87, HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa87);
+        addCertSigAlgOID(h, NISTObjectIdentifiers.id_ml_dsa_44, SignatureAndHashAlgorithm.DRAFT_mldsa44);
+        addCertSigAlgOID(h, NISTObjectIdentifiers.id_ml_dsa_65, SignatureAndHashAlgorithm.DRAFT_mldsa65);
+        addCertSigAlgOID(h, NISTObjectIdentifiers.id_ml_dsa_87, SignatureAndHashAlgorithm.DRAFT_mldsa87);
+
 //        addCertSigAlgOID(h, BCObjectIdentifiers.dilithium3, SignatureAndHashAlgorithm.dilithiumr3_3);
 //        addCertSigAlgOID(h, BCObjectIdentifiers.dilithium5, SignatureAndHashAlgorithm.dilithiumr3_5);
 //

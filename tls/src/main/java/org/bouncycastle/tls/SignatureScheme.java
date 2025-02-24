@@ -54,6 +54,23 @@ public class SignatureScheme
 
 
     /*
+     * LIB OQS CODEPOINTS FOR WOLFSSL
+     */
+    public static final int OQS_CODEPOINT_P256_MLDSA44 = 0xff06;
+    public static final int OQS_CODEPOINT_RSA3072_MLDSA44 = 0xff07;
+    public static final int OQS_CODEPOINT_P384_MLDSA65 = 0xff08;
+    public static final int OQS_CODEPOINT_P521_MLDSA87 = 0xff09;
+
+    /*
+     * wolf ssl hybrid codepoints
+     */
+
+    public static final int WOLFSSL_HYBRID_P256_MLDSA_LEVEL2    = 0xFEA1;
+    public static final int WOLFSSL_HYBRID_RSA3072_MLDSA_LEVEL2 = 0xFEA2;
+    public static final int WOLFSSL_HYBRID_P384_MLDSA_LEVEL3    = 0xFEA4;
+    public static final int WOLFSSL_HYBRID_P521_MLDSA_LEVEL5    = 0xFEA6;
+
+    /*
      * draft-reddy-tls-composite-mldsa-01
      */
     public static final int mldsa44_ecdsa_secp256r1_sha256 = 0x0907;
@@ -104,11 +121,6 @@ public class SignatureScheme
         if (null == sigAndHashAlg)
         {
             throw new NullPointerException();
-        }
-
-        if (SignatureAlgorithm.isMLDSA(sigAndHashAlg.getSignature()))
-        {
-            return SignatureAlgorithm.getSignatureScheme(sigAndHashAlg.getSignature());
         }
 
         return from(sigAndHashAlg.getHash(), sigAndHashAlg.getSignature());
@@ -263,22 +275,12 @@ public class SignatureScheme
 
     public static short getHashAlgorithm(int signatureScheme)
     {
-        if(isMLDSA(signatureScheme))
-        {
-            return HashAlgorithm.Intrinsic;
-        }
-
         return (short)((signatureScheme >>> 8) & 0xFF);
     }
 
     public static short getSignatureAlgorithm(int signatureScheme)
     {
         // TODO[RFC 8998] sm2sig_sm3
-
-        if(isMLDSA(signatureScheme))
-        {
-            signatureScheme = getMLDSASignatureAlgorithm(signatureScheme);
-        }
 
         return (short)(signatureScheme & 0xFF);
     }
@@ -310,46 +312,6 @@ public class SignatureScheme
             return true;
         default:
             return SignatureAlgorithm.ecdsa == getSignatureAlgorithm(signatureScheme);
-        }
-    }
-
-    public static short getMLDSASignatureAlgorithm(int signatureScheme)
-    {
-        switch (signatureScheme)
-        {
-            case SignatureScheme.DRAFT_mldsa44:
-                return SignatureAlgorithm.custom_mldsa44;
-            case mldsa44_ecdsa_secp256r1_sha256:
-                return SignatureAlgorithm.custom_mldsa44_ecdsa_secp256r1_sha256;
-            case mldsa44_ed25519:
-                return SignatureAlgorithm.custom_mldsa44_ed25519;
-            case mldsa44_rsa2048_pkcs1_sha256:
-                return SignatureAlgorithm.custom_mldsa44_rsa2048_pkcs1_sha256;
-            case mldsa44_rsa2048_pss_pss_sha256:
-                return SignatureAlgorithm.custom_mldsa44_rsa2048_pss_pss_sha256;
-
-            case SignatureScheme.DRAFT_mldsa65:
-                return SignatureAlgorithm.custom_mldsa65;
-            case mldsa65_ecdsa_secp384r1_sha384:
-                return SignatureAlgorithm.custom_mldsa65_ecdsa_secp384r1_sha384;
-            case mldsa65_ed25519:
-                return SignatureAlgorithm.custom_mldsa65_ed25519;
-            case mldsa65_rsa3072_pkcs1_sha256:
-                return SignatureAlgorithm.custom_mldsa65_rsa3072_pkcs1_sha256;
-            case mldsa65_rsa4096_pkcs1_sha384:
-                return SignatureAlgorithm.custom_mldsa65_rsa4096_pkcs1_sha384;
-            case mldsa65_rsa3072_pss_pss_sha256:
-                return SignatureAlgorithm.custom_mldsa65_rsa3072_pss_pss_sha256;
-            case mldsa65_rsa4096_pss_pss_sha384:
-                return SignatureAlgorithm.custom_mldsa65_rsa4096_pss_pss_sha384;
-            case SignatureScheme.DRAFT_mldsa87:
-                return SignatureAlgorithm.custom_mldsa87;
-            case mldsa87_ecdsa_secp521r1_sha51:
-                return SignatureAlgorithm.custom_mldsa87_ecdsa_secp521r1_sha51;
-            case mldsa87_ed448:
-                return SignatureAlgorithm.custom_mldsa87_ed448;
-            default:
-                return -1;
         }
     }
 

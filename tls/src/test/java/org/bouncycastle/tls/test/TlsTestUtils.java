@@ -383,7 +383,9 @@ public class TlsTestUtils
         {
             SignatureAndHashAlgorithm alg = (SignatureAndHashAlgorithm)
                     supportedSignatureAlgorithms.elementAt(i);
-            if (alg.getSignature() == altSignatureAlgorithm)
+
+
+            if (alg.getHash() == (altSignatureAlgorithm >> 8) && alg.getSignature() == (altSignatureAlgorithm & 0x00FF))
             {
                 // Just grab the first one we find
                 altSignatureAndHashAlgorithm = alg;

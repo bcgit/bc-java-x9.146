@@ -112,21 +112,21 @@ class MockX9146TlsClient
         //TODO use addIfSupported?
 
         // ML-DSA
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa44));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa87));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa44_ecdsa_secp256r1_sha256));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_ecdsa_secp384r1_sha384));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa87_ecdsa_secp521r1_sha51));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa44_ed25519));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_ed25519));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa44_rsa2048_pkcs1_sha256));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_rsa3072_pkcs1_sha256));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_rsa4096_pkcs1_sha384));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa44_rsa2048_pss_pss_sha256));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_rsa3072_pss_pss_sha256));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa65_rsa4096_pss_pss_sha384));
-        defaultVector.add(SignatureAndHashAlgorithm.getInstance(HashAlgorithm.Intrinsic, SignatureAlgorithm.custom_mldsa87_ed448));
+        defaultVector.add(SignatureAndHashAlgorithm.DRAFT_mldsa44);
+        defaultVector.add(SignatureAndHashAlgorithm.DRAFT_mldsa65);
+        defaultVector.add(SignatureAndHashAlgorithm.DRAFT_mldsa87);
+
+        //OQS
+        defaultVector.add(SignatureAndHashAlgorithm.OQS_CODEPOINT_P256_MLDSA44);
+        defaultVector.add(SignatureAndHashAlgorithm.OQS_CODEPOINT_RSA3072_MLDSA44);
+        defaultVector.add(SignatureAndHashAlgorithm.OQS_CODEPOINT_P384_MLDSA65);
+        defaultVector.add(SignatureAndHashAlgorithm.OQS_CODEPOINT_P521_MLDSA87);
+
+        //WOLFSSL
+        defaultVector.add(SignatureAndHashAlgorithm.WOLFSSL_HYBRID_P256_MLDSA_LEVEL2);
+        defaultVector.add(SignatureAndHashAlgorithm.WOLFSSL_HYBRID_RSA3072_MLDSA_LEVEL2);
+        defaultVector.add(SignatureAndHashAlgorithm.WOLFSSL_HYBRID_P384_MLDSA_LEVEL3);
+        defaultVector.add(SignatureAndHashAlgorithm.WOLFSSL_HYBRID_P521_MLDSA_LEVEL5);
 
         // Hybrid
         // ecdsa-dilithium
@@ -164,10 +164,10 @@ class MockX9146TlsClient
             TlsExtensionsUtils.addMaxFragmentLengthExtension(clientExtensions, MaxFragmentLength.pow2_9);
             TlsExtensionsUtils.addPaddingExtension(clientExtensions, context.getCrypto().getSecureRandom().nextInt(16));
             TlsExtensionsUtils.addTruncatedHMacExtension(clientExtensions);
-            //TODO: why does adding the CKS extension break the tls connection?
+            //TODO: why does adding the CKS extension break the tls connection with wolfssl?
 //            if (cksCode != 0)
 //            {
-//                TlsExtensionsUtils.addCertificationKeySelection(clientExtensions, cksCode);
+                TlsExtensionsUtils.addCertificationKeySelection(clientExtensions, cksCode);
 //            }
         }
         return clientExtensions;
@@ -214,7 +214,8 @@ class MockX9146TlsClient
                 }
 
                 String[] trustedCertResources = new String[]{
-                        "x9146/server-P256-mldsa44-cert.pem"
+                        "x9146/server-P256-mldsa44-cert.pem",
+                        "x9146/server-P384-mldsa65-cert.pem"
 //                        "x9146/server-P256-falcon1-cert.pem"
                 };
 

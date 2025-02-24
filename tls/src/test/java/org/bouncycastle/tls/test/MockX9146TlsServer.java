@@ -9,6 +9,7 @@ import org.bouncycastle.tls.DefaultTlsServer;
 import org.bouncycastle.tls.ProtocolName;
 import org.bouncycastle.tls.ProtocolVersion;
 import org.bouncycastle.tls.SignatureAlgorithm;
+import org.bouncycastle.tls.SignatureScheme;
 import org.bouncycastle.tls.TlsCredentialedDecryptor;
 import org.bouncycastle.tls.TlsCredentialedSigner;
 import org.bouncycastle.tls.TlsCredentials;
@@ -30,7 +31,9 @@ class MockX9146TlsServer
 {
 
     int[] selectedCipherSuites = null;
-    byte cksCode = 0;
+
+    // Change this to manipulate server cks choice
+    byte[] SUPPORTED_CKSCODE = new byte[] {3, 2, 1, 0};
     boolean DEBUG = true;
 
     public void setSelectedCipherSuites(int[] selectedCipherSuites)
@@ -38,9 +41,9 @@ class MockX9146TlsServer
         this.selectedCipherSuites = selectedCipherSuites;
     }
 
-    public void setCksCode(int cksCode)
+    public void setSupportedCksCode(int cksCode)
     {
-        this.cksCode = (byte)cksCode;
+        SUPPORTED_CKSCODE = new byte[]{(byte)cksCode};
     }
 
     MockX9146TlsServer()
@@ -183,6 +186,7 @@ class MockX9146TlsServer
 
         String[] trustedCertResources = new String[]{
                 "x9146/ca-P256-mldsa44-cert.pem",
+                "x9146/ca-P384-mldsa65-cert.pem",
 //                "x9146/ca-P256-falcon1-cert.pem"
         };
 
@@ -235,8 +239,10 @@ class MockX9146TlsServer
         }
 
         //DO I NEED TO DO THIS
+        // YES FOR BC server <-> WOLFSSL client
 //        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, new byte[]{0, 1, 2, 3});
-//        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, new byte[]{cksCode});
+        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, SUPPORTED_CKSCODE);
+//        TlsExtensionsUtils.addCertificationKeySelection(clientExtensions, SUPPORTED_CKSCODE[0]);
 
 
         //TODO: Do we need to check for CKS Code Extension ?? (create hasCertificateKeySelection)
@@ -256,7 +262,7 @@ class MockX9146TlsServer
         // {
         //      throw new Exception("server cksCode not support client cksCode");
         // }
-        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{cksCode});
+        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, SUPPORTED_CKSCODE);
 //        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{3, 2, 1});
 
         return super.getServerExtensions();
@@ -287,9 +293,12 @@ class MockX9146TlsServer
 
 
         return TlsTestUtils.loadDualSignerCredentials(context, clientSigAlgs,
-                SignatureAlgorithm.ecdsa, SignatureAlgorithm.custom_mldsa44,
-                "x9146/server-P256-mldsa44-cert.pem",
-                "x9146/server-P256-key.pem", "x9146/server-mldsa44-key-pq.pem");
+//                SignatureAlgorithm.ecdsa, (short)SignatureScheme.DRAFT_mldsa44,
+//                "x9146/server-P256-mldsa44-cert.pem",
+//                "x9146/server-P256-key.pem", "x9146/server-mldsa44-key-pq.pem");
+                SignatureAlgorithm.ecdsa, (short)SignatureScheme.DRAFT_mldsa65,
+                "x9146/server-P384-mldsa65-cert.pem",
+                "x9146/server-P384-key.pem", "x9146/server-mldsa65-key-pq.pem");
     }
     protected TlsCredentialedSigner getRSASignerCredentials() throws IOException
     {
