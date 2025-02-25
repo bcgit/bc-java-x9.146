@@ -44,6 +44,7 @@ public class BCMLDSAPrivateKey
     private void init(PrivateKeyInfo keyInfo)
             throws IOException
     {
+        this.encoding = keyInfo.getEncoded();
         init((MLDSAPrivateKeyParameters)PrivateKeyFactory.createKey(keyInfo), keyInfo.getAttributes());
     }
 
@@ -88,6 +89,20 @@ public class BCMLDSAPrivateKey
     public final String getAlgorithm()
     {
         return algorithm;
+    }
+
+    public MLDSAPrivateKey getPrivateKey(boolean preferSeedOnly)
+    {
+        if (preferSeedOnly)
+        {
+            byte[] seed = params.getSeed();
+            if (seed != null)
+            {
+                return new BCMLDSAPrivateKey(this.params.getParametersWithFormat(MLDSAPrivateKeyParameters.SEED_ONLY));
+            }
+        }
+
+        return new BCMLDSAPrivateKey(this.params.getParametersWithFormat(MLDSAPrivateKeyParameters.EXPANDED_KEY));
     }
 
     public byte[] getEncoded()

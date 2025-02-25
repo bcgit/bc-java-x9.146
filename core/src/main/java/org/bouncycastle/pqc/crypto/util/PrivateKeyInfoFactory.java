@@ -247,18 +247,16 @@ public class PrivateKeyInfoFactory
             MLKEMPrivateKeyParameters params = (MLKEMPrivateKeyParameters)privateKey;
             
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.mlkemOidLookup(params.getParameters()));
-                                                  
+
+            if (params.getPreferredFormat() == MLKEMPrivateKeyParameters.SEED_ONLY)
+            {
+                return new PrivateKeyInfo(algorithmIdentifier, new DERTaggedObject(false, 0, new DEROctetString(params.getSeed())), attributes);
+            }
+            else if (params.getPreferredFormat() == MLKEMPrivateKeyParameters.EXPANDED_KEY)
+            {
+                return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(params.getEncoded()), attributes);
+            }
             return new PrivateKeyInfo(algorithmIdentifier, getBasicPQCEncoding(params.getSeed(), params.getEncoded()), attributes);
-//            byte[] seed = params.getSeed();
-//
-//            if (seed == null)
-//            {
-//                return new PrivateKeyInfo(algorithmIdentifier, params.getEncoded(), attributes);
-//            }
-//            else
-//            {
-//                return new PrivateKeyInfo(algorithmIdentifier, seed, attributes);
-//            }
         }
         else if (privateKey instanceof NTRULPRimePrivateKeyParameters)
         {
@@ -297,20 +295,15 @@ public class PrivateKeyInfoFactory
 
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.mldsaOidLookup(params.getParameters()));
 
+            if (params.getPreferredFormat() == MLDSAPrivateKeyParameters.SEED_ONLY)
+            {
+                return new PrivateKeyInfo(algorithmIdentifier, new DERTaggedObject(false, 0, new DEROctetString(params.getSeed())), attributes);
+            }
+            else if (params.getPreferredFormat() == MLDSAPrivateKeyParameters.EXPANDED_KEY)
+            {
+                return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(params.getEncoded()), attributes);
+            }
             return new PrivateKeyInfo(algorithmIdentifier, getBasicPQCEncoding(params.getSeed(), params.getEncoded()), attributes);
-//            byte[] seed = params.getSeed();
-//            if (seed == null)
-//            {
-//                MLDSAPublicKeyParameters pubParams = params.getPublicKeyParameters();
-//
-//                return new PrivateKeyInfo(algorithmIdentifier, params.getEncoded(), attributes, pubParams.getEncoded());
-//            }
-//            else
-//            {
-//                MLDSAPublicKeyParameters pubParams = params.getPublicKeyParameters();
-//
-//                return new PrivateKeyInfo(algorithmIdentifier, seed, attributes, pubParams.getEncoded());
-//            }
         }
         else if (privateKey instanceof DilithiumPrivateKeyParameters)
         {
@@ -402,16 +395,10 @@ public class PrivateKeyInfoFactory
     private static ASN1Sequence getBasicPQCEncoding(byte[] seed, byte[] expanded)
     {
         ASN1EncodableVector v = new ASN1EncodableVector(2);
-        
-        if (seed != null)
-        {
-            v.add(new DEROctetString(seed));
-        }
 
-        if (expanded != null)
-        {
-            v.add(new DERTaggedObject(false, 1, new DEROctetString(expanded)));
-        }
+        v.add(new DEROctetString(seed));
+
+        v.add(new DEROctetString(expanded));
 
         return new DERSequence(v);
     }

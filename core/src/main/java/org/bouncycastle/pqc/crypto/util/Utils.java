@@ -8,6 +8,7 @@ import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.BERTags;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
@@ -279,6 +280,9 @@ class Utils
         mldsaParams.put(NISTObjectIdentifiers.id_ml_dsa_44, MLDSAParameters.ml_dsa_44);
         mldsaParams.put(NISTObjectIdentifiers.id_ml_dsa_65, MLDSAParameters.ml_dsa_65);
         mldsaParams.put(NISTObjectIdentifiers.id_ml_dsa_87, MLDSAParameters.ml_dsa_87);
+        mldsaParams.put(BCObjectIdentifiers.id_id_alg_ml_dsa_44_seed, MLDSAParameters.ml_dsa_44);
+        mldsaParams.put(BCObjectIdentifiers.id_id_alg_ml_dsa_65_seed, MLDSAParameters.ml_dsa_65);
+        mldsaParams.put(BCObjectIdentifiers.id_id_alg_ml_dsa_87_seed, MLDSAParameters.ml_dsa_87);
         mldsaParams.put(NISTObjectIdentifiers.id_hash_ml_dsa_44_with_sha512, MLDSAParameters.ml_dsa_44_with_sha512);
         mldsaParams.put(NISTObjectIdentifiers.id_hash_ml_dsa_65_with_sha512, MLDSAParameters.ml_dsa_65_with_sha512);
         mldsaParams.put(NISTObjectIdentifiers.id_hash_ml_dsa_87_with_sha512, MLDSAParameters.ml_dsa_87_with_sha512);
@@ -826,6 +830,11 @@ class Utils
             if (data[0] == BERTags.OCTET_STRING)
             {
                 return ASN1OctetString.getInstance(data);
+            }
+
+            if ((data[0] & 0xff) == BERTags.TAGGED)
+            {
+                return ASN1OctetString.getInstance(ASN1TaggedObject.getInstance(data), false);
             }
         }
 
