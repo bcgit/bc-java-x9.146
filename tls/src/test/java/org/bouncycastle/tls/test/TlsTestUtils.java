@@ -352,9 +352,13 @@ public class TlsTestUtils
         {
             targetHash = SignatureScheme.getHashAlgorithm(SignatureScheme.ecdsa_secp384r1_sha384);
         }
-        if (keyResource.contains("P512"))
+        if (keyResource.contains("P521"))
         {
             targetHash = SignatureScheme.getHashAlgorithm(SignatureScheme.ecdsa_secp521r1_sha512);
+        }
+        if (keyResource.contains("rsa3072"))
+        {
+            targetHash = SignatureScheme.getHashAlgorithm(SignatureScheme.rsa_pss_rsae_sha256);
         }
 
 

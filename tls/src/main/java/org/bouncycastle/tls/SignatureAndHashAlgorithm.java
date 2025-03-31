@@ -102,6 +102,10 @@ public class SignatureAndHashAlgorithm
         {
             return SignatureAndHashAlgorithm.WOLFSSL_HYBRID_P521_MLDSA_LEVEL5;
         }
+        if (nativeAlg.equals(create(SignatureScheme.rsa_pss_rsae_sha256)) && altAlg.equals(SignatureAndHashAlgorithm.DRAFT_mldsa44))
+        {
+            return SignatureAndHashAlgorithm.WOLFSSL_HYBRID_RSA3072_MLDSA_LEVEL2;
+        }
         return null;
     }
     public static SignatureAndHashAlgorithm getInstance(short hashAlgorithm, short signatureAlgorithm)

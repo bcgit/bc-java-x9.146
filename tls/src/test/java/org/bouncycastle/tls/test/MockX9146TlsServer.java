@@ -29,13 +29,25 @@ import java.util.Vector;
 class MockX9146TlsServer
     extends DefaultTlsServer
 {
+    public enum HybridExample
+    {
+        mldsa44p256,
+        mldsa65p384,
+        mldsa87p521,
+        mldsa44rsa3072,
 
+    }
+    HybridExample selectedHybridTest = HybridExample.mldsa44p256;
     int[] selectedCipherSuites = null;
 
     // Change this to manipulate server cks choice
     byte[] SUPPORTED_CKSCODE = new byte[] {3, 2, 1, 0};
-    boolean DEBUG = true;
+    boolean DEBUG = false;
 
+    public void setSelectedHybridTest(HybridExample target)
+    {
+        selectedHybridTest = target;
+    }
     public void setSelectedCipherSuites(int[] selectedCipherSuites)
     {
         this.selectedCipherSuites = selectedCipherSuites;
@@ -44,6 +56,10 @@ class MockX9146TlsServer
     public void setSupportedCksCode(int cksCode)
     {
         SUPPORTED_CKSCODE = new byte[]{(byte)cksCode};
+        if (cksCode == 0)
+        {
+            SUPPORTED_CKSCODE = null;
+        }
     }
 
     MockX9146TlsServer()
@@ -121,42 +137,7 @@ class MockX9146TlsServer
     {
 
         //NOT NEEDED FOR X9.146 POC
-
         return null;
-
-//        Vector serverSigAlgs = null;
-//        if (TlsUtils.isSignatureAlgorithmsExtensionAllowed(context.getServerVersion()))
-//        {
-//            serverSigAlgs = TlsUtils.getDefaultSupportedSignatureAlgorithms(context);
-//        }
-//
-//        Vector certificateAuthorities = new Vector();
-//      certificateAuthorities.addElement(TlsTestUtils.loadBcCertificateResource("x9146/ca-P256-mldsa44-cert.pem").getSubject());
-////      certificateAuthorities.addElement(TlsTestUtils.loadBcCertificateResource("x509-ca-dsa.pem").getSubject());
-////      certificateAuthorities.addElement(TlsTestUtils.loadBcCertificateResource("x509-ca-ecdsa.pem").getSubject());
-////      certificateAuthorities.addElement(TlsTestUtils.loadBcCertificateResource("x509-ca-rsa.pem").getSubject());
-//
-//        // All the CA certificates are currently configured with this subject
-//        certificateAuthorities.addElement(new X500Name("CN=BouncyCastle TLS Test CA"));
-//
-//        if (TlsUtils.isTLSv13(context))
-//        {
-//            // TODO[tls13] Support for non-empty request context
-//            byte[] certificateRequestContext = TlsUtils.EMPTY_BYTES;
-//
-//            // TODO[tls13] Add TlsTestConfig.serverCertReqSigAlgsCert
-//            Vector serverSigAlgsCert = null;
-//
-//            return new CertificateRequest(certificateRequestContext, serverSigAlgs, serverSigAlgsCert,
-//                certificateAuthorities);
-//        }
-//        else
-//        {
-//            short[] certificateTypes = new short[]{ ClientCertificateType.rsa_sign,
-//                ClientCertificateType.dss_sign, ClientCertificateType.ecdsa_sign };
-//
-//            return new CertificateRequest(certificateTypes, serverSigAlgs, certificateAuthorities);
-//        }
     }
 
     public void notifyClientCertificate(org.bouncycastle.tls.Certificate clientCertificate) throws IOException
@@ -187,7 +168,8 @@ class MockX9146TlsServer
         String[] trustedCertResources = new String[]{
                 "x9146/ca-P256-mldsa44-cert.pem",
                 "x9146/ca-P384-mldsa65-cert.pem",
-//                "x9146/ca-P256-falcon1-cert.pem"
+                "x9146/ca-P512-mldsa87-cert.pem",
+                "x9146/ca-rsa3072-mldsa44-cert.pem"
         };
 
         //TODO[X9.146] process the trusted cert resource via provided cks code
@@ -238,12 +220,8 @@ class MockX9146TlsServer
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
 
-        //DO I NEED TO DO THIS
-        // YES FOR BC server <-> WOLFSSL client
-//        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, new byte[]{0, 1, 2, 3});
-        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, SUPPORTED_CKSCODE);
+//        TlsExtensionsUtils.addCertificationKeySelections(clientExtensions, SUPPORTED_CKSCODE);
 //        TlsExtensionsUtils.addCertificationKeySelection(clientExtensions, SUPPORTED_CKSCODE[0]);
-
 
         //TODO: Do we need to check for CKS Code Extension ?? (create hasCertificateKeySelection)
         super.processClientExtensions(clientExtensions);
@@ -255,15 +233,12 @@ class MockX9146TlsServer
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
-        //TODO[x9.146]: Change TlsExtensionsUtils.getCertficationKeySelection to return a vector of shorts instead of just one ckscode
 
-//        TlsExtensionsUtils.addCertificationKeySelection(serverExtensions, TlsExtensionsUtils.getCertificationKeySelection(clientExtensions));
-        // if (TlsExtensionsUtils.getCertificationKeySelection(clientExtensions).contains(cksCode))
-        // {
-        //      throw new Exception("server cksCode not support client cksCode");
-        // }
-        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, SUPPORTED_CKSCODE);
-//        TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, new byte[]{3, 2, 1});
+        // Don't add CKS extension if it is cks_default
+        if (SUPPORTED_CKSCODE != null && TlsExtensionsUtils.hasCertificationKeySelections(clientExtensions))
+        {
+            TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, SUPPORTED_CKSCODE);
+        }
 
         return super.getServerExtensions();
     }
@@ -291,14 +266,31 @@ class MockX9146TlsServer
 
         Vector clientSigAlgs = context.getSecurityParametersHandshake().getClientSigAlgs();
 
-
-        return TlsTestUtils.loadDualSignerCredentials(context, clientSigAlgs,
-//                SignatureAlgorithm.ecdsa, (short)SignatureScheme.DRAFT_mldsa44,
-//                "x9146/server-P256-mldsa44-cert.pem",
-//                "x9146/server-P256-key.pem", "x9146/server-mldsa44-key-pq.pem");
-                SignatureAlgorithm.ecdsa, (short)SignatureScheme.DRAFT_mldsa65,
-                "x9146/server-P384-mldsa65-cert.pem",
-                "x9146/server-P384-key.pem", "x9146/server-mldsa65-key-pq.pem");
+        switch (selectedHybridTest)
+        {
+        case mldsa44p256:
+            return TlsTestUtils.loadDualSignerCredentials(context, clientSigAlgs,
+            SignatureAlgorithm.ecdsa, (short)SignatureScheme.DRAFT_mldsa44,
+            "x9146/server-P256-mldsa44-cert.pem",
+            "x9146/server-P256-key.pem", "x9146/server-mldsa44-key-pq.pem");
+        case mldsa65p384:
+            return TlsTestUtils.loadDualSignerCredentials(context, clientSigAlgs,
+            SignatureAlgorithm.ecdsa, (short)SignatureScheme.DRAFT_mldsa65,
+            "x9146/server-P384-mldsa65-cert.pem",
+            "x9146/server-P384-key.pem", "x9146/server-mldsa65-key-pq.pem");
+        case mldsa87p521:
+            return TlsTestUtils.loadDualSignerCredentials(context, clientSigAlgs,
+            SignatureAlgorithm.ecdsa, (short)SignatureScheme.DRAFT_mldsa87,
+            "x9146/server-P521-mldsa87-cert.pem",
+            "x9146/server-P521-key.pem", "x9146/server-mldsa87-key-pq.pem");
+        case mldsa44rsa3072:
+            return TlsTestUtils.loadDualSignerCredentials(context, clientSigAlgs,
+            SignatureAlgorithm.rsa_pss_rsae_sha256, (short)SignatureScheme.DRAFT_mldsa44,
+            "x9146/server-rsa3072-mldsa44-cert.pem",
+            "x9146/server-rsa3072-key.pem", "x9146/server-mldsa44-key-pq.pem");
+        default:
+            throw new IOException("server cert/key not set correctly");
+        }
     }
     protected TlsCredentialedSigner getRSASignerCredentials() throws IOException
     {

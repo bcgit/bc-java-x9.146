@@ -545,10 +545,10 @@ public class TlsExtensionsUtils
         return extensionData == null ? null : readTrustedCAKeysExtensionClient(extensionData);
     }
 
-    public static short getCertificationKeySelection(Hashtable extensions) throws IOException
+    public static short[] getCertificationKeySelection(Hashtable extensions) throws IOException
     {
         byte[] cksCodeData = TlsUtils.getExtensionData(extensions, EXT_certificate_key_selection);
-        return cksCodeData == null ? 0 : readCertificationKeySelection(cksCodeData);
+        return cksCodeData == null ? new short[]{0} : readCertificationKeySelection(cksCodeData);
     }
 
     //TODO[x9.146]: new extension, need more testing/publishing
@@ -1625,14 +1625,20 @@ public class TlsExtensionsUtils
         return readEmptyExtensionData(extensionData);
     }
 
-    public static short readCertificationKeySelection(byte[] cksCodeData) throws IOException
+    public static short[] readCertificationKeySelection(byte[] cksCodeData) throws IOException
     {
         if (cksCodeData == null)
         {
             throw new IllegalArgumentException("'cksCodeData' cannot be null");
         }
 
-        return TlsUtils.readUint8(cksCodeData, 0);
+        short[] cksCodeList = new short[cksCodeData.length];
+        for (int i = 0; i < cksCodeData.length; i++)
+        {
+            cksCodeList[i] = cksCodeData[i];
+        }
+
+        return cksCodeList;
     }
 
     public static int[] readHybridSchemeList(byte[] extensionData) throws IOException

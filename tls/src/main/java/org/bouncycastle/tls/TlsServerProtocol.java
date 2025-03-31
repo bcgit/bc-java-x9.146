@@ -427,7 +427,7 @@ public class TlsServerProtocol
         TlsUtils.establish13PhaseSecrets(tlsServerContext, pskEarlySecret, sharedSecret);
 
         // X9.146 Add CKS extension to serverHelloExt
-        short cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientHelloExtensions);
+        short[] cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientHelloExtensions);
         //TODO[x9147]: This throws an error for wolfssl client!
 //        if (cksCode != 0)
 //        {
@@ -1591,7 +1591,11 @@ public class TlsServerProtocol
     {
         final SecurityParameters securityParameters = tlsServerContext.getSecurityParametersHandshake();
         // TODO[x9.146]: should ckscode be stored in securityParameters or somewhere else?
-        short cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientExtensions);
+        short cksCode = TlsUtils.getCommonCKS(
+                TlsExtensionsUtils.getCertificationKeySelection(clientExtensions),
+                TlsExtensionsUtils.getCertificationKeySelection(serverExtensions)
+        );
+
         securityParameters.cksCode = cksCode;
 
         byte[] serverHelloTranscriptHash = TlsUtils.getCurrentPRFHash(handshakeHash);
@@ -1646,17 +1650,11 @@ public class TlsServerProtocol
                  * extension instead.
                  */
 
-
                 Certificate serverCertificate = serverCredentials.getCertificate();
                 send13CertificateMessage(serverCertificate);
-                //TODO: When generating the hybridSchemeSignature, do we use the prf Hash of the certificateMessage???
-                System.out.println(this.connection_state + ": " + Hex.toHexString(TlsUtils.getCurrentPRFHash(handshakeHash)));
-
 
                 securityParameters.tlsServerEndPoint = null;
                 this.connection_state = CS_SERVER_CERTIFICATE;
-                System.out.println(this.connection_state + ": " + Hex.toHexString(TlsUtils.getCurrentPRFHash(handshakeHash)));
-
             }
     
             // CertificateVerify
@@ -1671,9 +1669,6 @@ public class TlsServerProtocol
 
                 //TODO[x9.146]: How do we select which cksCode to use if multiple is sent?
                 // (find first mutual cksCode supported by both client and server?)
-
-                //HERE
-//                System.out.println(this.connection_state + ": " + Hex.toHexString(TlsUtils.getCurrentPRFHash(handshakeHash)));
 
                 //TODO[x9.146]: new extension, need more testing/publishing
 //                HybridSchemeSignature hybridSchemeSignature = TlsUtils.generateHybridSchemeSignature(tlsServerContext, serverCredentials, handshakeHash);

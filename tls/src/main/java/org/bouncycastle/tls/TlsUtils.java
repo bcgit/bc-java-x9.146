@@ -2558,10 +2558,6 @@ public class TlsUtils
 
             byte[] header = getCertificateVerifyHeader(contextString);
             byte[] prfHash = getCurrentPRFHash(handshakeHash);
-            System.out.println("In Generate");
-            System.out.println("header: " + Hex.toHexString(header));
-            System.out.println("prfHash: " + Hex.toHexString(prfHash));
-
 
             if (null != streamSigner)
             {
@@ -2792,12 +2788,8 @@ public class TlsUtils
             {
                 Tls13Verifier verifier = certificate.createVerifier(signatureScheme);
 
-
                 byte[] header = getCertificateVerifyHeader(contextString);
-                System.out.println("header: " + Hex.toHexString(header));
-
                 byte[] prfHash = getCurrentPRFHash(handshakeHash);
-                System.out.println("prfHash: " + Hex.toHexString(prfHash));
 
                 OutputStream output = verifier.getOutputStream();
                 output.write(header, 0, header.length);
@@ -2811,13 +2803,7 @@ public class TlsUtils
                 Tls13Verifier altVerifier = certificate.createAltVerifier(signatureScheme);
 
                 byte[] header = getCertificateVerifyHeader(contextString);
-                System.out.println("header: " + Hex.toHexString(header));
-
                 byte[] prfHash = getCurrentPRFHash(handshakeHash);
-                System.out.println("prfHash: " + Hex.toHexString(prfHash));
-
-                System.out.println("nativeSignature: " + Hex.toHexString(nativeSignature));
-                System.out.println("altSignature: " + Hex.toHexString(altSignature));
 
                 OutputStream output = altVerifier.getOutputStream();
                 output.write(header, 0, header.length);
@@ -2979,6 +2965,25 @@ public class TlsUtils
         Vector v = new Vector(1);
         v.addElement(obj);
         return v;
+    }
+
+    public static short getCommonCKS(short[] clientCKS, short[] serverCKS)
+    {
+        if (clientCKS == null || serverCKS == null)
+        {
+            return 0;
+        }
+        for (short client : clientCKS)
+        {
+            for (short server : serverCKS)
+            {
+                if (client == server)
+                {
+                    return client;
+                }
+            }
+        }
+        return 0;
     }
 
     public static int getCipherType(int cipherSuite)
@@ -5188,7 +5193,11 @@ public class TlsUtils
     {
         SecurityParameters securityParameters = clientContext.getSecurityParametersHandshake();
         boolean isTLSv13 = isTLSv13(securityParameters.getNegotiatedVersion());
-        short cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientExtensions);
+        short cksCode = TlsUtils.getCommonCKS(
+                TlsExtensionsUtils.getCertificationKeySelection(clientExtensions),
+                TlsExtensionsUtils.getCertificationKeySelection(serverExtensions)
+        );
+
         boolean usingAltCerts = cksCode > 1;
 
         if (null == clientAuthentication)

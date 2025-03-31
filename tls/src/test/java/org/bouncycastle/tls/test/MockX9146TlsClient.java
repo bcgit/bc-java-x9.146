@@ -1,21 +1,16 @@
 package org.bouncycastle.tls.test;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.PrintStream;
 import java.util.Hashtable;
 import java.util.Vector;
 
-import org.bouncycastle.asn1.x509.Certificate;
-import org.bouncycastle.operator.bc.BcContentSignerBuilder;
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.AlertLevel;
 import org.bouncycastle.tls.CertificateRequest;
 import org.bouncycastle.tls.ChannelBinding;
-import org.bouncycastle.tls.CipherSuite;
 import org.bouncycastle.tls.ClientCertificateType;
 import org.bouncycastle.tls.DefaultTlsClient;
-import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.MaxFragmentLength;
 import org.bouncycastle.tls.ProtocolName;
 import org.bouncycastle.tls.ProtocolVersion;
@@ -165,10 +160,11 @@ class MockX9146TlsClient
             TlsExtensionsUtils.addPaddingExtension(clientExtensions, context.getCrypto().getSecureRandom().nextInt(16));
             TlsExtensionsUtils.addTruncatedHMacExtension(clientExtensions);
             //TODO: why does adding the CKS extension break the tls connection with wolfssl?
-//            if (cksCode != 0)
-//            {
+            if (cksCode != 0)
+            {
                 TlsExtensionsUtils.addCertificationKeySelection(clientExtensions, cksCode);
-//            }
+            }
+
         }
         return clientExtensions;
     }
@@ -215,8 +211,9 @@ class MockX9146TlsClient
 
                 String[] trustedCertResources = new String[]{
                         "x9146/server-P256-mldsa44-cert.pem",
-                        "x9146/server-P384-mldsa65-cert.pem"
-//                        "x9146/server-P256-falcon1-cert.pem"
+                        "x9146/server-P384-mldsa65-cert.pem",
+                        "x9146/server-P521-mldsa87-cert.pem",
+                        "x9146/server-rsa3072-mldsa44-cert.pem"
                 };
 
                 TlsCertificate[] certPath = TlsTestUtils.getTrustedCertPath(context.getCrypto(), chain[0],

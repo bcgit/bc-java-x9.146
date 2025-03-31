@@ -1622,12 +1622,14 @@ public class TlsClientProtocol
         // check server extension if alternative algorithm is supported or not
         // if supported and hybrid scheme was not sent throw an error
 
-        short serverCKS = TlsExtensionsUtils.getCertificationKeySelection(serverExtensions);
-        short clientCKS = TlsExtensionsUtils.getCertificationKeySelection(clientExtensions);
+        short cksCode = TlsUtils.getCommonCKS(
+                TlsExtensionsUtils.getCertificationKeySelection(clientExtensions),
+                TlsExtensionsUtils.getCertificationKeySelection(serverExtensions)
+        );
 
         // TODO: Throw error if server cks != client cks (check if native == default)
 
-        TlsUtils.verify13CertificateVerifyServer(tlsClientContext, handshakeHash, certificateVerify, clientCKS);
+        TlsUtils.verify13CertificateVerifyServer(tlsClientContext, handshakeHash, certificateVerify, cksCode);
 
         //TODO[x9.146]: new extension, need more testing/publishing
 //        HybridSchemeSignature hybridSchemeSignature = TlsExtensionsUtils.getHybridSchemeSignature(serverExtensions);

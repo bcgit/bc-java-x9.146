@@ -37,12 +37,6 @@ class HandshakeMessageOutput
 
     void send(TlsProtocol protocol) throws IOException
     {
-        {
-            String isServer = protocol.getContext().isServer() ? "Server" : "Client";
-            short type = TlsUtils.readUint8(buf, 0);
-            System.out.println(isServer + "_send_" + HandshakeType.getName(type));
-        }
-
         // Patch actual length back in
         int bodyLength = count - 4;
         TlsUtils.checkUint24(bodyLength);

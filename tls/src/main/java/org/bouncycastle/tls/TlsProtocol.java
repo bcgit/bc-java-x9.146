@@ -946,10 +946,6 @@ public abstract class TlsProtocol
     protected void safeWriteRecord(short type, byte[] buf, int offset, int len)
         throws IOException
     {
-
-        {
-            System.out.println("safeWrite_" + HandshakeType.getName(type) + " : " + Hex.toHexString(buf, offset, len));
-        }
         try
         {
             recordStream.writeRecord(type, buf, offset, len);
@@ -1112,12 +1108,6 @@ public abstract class TlsProtocol
         }
 
         short type = TlsUtils.readUint8(buf, off);
-
-
-        {
-//TODO: delete
-//            System.out.println(getContext().isServer()+"Type: " + ExtensionType.getName(type) + " : " + Hex.toHexString(buf, off, len));
-        }
 
         switch (type)
         {

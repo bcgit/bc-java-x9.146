@@ -262,62 +262,25 @@ public class BcTlsRawKeyCertificate
 
                 return new BcTls13PQVerifier(verifier);
             }
-//            case SignatureScheme.dilithiumr3_2:
-//            case SignatureScheme.dilithiumr3_3:
-//            case SignatureScheme.dilithiumr3_5:
-//            {
-//                DilithiumSigner verifier = new DilithiumSigner();
-//                DilithiumPublicKeyParameters pubKey = getPubKeyDilithium(keyInfo);
-//                verifier.init(false, getPubKeyDilithium(keyInfo));
-//
-//                return new BcTls13PQVerifier(verifier);
-//            }
             case SignatureScheme.OQS_CODEPOINT_P256_MLDSA44:
+            case SignatureScheme.OQS_CODEPOINT_RSA3072_MLDSA44:
             case SignatureScheme.WOLFSSL_HYBRID_P256_MLDSA_LEVEL2:
             case SignatureScheme.WOLFSSL_HYBRID_RSA3072_MLDSA_LEVEL2:
             case SignatureScheme.mldsa44_ecdsa_secp256r1_sha256:
             case SignatureScheme.mldsa65_ecdsa_secp384r1_sha384:
             case SignatureScheme.mldsa44_ed25519:
-//            case SignatureScheme.mldsa44_rsa2048_pkcs1_sha256:
-//            case SignatureScheme.mldsa44_rsa2048_pss_pss_sha256:
+            case SignatureScheme.mldsa44_rsa2048_pkcs1_sha256:
+            case SignatureScheme.mldsa44_rsa2048_pss_pss_sha256:
                 return createAltVerifier(SignatureScheme.DRAFT_mldsa44);
             case SignatureScheme.mldsa65_ed25519:
             case SignatureScheme.WOLFSSL_HYBRID_P384_MLDSA_LEVEL3:
             case SignatureScheme.OQS_CODEPOINT_P384_MLDSA65:
-//            case SignatureScheme.mldsa65_rsa3072_pkcs1_sha256:
-//            case SignatureScheme.mldsa65_rsa4096_pkcs1_sha384:
-//            case SignatureScheme.mldsa65_rsa3072_pss_pss_sha256:
-//            case SignatureScheme.mldsa65_rsa4096_pss_pss_sha384:
                 return createAltVerifier(SignatureScheme.DRAFT_mldsa65);
             case SignatureScheme.OQS_CODEPOINT_P521_MLDSA87:
             case SignatureScheme.WOLFSSL_HYBRID_P521_MLDSA_LEVEL5:
             case SignatureScheme.mldsa87_ecdsa_secp521r1_sha51:
             case SignatureScheme.mldsa87_ed448:
                 return createAltVerifier(SignatureScheme.DRAFT_mldsa87);
-
-//            case SignatureScheme.X9146_falcon512:
-//            case SignatureScheme.X9146_falcon1024:
-//            {
-//                FalconSigner verifier = new FalconSigner();
-//                FalconPublicKeyParameters pubKey = getPubKeyFalcon(keyInfo);
-//                verifier.init(false, getPubKeyFalcon(keyInfo));
-//
-//                return new BcTls13PQVerifier(verifier);
-//            }
-            //TODO[x9146]: alt will always be pqc
-//            case SignatureScheme.OQS_P256_MLDSA44:
-//            case SignatureScheme.OQS_RSA3072_MLDSA44:
-//                return createAltVerifier(keyInfo, SignatureScheme.DRAFT_mldsa44);
-//            case SignatureScheme.OQS_P384_MLDSA65:
-//                return createAltVerifier(keyInfo, SignatureScheme.DRAFT_mldsa65);
-//            case SignatureScheme.OQS_P521_MLDSA87:
-//                return createAltVerifier(keyInfo, SignatureScheme.DRAFT_mldsa87);
-//            case SignatureScheme.X9146_HYBRID_P256_falcon512:
-//            case SignatureScheme.X9146_HYBRID_RSA3072_falcon512:
-//                return createAltVerifier(keyInfo, SignatureScheme.X9146_falcon512);
-//            case SignatureScheme.X9146_HYBRID_P521_falcon1024:
-//                return createAltVerifier(keyInfo, SignatureScheme.X9146_falcon1024);
-
 
             // TODO[RFC 8998]
 //        case SignatureScheme.sm2sig_sm3:
@@ -469,6 +432,9 @@ public class BcTlsRawKeyCertificate
         case SignatureScheme.OQS_CODEPOINT_P521_MLDSA87:
         case SignatureScheme.WOLFSSL_HYBRID_P521_MLDSA_LEVEL5:
             return createVerifier(SignatureScheme.ecdsa_secp521r1_sha512);
+        case SignatureScheme.OQS_CODEPOINT_RSA3072_MLDSA44:
+        case SignatureScheme.WOLFSSL_HYBRID_RSA3072_MLDSA_LEVEL2:
+            return createVerifier(SignatureScheme.rsa_pss_rsae_sha256);
 
         case SignatureScheme.mldsa44_ecdsa_secp256r1_sha256:
             return createVerifier(SignatureScheme.ecdsa_secp256r1_sha256);
@@ -481,27 +447,6 @@ public class BcTlsRawKeyCertificate
             return createVerifier(SignatureScheme.ed25519);
         case SignatureScheme.mldsa87_ed448:
             return createVerifier(SignatureScheme.ed448);
-        //TODO[x9146]: add corresponding rsa verifier
-//        case SignatureScheme.mldsa44_rsa2048_pkcs1_sha256:
-//        case SignatureScheme.mldsa44_rsa2048_pss_pss_sha256:
-//        case SignatureScheme.mldsa65_rsa3072_pkcs1_sha256:
-//        case SignatureScheme.mldsa65_rsa4096_pkcs1_sha384:
-//        case SignatureScheme.mldsa65_rsa3072_pss_pss_sha256:
-//        case SignatureScheme.mldsa65_rsa4096_pss_pss_sha384:
-
-            //TODO[x9146]: nonalt will always be native
-//        case SignatureScheme.OQS_P256_MLDSA44:
-//        case SignatureScheme.X9146_HYBRID_P256_falcon512:
-//            return createVerifier(SignatureScheme.ecdsa_secp256r1_sha256);
-//        case SignatureScheme.OQS_P384_MLDSA65:
-//            return createVerifier(SignatureScheme.ecdsa_secp384r1_sha384);
-//        case SignatureScheme.OQS_P521_MLDSA87:
-//        case SignatureScheme.X9146_HYBRID_P521_falcon1024:
-//            return createVerifier(SignatureScheme.ecdsa_secp521r1_sha512);
-//        case SignatureScheme.OQS_RSA3072_MLDSA44:
-//        case SignatureScheme.X9146_HYBRID_RSA3072_falcon512:
-//            return createVerifier(SignatureScheme.rsa_pss_pss_sha256);
-
         default:
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
@@ -682,23 +627,6 @@ public class BcTlsRawKeyCertificate
     public Ed448PublicKeyParameters getPubKeyEd448() throws IOException
     {
         return getPubKeyEd448(this.keyInfo);
-    }
-
-    private DilithiumPublicKeyParameters getPubKeyDilithium(SubjectPublicKeyInfo keyInfo) throws IOException
-    {
-        try
-        {
-            return (DilithiumPublicKeyParameters) getPQCPublicKey(keyInfo);
-        }
-        catch (ClassCastException e)
-        {
-            throw new TlsFatalAlert(AlertDescription.certificate_unknown, e);
-        }
-    }
-
-    public DilithiumPublicKeyParameters getPubKeyDilithium() throws IOException
-    {
-        return getPubKeyDilithium(this.keyInfo);
     }
 
     public MLDSAPublicKeyParameters getPubKeyMLDSA(SubjectPublicKeyInfo keyInfo) throws IOException
