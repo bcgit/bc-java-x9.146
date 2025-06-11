@@ -1,0 +1,67 @@
+stages:
+  - check
+  - build
+  - test
+  - publish
+  - sync
+
+check-code:
+  stage: check
+  script:
+    - "ecr_login"
+    - "ecr_pull vm_base_intel latest"
+    - "ci_docker_run \"vm_base_intel:latest\" \"bc-java\" \"/workspace/bc-java/ci/check_java.sh\""
+  artifacts:
+    when: always
+    paths:
+      - "core/build/reports"
+      - "prov/build/reports"
+      - "pg/build/reports"
+      - "pkix/build/reports"
+      - "mail/build/reports"
+      - "util/build/reports"
+      - "tls/build/reports"
+      - "mls/build/reports"
+
+ant-build:
+  stage: build
+  needs: [ "check-code" ]
+  script:
+    - "ecr_login"
+    - "ecr_pull vm_base_intel latest"
+    - "ci_docker_run \"vm_base_intel:latest\" \"bc-java\" \"/workspace/bc-java/ci/build_1_8.sh\""
+
+
+test-code:
+  stage: test
+  needs: [ "check-code" ]
+  script:
+    - "ecr_login"
+    - "ecr_pull vm_base_intel latest"
+    - "ci_docker_run \"vm_base_intel:latest\" \"bc-java\" \"/workspace/bc-java/ci/test.sh\""
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - "core/build/test-results/**/*.xml"
+        - "prov/build/test-results/**/*.xml"
+        - "pg/build/test-results/**/*.xml"
+        - "pkix/build/test-results/**/*.xml"
+        - "mail/build/test-results/**/*.xml"
+        - "util/build/test-results/**/*.xml"
+        - "tls/build/test-results/**/*.xml"
+        - "mls/build/test-results/**/*.xml"
+
+
+publish:
+  stage: publish
+  script:
+    - "apply_overlay bc-java-pub ./"
+    - "ecr_login"
+    - "ecr_pull vm_base_intel latest"
+    - "ci_docker_run \"vm_base_intel:latest\" \"bc-java\" \"/workspace/bc-java/ci/pub.sh\""
+
+spongycastle:
+  stage: "sync"
+  script:
+    - "syncpongy.sh"  
