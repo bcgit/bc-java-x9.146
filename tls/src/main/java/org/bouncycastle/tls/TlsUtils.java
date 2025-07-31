@@ -2496,14 +2496,15 @@ public class TlsUtils
         byte[] nativeSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
             handshakeHash, signatureAndHashAlgorithm, CertificateKeySelectionType.cks_native);
 
-        byte[] altSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
-            handshakeHash, altSignatureAndHashAlgorithm, CertificateKeySelectionType.cks_alternate);
-
         if (cksCode == CertificateKeySelectionType.cks_default || cksCode == CertificateKeySelectionType.cks_native)
         {
             return new DigitallySigned(signatureAndHashAlgorithm, nativeSignature);
         }
-        else if(cksCode == CertificateKeySelectionType.cks_alternate)
+
+        byte[] altSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
+                handshakeHash, altSignatureAndHashAlgorithm, CertificateKeySelectionType.cks_alternate);
+
+        if(cksCode == CertificateKeySelectionType.cks_alternate)
         {
             return new DigitallySigned(altSignatureAndHashAlgorithm, altSignature);
         }
@@ -5023,81 +5024,82 @@ public class TlsUtils
 
             // Do the validation
 
-            // NATIVE
-            TBSCertificate subjectTbs = ((BcTlsCertificate)subjectCert).getCertificate().getTBSCertificate();
-            Tls13Verifier verifier = issuerCert.createVerifier(SignatureScheme.from(sigAndHashAlg));
-            OutputStream output = verifier.getOutputStream();
-            output.write(subjectTbs.getEncoded());
-            boolean nativeVerify = verifier.verifySignature(((BcTlsCertificate)subjectCert).getCertificate().getSignature().getBytes());
-            if(!nativeVerify)
-            {
-                throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed native");
-            }
-
-            // ALTERNATIVE
-            // draft-truskovsky-lamps-pq-hybrid-x509-02
-            //  4.2 Verifying Multiple Public-Key Algorithm Certificates
-            //       a) ASN.1 DER decode the tbsCertificate field of the certificate to get a TBSCertificate object.
-            V3TBSCertificateGenerator tbsBuilder = new V3TBSCertificateGenerator();
-            tbsBuilder.setSerialNumber(subjectTbs.getSerialNumber());
-            tbsBuilder.setIssuer(subjectTbs.getIssuer());
-            tbsBuilder.setSubject(subjectTbs.getSubject());
-            tbsBuilder.setStartDate(subjectTbs.getStartDate());
-            tbsBuilder.setEndDate(subjectTbs.getEndDate());
-            tbsBuilder.setSubjectPublicKeyInfo(subjectTbs.getSubjectPublicKeyInfo());
-
-            //       b) Remove the AltSignatureValueExt extension from the TBSCertificate object and set aside the alternative signature.
-
-            Extensions exts = subjectTbs.getExtensions();
-
-
-
-            ASN1Sequence extSeq = ASN1Sequence.getInstance(subjectTbs.getExtensions().toASN1Primitive());
-            ASN1EncodableVector extV = new ASN1EncodableVector();
-            for (int j = 0; j != extSeq.size(); j++)
-            {
-                ASN1Sequence ext = ASN1Sequence.getInstance(extSeq.getObjectAt(j));
-                Extension extension = Extension.getInstance(ext);
-                if (extension.getExtnId().toString().equals("1.2.3.4.5"))
+                // NATIVE
+                TBSCertificate subjectTbs = ((BcTlsCertificate)subjectCert).getCertificate().getTBSCertificate();
+                Tls13Verifier verifier = issuerCert.createVerifier(SignatureScheme.from(sigAndHashAlg));
+                OutputStream output = verifier.getOutputStream();
+                output.write(subjectTbs.getEncoded());
+                boolean nativeVerify = verifier.verifySignature(((BcTlsCertificate)subjectCert).getCertificate().getSignature().getBytes());
+                if(!nativeVerify)
                 {
-                    continue;
+                    throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed native");
                 }
 
-                if (!Extension.altSignatureValue.equals(ext.getObjectAt(0)))
+                // ALTERNATIVE
+                // draft-truskovsky-lamps-pq-hybrid-x509-02
+                //  4.2 Verifying Multiple Public-Key Algorithm Certificates
+                //       a) ASN.1 DER decode the tbsCertificate field of the certificate to get a TBSCertificate object.
+                V3TBSCertificateGenerator tbsBuilder = new V3TBSCertificateGenerator();
+                tbsBuilder.setSerialNumber(subjectTbs.getSerialNumber());
+                tbsBuilder.setIssuer(subjectTbs.getIssuer());
+                tbsBuilder.setSubject(subjectTbs.getSubject());
+                tbsBuilder.setStartDate(subjectTbs.getStartDate());
+                tbsBuilder.setEndDate(subjectTbs.getEndDate());
+                tbsBuilder.setSubjectPublicKeyInfo(subjectTbs.getSubjectPublicKeyInfo());
+
+                //       b) Remove the AltSignatureValueExt extension from the TBSCertificate object and set aside the alternative signature.
+
+                Extensions exts = subjectTbs.getExtensions();
+
+
+
+                ASN1Sequence extSeq = ASN1Sequence.getInstance(subjectTbs.getExtensions().toASN1Primitive());
+                ASN1EncodableVector extV = new ASN1EncodableVector();
+                for (int j = 0; j != extSeq.size(); j++)
                 {
-                    extV.add(ext);
+                    ASN1Sequence ext = ASN1Sequence.getInstance(extSeq.getObjectAt(j));
+                    Extension extension = Extension.getInstance(ext);
+                    if (extension.getExtnId().toString().equals("1.2.3.4.5"))
+                    {
+                        continue;
+                    }
+
+                    if (!Extension.altSignatureValue.equals(ext.getObjectAt(0)))
+                    {
+                        extV.add(ext);
+                    }
                 }
-            }
-            tbsBuilder.setExtensions(Extensions.getInstance((new DERSequence(extV)).toASN1Primitive()));
-            AltSignatureValue altSignatureValue = AltSignatureValue.fromExtensions(subjectTbs.getExtensions());
+                tbsBuilder.setExtensions(Extensions.getInstance((new DERSequence(extV)).toASN1Primitive()));
+                AltSignatureValue altSignatureValue = AltSignatureValue.fromExtensions(subjectTbs.getExtensions());
 
-            //       c) Remove the signature field from the TBSCertificate object, converting it to a PreTBSCertificate object.
-            tbsBuilder.setSignature(null);
+                //       c) Remove the signature field from the TBSCertificate object, converting it to a PreTBSCertificate object.
+                tbsBuilder.setSignature(null);
 
-            //       d) ASN.1 DER encode the PreTBSCertificate object.
-            byte[] altTbs = tbsBuilder.generatePreTBSCertificate().getEncoded();
+                //       d) ASN.1 DER encode the PreTBSCertificate object.
+                byte[] altTbs = tbsBuilder.generatePreTBSCertificate().getEncoded();
 
 
-            //       e) Using the algorithm specified in the AltSignatureAlgorithmExt extension of the PreTBSCertificate,
-            //       the alternative public key from the Issuer's SubjectAltPublicKeyInfoExt extension
-            //       and the ASN.1 DER encoded PreTBSCertificate, verify the alternative signature from (b)
-            SignatureAndHashAlgorithm altSigAndHashAlg = getCertAltSigAndHashAlg(subjectCert, issuerCert);
-            TBSCertificate issuerTbs = ((BcTlsCertificate)issuerCert).getCertificate().getTBSCertificate();
-            SubjectAltPublicKeyInfo issuerAltPublicKeyInfo = SubjectAltPublicKeyInfo.fromExtensions(issuerTbs.getExtensions());
-            Tls13Verifier altVerifier = issuerCert.createAltVerifier(
-                    new SubjectPublicKeyInfo(
-                            issuerAltPublicKeyInfo.getAlgorithm(),
-                            issuerAltPublicKeyInfo.getSubjectAltPublicKey()
-                    ),
-                    SignatureScheme.from(altSigAndHashAlg)
-            );
-            OutputStream altOutput = altVerifier.getOutputStream();
+                //       e) Using the algorithm specified in the AltSignatureAlgorithmExt extension of the PreTBSCertificate,
+                //       the alternative public key from the Issuer's SubjectAltPublicKeyInfoExt extension
+                //       and the ASN.1 DER encoded PreTBSCertificate, verify the alternative signature from (b)
+                SignatureAndHashAlgorithm altSigAndHashAlg = getCertAltSigAndHashAlg(subjectCert, issuerCert);
+                TBSCertificate issuerTbs = ((BcTlsCertificate)issuerCert).getCertificate().getTBSCertificate();
+                SubjectAltPublicKeyInfo issuerAltPublicKeyInfo = SubjectAltPublicKeyInfo.fromExtensions(issuerTbs.getExtensions());
+                Tls13Verifier altVerifier = issuerCert.createAltVerifier(
+                        new SubjectPublicKeyInfo(
+                                issuerAltPublicKeyInfo.getAlgorithm(),
+                                issuerAltPublicKeyInfo.getSubjectAltPublicKey()
+                        ),
+                        SignatureScheme.from(altSigAndHashAlg)
+                );
+                OutputStream altOutput = altVerifier.getOutputStream();
 
-            altOutput.write(altTbs);
-            boolean alternativeVerify = altVerifier.verifySignature(altSignatureValue.getSignature().getBytes());
-            if(!alternativeVerify)
-            {
-                throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed alternative");
+                altOutput.write(altTbs);
+                boolean alternativeVerify = altVerifier.verifySignature(altSignatureValue.getSignature().getBytes());
+                if(!alternativeVerify)
+                {
+                    throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed alternative");
+                }
             }
 
             if (!valid)

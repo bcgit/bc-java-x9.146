@@ -3,6 +3,7 @@
 The X9.146 specification defines a certificate format supporting dual signatures and public keys. This implementation introduces an optional TLS 1.3 extension called Certificate Key Selection (CKS), which indicates which signatures are included in the CertificateVerify message.
 
 ### Certificate Key Selection (CKS) Options:
+- `DEFAULT (0x00)`: Classical Certificate
 - `NATIVE (0x01)`: Classical signature only
 - `ALTERNATIVE (0x02)`: Post-quantum signature only
 - `BOTH (0x03)`: Hybrid signature (classical + post-quantum)

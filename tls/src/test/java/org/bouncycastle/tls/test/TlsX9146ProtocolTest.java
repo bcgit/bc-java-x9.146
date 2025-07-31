@@ -40,6 +40,61 @@ public class TlsX9146ProtocolTest
         }
     }
 
+    public void test10000() throws Exception
+    {
+        double total = 0;
+        int delay_amount = 100;
+        short cks_code = CertificateKeySelectionType.cks_default;
+        MockX9146TlsServer.HybridExample demo = MockX9146TlsServer.HybridExample.noPQC;
+        for (int i = 0; i < 10000 + delay_amount; i++)
+        {
+            PipedInputStream clientRead = TlsTestUtils.createPipedInputStream();
+            PipedInputStream serverRead = TlsTestUtils.createPipedInputStream();
+            PipedOutputStream clientWrite = new PipedOutputStream(serverRead);
+            PipedOutputStream serverWrite = new PipedOutputStream(clientRead);
+
+            TlsClientProtocol clientProtocol = new TlsClientProtocol(clientRead, clientWrite);
+            TlsServerProtocol serverProtocol = new TlsServerProtocol(serverRead, serverWrite);
+
+            ServerThread serverThread = new ServerThread(serverProtocol, demo);
+            serverThread.start();
+
+            MockX9146TlsClient client = new MockX9146TlsClient(null);
+
+            // Adds the CKS Code to the Hello Message
+            client.setCksCode(cks_code);
+
+            long startTime = System.nanoTime();
+            clientProtocol.connect(client);
+
+            // NOTE: Because we write-all before we read-any, this length can't be more than the pipe capacity
+            int length = 1000;
+
+            byte[] data = new byte[length];
+            client.getCrypto().getSecureRandom().nextBytes(data);
+
+            OutputStream output = clientProtocol.getOutputStream();
+            output.write(data);
+
+            byte[] echo = new byte[data.length];
+            int count = Streams.readFully(clientProtocol.getInputStream(), echo);
+
+            assertEquals(count, data.length);
+            assertTrue(Arrays.areEqual(data, echo));
+
+            output.close();
+
+            long endTime = System.nanoTime();
+            double durationInNanos = (endTime - startTime) /1000000.0;
+            if (i > delay_amount)
+            {
+                total += durationInNanos;
+            }
+
+            serverThread.join();
+        }
+        System.out.println(total/10000.0);
+    }
     public void testSingle() throws Exception
     {
         runClientServer(CertificateKeySelectionType.cks_both, MockX9146TlsServer.HybridExample.mldsa44p256);

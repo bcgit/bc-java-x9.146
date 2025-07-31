@@ -35,6 +35,7 @@ class MockX9146TlsServer
         mldsa65p384,
         mldsa87p521,
         mldsa44rsa3072,
+        noPQC
 
     }
     HybridExample selectedHybridTest = HybridExample.mldsa44p256;
@@ -166,6 +167,16 @@ class MockX9146TlsServer
         }
 
         String[] trustedCertResources = new String[]{
+                "x509-client-dsa.pem",
+                "x509-client-ecdh.pem",
+                "x509-client-ecdsa.pem",
+                "x509-client-ed25519.pem",
+                "x509-client-ed448.pem",
+                "x509-client-rsa_pss_256.pem",
+                "x509-client-rsa_pss_384.pem",
+                "x509-client-rsa_pss_512.pem",
+                "x509-client-rsa.pem",
+
                 "x9146/ca-P256-mldsa44-cert.pem",
                 "x9146/ca-P384-mldsa65-cert.pem",
                 "x9146/ca-P512-mldsa87-cert.pem",
@@ -288,6 +299,8 @@ class MockX9146TlsServer
             SignatureAlgorithm.rsa_pss_rsae_sha256, (short)SignatureScheme.DRAFT_mldsa44,
             "x9146/server-rsa3072-mldsa44-cert.pem",
             "x9146/server-rsa3072-key.pem", "x9146/server-mldsa44-key-pq.pem");
+        case noPQC:
+            return getRSASignerCredentials();
         default:
             throw new IOException("server cert/key not set correctly");
         }
