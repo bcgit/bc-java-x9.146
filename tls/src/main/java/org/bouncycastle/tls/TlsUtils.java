@@ -5021,8 +5021,9 @@ public class TlsUtils
                 valid = containsSignatureAlgorithm(clientSigAlgsCert, sigAndHashAlg)
                     || (null != clientSigAlgs && containsSignatureAlgorithm(clientSigAlgs, sigAndHashAlg));
             }
-
-            // Do the validation
+            if (securityParameters.cksCode != 0)
+            {
+                // Do the validation
 
                 // NATIVE
                 TBSCertificate subjectTbs = ((BcTlsCertificate)subjectCert).getCertificate().getTBSCertificate();
