@@ -39,13 +39,15 @@ final class ProvSSLParameters
     private BCAlgorithmConstraints algorithmConstraints = ProvAlgorithmConstraints.DEFAULT;
     private List<BCSNIServerName> sniServerNames;
     private List<BCSNIMatcher> sniMatchers;
-    private boolean useCipherSuitesOrder = true;
+    private boolean useCipherSuitesOrder = false;
+    private boolean useNamedGroupsOrder = false;
     private boolean enableRetransmissions = true;
     private int maximumPacketSize = 0;
     private String[] applicationProtocols = TlsUtils.EMPTY_STRINGS;
     private String[] signatureSchemes = null;
     private String[] signatureSchemesCert = null;
     private String[] namedGroups = null;
+    private String[] earlyKeyShares = null;
 
     private BCApplicationProtocolSelector<SSLEngine> engineAPSelector;
     private BCApplicationProtocolSelector<SSLSocket> socketAPSelector;
@@ -69,12 +71,14 @@ final class ProvSSLParameters
         p.sniServerNames = sniServerNames;
         p.sniMatchers = sniMatchers;
         p.useCipherSuitesOrder = useCipherSuitesOrder;
+        p.useNamedGroupsOrder = useNamedGroupsOrder;
         p.enableRetransmissions = enableRetransmissions;
         p.maximumPacketSize = maximumPacketSize;
         p.applicationProtocols = applicationProtocols;
         p.signatureSchemes = signatureSchemes;
         p.signatureSchemesCert = signatureSchemesCert;
         p.namedGroups = namedGroups;
+        p.earlyKeyShares = earlyKeyShares;
         p.engineAPSelector = engineAPSelector;
         p.socketAPSelector = socketAPSelector;
         p.sessionToResume = sessionToResume;
@@ -214,6 +218,16 @@ final class ProvSSLParameters
         this.useCipherSuitesOrder = useCipherSuitesOrder;
     }
 
+    public boolean getUseNamedGroupsOrder()
+    {
+        return useNamedGroupsOrder;
+    }
+
+    public void setUseNamedGroupsOrder(boolean useNamedGroupsOrder)
+    {
+        this.useNamedGroupsOrder = useNamedGroupsOrder;
+    }
+
     public boolean getEnableRetransmissions()
     {
         return enableRetransmissions;
@@ -277,6 +291,16 @@ final class ProvSSLParameters
     public void setNamedGroups(String[] namedGroups)
     {
         this.namedGroups = TlsUtils.clone(namedGroups);
+    }
+
+    public String[] getEarlyKeyShares()
+    {
+        return TlsUtils.clone(earlyKeyShares);
+    }
+
+    public void setEarlyKeyShares(String[] earlyKeyShares)
+    {
+        this.earlyKeyShares = TlsUtils.clone(earlyKeyShares);
     }
 
     public BCApplicationProtocolSelector<SSLEngine> getEngineAPSelector()

@@ -181,6 +181,9 @@ class ProvSSLContextSpi
         addCipherSuite(cs, "TLS_AES_256_GCM_SHA384", CipherSuite.TLS_AES_256_GCM_SHA384);
         addCipherSuite(cs, "TLS_CHACHA20_POLY1305_SHA256", CipherSuite.TLS_CHACHA20_POLY1305_SHA256);
 
+        addCipherSuite(cs, "TLS_SHA256_SHA256", CipherSuite.TLS_SHA256_SHA256);
+        addCipherSuite(cs, "TLS_SHA384_SHA384", CipherSuite.TLS_SHA384_SHA384);
+
         // TLS 1.2-
         addCipherSuite(cs, "TLS_DH_anon_WITH_AES_128_CBC_SHA", CipherSuite.TLS_DH_anon_WITH_AES_128_CBC_SHA);
         addCipherSuite(cs, "TLS_DH_anon_WITH_AES_128_CBC_SHA256", CipherSuite.TLS_DH_anon_WITH_AES_128_CBC_SHA256);
@@ -339,9 +342,11 @@ class ProvSSLContextSpi
     }
 
     private static String[] getDefaultEnabledCipherSuites(Map<String, CipherSuiteInfo> supportedCipherSuiteMap,
-        List<String> defaultCipherSuiteList, boolean disableDHDefaultSuites, String cipherSuitesPropertyName)
+        List<String> defaultCipherSuiteList, boolean disableDHDefaultSuites, String cipherSuitesPropertyName,
+        String title)
     {
         List<String> candidates = getJdkTlsCipherSuites(cipherSuitesPropertyName, defaultCipherSuiteList);
+        boolean disableDHSuites = disableDHDefaultSuites && candidates == defaultCipherSuiteList;
 
         String[] result = new String[candidates.size()];
         int count = 0;
@@ -352,15 +357,15 @@ class ProvSSLContextSpi
             {
                 continue;
             }
-            if (disableDHDefaultSuites &&
-                candidates == defaultCipherSuiteList &&
-                TlsDHUtils.isDHCipherSuite(cipherSuiteInfo.getCipherSuite()))
+            if (disableDHSuites && TlsDHUtils.isDHCipherSuite(cipherSuiteInfo.getCipherSuite()))
             {
+                LOG.finer(title + " default cipher suite disabled per DH disabling: " + candidate);
                 continue;
             }
             if (!ProvAlgorithmConstraints.DEFAULT.permits(JsseUtils.KEY_AGREEMENT_CRYPTO_PRIMITIVES_BC, candidate,
                 null))
             {
+                LOG.fine(title + " default cipher suite disabled by AlgorithmConstraints: " + candidate);
                 continue;
             }
 
@@ -376,7 +381,7 @@ class ProvSSLContextSpi
             .getBooleanSystemProperty("org.bouncycastle.jsse.client.dh.disableDefaultSuites", false);
 
         return getDefaultEnabledCipherSuites(supportedCipherSuiteMap, defaultCipherSuiteList, disableDHDefaultSuites,
-            PROPERTY_CLIENT_CIPHERSUITES);
+            PROPERTY_CLIENT_CIPHERSUITES, "Client");
     }
 
     private static String[] getDefaultEnabledCipherSuitesServer(Map<String, CipherSuiteInfo> supportedCipherSuiteMap,
@@ -386,7 +391,7 @@ class ProvSSLContextSpi
             .getBooleanSystemProperty("org.bouncycastle.jsse.server.dh.disableDefaultSuites", false);
 
         return getDefaultEnabledCipherSuites(supportedCipherSuiteMap, defaultCipherSuiteList, disableDHDefaultSuites,
-            PROPERTY_SERVER_CIPHERSUITES);
+            PROPERTY_SERVER_CIPHERSUITES, "Server");
     }
 
     private static String[] getDefaultEnabledProtocols(Map<String, ProtocolVersion> supportedProtocolMap,

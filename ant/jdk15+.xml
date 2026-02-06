@@ -43,7 +43,6 @@
             <fileset dir="tls/src/main/java" includes="**/*.java" />
             <fileset dir="tls/src/main/javadoc" includes="**/*.html" />
             <fileset dir="tls/src/test/java" includes="**/*.java" />
-            <fileset dir="tls/src/test/resources" includes="**/*.*" />
 
             <fileset dir="pkix/src/main/java" includes="**/*.java" />
             <fileset dir="pkix/src/main/javadoc" includes="**/*.html" />
@@ -73,6 +72,7 @@
 
         </copy>
         <copy todir="${src.dir}" overwrite="true">
+            <fileset dir="core/src/main/jdk1.5" includes="**/*.java" />
             <fileset dir="prov/src/main/jdk1.5" includes="**/*.java" />
             <fileset dir="prov/src/test/jdk1.5" includes="**/*.java" />
             <fileset dir="pkix/src/main/jdk1.5" includes="**/*.java" />

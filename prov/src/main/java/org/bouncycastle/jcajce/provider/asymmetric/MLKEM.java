@@ -1,11 +1,11 @@
 package org.bouncycastle.jcajce.provider.asymmetric;
 
-import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyFactorySpi;
 import org.bouncycastle.jcajce.provider.config.ConfigurableProvider;
 import org.bouncycastle.jcajce.provider.util.AsymmetricAlgorithmProvider;
 import org.bouncycastle.jcajce.provider.util.AsymmetricKeyInfoConverter;
+import org.bouncycastle.jcajce.util.SpiUtil;
 
 public class MLKEM
 {
@@ -48,10 +48,26 @@ public class MLKEM
             addCipherAlgorithm(provider, "ML-KEM-512", PREFIX + "MLKEMCipherSpi$MLKEM512", NISTObjectIdentifiers.id_alg_ml_kem_512);
             addCipherAlgorithm(provider, "ML-KEM-768", PREFIX + "MLKEMCipherSpi$MLKEM768", NISTObjectIdentifiers.id_alg_ml_kem_768);
             addCipherAlgorithm(provider, "ML-KEM-1024", PREFIX + "MLKEMCipherSpi$MLKEM1024", NISTObjectIdentifiers.id_alg_ml_kem_1024);
-            
+
             provider.addKeyInfoConverter(NISTObjectIdentifiers.id_alg_ml_kem_512, keyFact);
             provider.addKeyInfoConverter(NISTObjectIdentifiers.id_alg_ml_kem_768, keyFact);
             provider.addKeyInfoConverter(NISTObjectIdentifiers.id_alg_ml_kem_1024, keyFact);
+
+            if (SpiUtil.hasKEM())
+            {
+                // "This algorithm supports keys with ML-KEM-512, ML-KEM-768, and ML-KEM-1024 parameter sets."
+                provider.addAlgorithm("KEM.ML-KEM", PREFIX + "MLKEMSpi$MLKEM");
+                // "[..] (ML-KEM) using the ML-KEM-512 parameter set [..]."
+                provider.addAlgorithm("KEM.ML-KEM-512", PREFIX + "MLKEMSpi$MLKEM512");
+                // "[..] (ML-KEM) using the ML-KEM-768 parameter set [..]."
+                provider.addAlgorithm("KEM.ML-KEM-768", PREFIX + "MLKEMSpi$MLKEM768");
+                // "[..] (ML-KEM) using the ML-KEM-1024 parameter set [..]."
+                provider.addAlgorithm("KEM.ML-KEM-1024", PREFIX + "MLKEMSpi$MLKEM1024");
+
+                provider.addAlgorithm("Alg.Alias.KEM." + NISTObjectIdentifiers.id_alg_ml_kem_512, "ML-KEM-512");
+                provider.addAlgorithm("Alg.Alias.KEM." + NISTObjectIdentifiers.id_alg_ml_kem_768, "ML-KEM-768");
+                provider.addAlgorithm("Alg.Alias.KEM." + NISTObjectIdentifiers.id_alg_ml_kem_1024, "ML-KEM-1024");
+            }
         }
     }
 }

@@ -11,6 +11,7 @@ import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.security.Signature;
+import java.security.spec.AlgorithmParameterSpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
@@ -151,14 +152,14 @@ public class SLHDSATest
             NISTObjectIdentifiers.id_hash_slh_dsa_shake_256f_with_shake256,
             NISTObjectIdentifiers.id_hash_slh_dsa_shake_256s_with_shake256,
         };
-        
-        for (int i = 0; i != 1; i++)
+
+        for (int i = 0; i != names.length; i++)
         {
             KeyPairGenerator kpGen = KeyPairGenerator.getInstance(names[i]);
             KeyPair kp = kpGen.generateKeyPair();
-             System.err.println(names[i]);
+
             tryKeyFact(KeyFactory.getInstance(names[i], "BC"), kp, kp44, "2.16.840.1.101.3.4.3.17");
-           // tryKeyFact(KeyFactory.getInstance(oids[i].toString(), "BC"), kp, kp44, "2.16.840.1.101.3.4.3.17");
+            tryKeyFact(KeyFactory.getInstance(oids[i].toString(), "BC"), kp, kp44, "2.16.840.1.101.3.4.3.17");
         }
     }
 
@@ -458,6 +459,18 @@ public class SLHDSATest
         ContextParameterSpec vspec = vp.getParameterSpec(ContextParameterSpec.class);
 
         assertTrue(Arrays.areEqual(Strings.toByteArray("Hello, world!"), vspec.getContext()));
+
+        // check reflection based context.
+
+        sig = Signature.getInstance("SLH-DSA", "BC");
+
+        sig.initVerify(kp.getPublic());
+
+        sig.setParameter(new MyContextParameterSpec(Strings.toByteArray("Hello, world!")));
+
+        sig.update(msg, 0, msg.length);
+
+        assertTrue(sig.verify(s));
     }
 
     public void testSLHDSARandomSigSHA2()
@@ -656,6 +669,22 @@ public class SLHDSATest
             {
                 bytes[i] = (byte)(i & 0xff);
             }
+        }
+    }
+
+    public static class MyContextParameterSpec
+        implements AlgorithmParameterSpec
+    {
+        private final byte[] context;
+
+        MyContextParameterSpec(byte[] context)
+        {
+            this.context = context;
+        }
+
+        public byte[] getContext()
+        {
+            return context;
         }
     }
 }

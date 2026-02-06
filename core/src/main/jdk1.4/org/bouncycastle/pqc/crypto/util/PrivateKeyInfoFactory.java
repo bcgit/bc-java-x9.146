@@ -3,9 +3,11 @@ package org.bouncycastle.pqc.crypto.util;
 import java.io.IOException;
 
 import org.bouncycastle.asn1.ASN1EncodableVector;
+import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.DERTaggedObject;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -14,7 +16,6 @@ import org.bouncycastle.pqc.asn1.CMCEPrivateKey;
 import org.bouncycastle.pqc.asn1.CMCEPublicKey;
 import org.bouncycastle.pqc.asn1.FalconPrivateKey;
 import org.bouncycastle.pqc.asn1.FalconPublicKey;
-import org.bouncycastle.pqc.asn1.McElieceCCA2PrivateKey;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.pqc.asn1.SPHINCS256KeyParams;
 import org.bouncycastle.pqc.crypto.bike.BIKEPrivateKeyParameters;
@@ -36,7 +37,6 @@ import org.bouncycastle.pqc.crypto.saber.SABERPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.sphincs.SPHINCSPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusPrivateKeyParameters;
-import org.bouncycastle.pqc.legacy.crypto.mceliece.McElieceCCA2PrivateKeyParameters;
 import org.bouncycastle.util.Pack;
 
 /**
@@ -55,7 +55,8 @@ public class PrivateKeyInfoFactory
      * @return the appropriate PrivateKeyInfo
      * @throws java.io.IOException on an error encoding the key
      */
-    public static PrivateKeyInfo createPrivateKeyInfo(AsymmetricKeyParameter privateKey) throws IOException
+    public static PrivateKeyInfo createPrivateKeyInfo(AsymmetricKeyParameter privateKey)
+        throws IOException
     {
         return createPrivateKeyInfo(privateKey, null);
     }
@@ -68,7 +69,8 @@ public class PrivateKeyInfoFactory
      * @return the appropriate PrivateKeyInfo
      * @throws java.io.IOException on an error encoding the key
      */
-    public static PrivateKeyInfo createPrivateKeyInfo(AsymmetricKeyParameter privateKey, ASN1Set attributes) throws IOException
+    public static PrivateKeyInfo createPrivateKeyInfo(AsymmetricKeyParameter privateKey, ASN1Set attributes)
+        throws IOException
     {
         if (privateKey instanceof SPHINCSPrivateKeyParameters)
         {
@@ -97,7 +99,7 @@ public class PrivateKeyInfoFactory
         else if (privateKey instanceof SPHINCSPlusPrivateKeyParameters)
         {
             SPHINCSPlusPrivateKeyParameters params = (SPHINCSPlusPrivateKeyParameters)privateKey;
-                                                               
+
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.sphincsPlusOidLookup(params.getParameters()));
 
             return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(params.getEncoded()), attributes, params.getPublicKey());
@@ -108,7 +110,7 @@ public class PrivateKeyInfoFactory
 
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.slhdsaOidLookup(params.getParameters()));
 
-            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(params.getEncoded()), attributes, params.getPublicKey());
+            return new PrivateKeyInfo(algorithmIdentifier, params.getEncoded(), attributes);
         }
         else if (privateKey instanceof PicnicPrivateKeyParameters)
         {
@@ -131,14 +133,6 @@ public class PrivateKeyInfoFactory
             CMCEPublicKey cmcePub = new CMCEPublicKey(params.reconstructPublicKey());
             CMCEPrivateKey cmcePriv = new CMCEPrivateKey(0, params.getDelta(), params.getC(), params.getG(), params.getAlpha(), params.getS(), cmcePub);
             return new PrivateKeyInfo(algorithmIdentifier, cmcePriv, attributes);
-        }
-        else if (privateKey instanceof McElieceCCA2PrivateKeyParameters)
-        {
-            McElieceCCA2PrivateKeyParameters priv = (McElieceCCA2PrivateKeyParameters)privateKey;
-            McElieceCCA2PrivateKey mcEliecePriv = new McElieceCCA2PrivateKey(priv.getN(), priv.getK(), priv.getField(), priv.getGoppaPoly(), priv.getP(), Utils.getAlgorithmIdentifier(priv.getDigest()));
-            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(PQCObjectIdentifiers.mcElieceCca2);
-
-            return new PrivateKeyInfo(algorithmIdentifier, mcEliecePriv);
         }
         else if (privateKey instanceof FrodoPrivateKeyParameters)
         {
@@ -184,7 +178,7 @@ public class PrivateKeyInfoFactory
         else if (privateKey instanceof MLKEMPrivateKeyParameters)
         {
             MLKEMPrivateKeyParameters params = (MLKEMPrivateKeyParameters)privateKey;
-            
+
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.mlkemOidLookup(params.getParameters()));
 
             byte[] seed = params.getSeed();
@@ -234,19 +228,15 @@ public class PrivateKeyInfoFactory
 
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.mldsaOidLookup(params.getParameters()));
 
-            byte[] seed = params.getSeed();
-            if (seed == null)
+            if (params.getPreferredFormat() == MLDSAPrivateKeyParameters.SEED_ONLY)
             {
-                MLDSAPublicKeyParameters pubParams = params.getPublicKeyParameters();
-
-                return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(params.getEncoded()), attributes, pubParams.getEncoded());
+                return new PrivateKeyInfo(algorithmIdentifier, new DERTaggedObject(false, 0, new DEROctetString(params.getSeed())), attributes);
             }
-            else
+            else if (params.getPreferredFormat() == MLDSAPrivateKeyParameters.EXPANDED_KEY)
             {
-                MLDSAPublicKeyParameters pubParams = params.getPublicKeyParameters();
-
-                return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(params.getSeed()), attributes);
+                return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(params.getEncoded()), attributes);
             }
+            return new PrivateKeyInfo(algorithmIdentifier, getBasicPQCEncoding(params.getSeed(), params.getEncoded()), attributes);
         }
         else if (privateKey instanceof DilithiumPrivateKeyParameters)
         {
@@ -276,5 +266,16 @@ public class PrivateKeyInfoFactory
         {
             throw new IOException("key parameters not recognized");
         }
+    }
+
+    private static ASN1Sequence getBasicPQCEncoding(byte[] seed, byte[] expanded)
+    {
+        ASN1EncodableVector v = new ASN1EncodableVector(2);
+
+        v.add(new DEROctetString(seed));
+
+        v.add(new DEROctetString(expanded));
+
+        return new DERSequence(v);
     }
 }

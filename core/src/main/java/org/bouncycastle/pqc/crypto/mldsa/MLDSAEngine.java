@@ -8,14 +8,13 @@ import org.bouncycastle.util.Arrays;
 class MLDSAEngine
 {
     private final SecureRandom random;
-
-    private final SHAKEDigest shake256Digest = new SHAKEDigest(256);
+    final SHAKEDigest shake256Digest = new SHAKEDigest(256);
 
     public final static int DilithiumN = 256;
     public final static int DilithiumQ = 8380417;
     public final static int DilithiumQinv = 58728449; // q^(-1) mod 2^32
     public final static int DilithiumD = 13;
-    public final static int DilithiumRootOfUnity = 1753;
+    //public final static int DilithiumRootOfUnity = 1753;
     public final static int SeedBytes = 32;
     public final static int CrhBytes = 64;
     public final static int RndBytes = 32;
@@ -30,8 +29,6 @@ class MLDSAEngine
     private final int DilithiumPolyW1PackedBytes;
     private final int DilithiumPolyEtaPackedBytes;
 
-    private final int DilithiumMode;
-
     private final int DilithiumK;
     private final int DilithiumL;
     private final int DilithiumEta;
@@ -43,7 +40,7 @@ class MLDSAEngine
     private final int DilithiumCTilde;
 
     private final int CryptoPublicKeyBytes;
-    private final int CryptoSecretKeyBytes;
+//    private final int CryptoSecretKeyBytes;
     private final int CryptoBytes;
 
     private final int PolyUniformGamma1NBlocks;
@@ -55,10 +52,10 @@ class MLDSAEngine
         return symmetric;
     }
 
-    int getDilithiumPolyVecHPackedBytes()
-    {
-        return DilithiumPolyVecHPackedBytes;
-    }
+//    int getDilithiumPolyVecHPackedBytes()
+//    {
+//        return DilithiumPolyVecHPackedBytes;
+//    }
 
     int getDilithiumPolyZPackedBytes()
     {
@@ -75,10 +72,10 @@ class MLDSAEngine
         return DilithiumPolyEtaPackedBytes;
     }
 
-    int getDilithiumMode()
-    {
-        return DilithiumMode;
-    }
+//    int getDilithiumMode()
+//    {
+//        return DilithiumMode;
+//    }
 
     int getDilithiumK()
     {
@@ -130,15 +127,15 @@ class MLDSAEngine
         return CryptoPublicKeyBytes;
     }
 
-    int getCryptoSecretKeyBytes()
-    {
-        return CryptoSecretKeyBytes;
-    }
-
-    int getCryptoBytes()
-    {
-        return CryptoBytes;
-    }
+//    int getCryptoSecretKeyBytes()
+//    {
+//        return CryptoSecretKeyBytes;
+//    }
+//
+//    int getCryptoBytes()
+//    {
+//        return CryptoBytes;
+//    }
 
     int getPolyUniformGamma1NBlocks()
     {
@@ -147,7 +144,6 @@ class MLDSAEngine
 
     MLDSAEngine(int mode, SecureRandom random)
     {
-        this.DilithiumMode = mode;
         switch (mode)
         {
         case 2:
@@ -201,14 +197,14 @@ class MLDSAEngine
         this.random = random;
         this.DilithiumPolyVecHPackedBytes = this.DilithiumOmega + this.DilithiumK;
         this.CryptoPublicKeyBytes = SeedBytes + this.DilithiumK * DilithiumPolyT1PackedBytes;
-        this.CryptoSecretKeyBytes =
-            (
-                2 * SeedBytes
-                    + TrBytes
-                    + DilithiumL * this.DilithiumPolyEtaPackedBytes
-                    + DilithiumK * this.DilithiumPolyEtaPackedBytes
-                    + DilithiumK * DilithiumPolyT0PackedBytes
-            );
+//        this.CryptoSecretKeyBytes =
+//            (
+//                2 * SeedBytes
+//                    + TrBytes
+//                    + DilithiumL * this.DilithiumPolyEtaPackedBytes
+//                    + DilithiumK * this.DilithiumPolyEtaPackedBytes
+//                    + DilithiumK * DilithiumPolyT0PackedBytes
+//            );
         this.CryptoBytes = DilithiumCTilde + DilithiumL * this.DilithiumPolyZPackedBytes + this.DilithiumPolyVecHPackedBytes;
 
         if (this.DilithiumGamma1 == (1 << 17))
@@ -357,12 +353,7 @@ class MLDSAEngine
     void initSign(byte[] tr, boolean isPreHash, byte[] ctx)
     {
         shake256Digest.update(tr, 0, TrBytes);
-        if (ctx != null)
-        {
-            shake256Digest.update(isPreHash ? (byte)1 : (byte)0);
-            shake256Digest.update((byte)ctx.length);
-            shake256Digest.update(ctx, 0, ctx.length);
-        }
+        absorbCtx(isPreHash, ctx);
     }
 
     void initVerify(byte[] rho, byte[] encT1, boolean isPreHash, byte[] ctx)
@@ -374,6 +365,11 @@ class MLDSAEngine
         shake256Digest.doFinal(mu, 0, TrBytes);
 
         shake256Digest.update(mu, 0, TrBytes);
+        absorbCtx(isPreHash, ctx);
+    }
+
+    void absorbCtx(boolean isPreHash, byte[] ctx)
+    {
         if (ctx != null)
         {
             shake256Digest.update(isPreHash ? (byte)1 : (byte)0);
@@ -388,15 +384,19 @@ class MLDSAEngine
 
         shake256.update(msg, 0, msglen);
 
-        return generateSignature(shake256, rho, key, t0Enc, s1Enc, s2Enc, rnd);
+        return generateSignature(generateMu(shake256), shake256, rho, key, t0Enc, s1Enc, s2Enc, rnd);
     }
 
-    byte[] generateSignature(SHAKEDigest shake256Digest, byte[] rho, byte[] key, byte[] t0Enc, byte[] s1Enc, byte[] s2Enc, byte[] rnd)
+    byte[] generateMu(SHAKEDigest shake256Digest)
     {
         byte[] mu = new byte[CrhBytes];
 
         shake256Digest.doFinal(mu, 0, CrhBytes);
+        return mu;
+    }
 
+    byte[] generateSignature(byte[] mu, SHAKEDigest shake256Digest, byte[] rho, byte[] key, byte[] t0Enc, byte[] s1Enc, byte[] s2Enc, byte[] rnd)
+    {
         byte[] outSig = new byte[CryptoBytes];
         byte[] rhoPrime = new byte[CrhBytes];
         short nonce = 0;
@@ -491,7 +491,36 @@ class MLDSAEngine
         return null;
     }
 
+    boolean verifyInternalMu(byte[] providedMu)
+    {
+        byte[] mu = new byte[CrhBytes];
+
+        shake256Digest.doFinal(mu, 0);
+
+        return Arrays.constantTimeAreEqual(mu, providedMu);
+    }
+
+    boolean verifyInternalMuSignature(byte[] mu, byte[] sig, int siglen, SHAKEDigest shake256Digest, byte[] rho, byte[] encT1)
+    {
+        byte[] buf = new byte[Math.max(CrhBytes + DilithiumK * DilithiumPolyW1PackedBytes, DilithiumCTilde)];
+
+        // Mu
+        System.arraycopy(mu, 0, buf, 0, mu.length);
+
+        return doVerifyInternal(buf, sig, siglen, shake256Digest, rho, encT1);
+    }
+
     boolean verifyInternal(byte[] sig, int siglen, SHAKEDigest shake256Digest, byte[] rho, byte[] encT1)
+    {
+        byte[] buf = new byte[Math.max(CrhBytes + DilithiumK * DilithiumPolyW1PackedBytes, DilithiumCTilde)];
+
+        // Mu
+        shake256Digest.doFinal(buf, 0);
+
+        return doVerifyInternal(buf, sig, siglen, shake256Digest, rho, encT1);
+    }
+
+    private boolean doVerifyInternal(byte[] buf, byte[] sig, int siglen, SHAKEDigest shake256Digest, byte[] rho, byte[] encT1)
     {
         if (siglen != CryptoBytes)
         {
@@ -510,11 +539,6 @@ class MLDSAEngine
         {
             return false;
         }
-
-        byte[] buf = new byte[Math.max(CrhBytes + DilithiumK * DilithiumPolyW1PackedBytes, DilithiumCTilde)];
-
-        // Mu
-        shake256Digest.doFinal(buf, 0);
 
         Poly cp = new Poly(this);
         PolyVecMatrix aMatrix = new PolyVecMatrix(this);

@@ -187,6 +187,12 @@ public abstract class TlsCryptoTest
         case SignatureScheme.rsa_pss_rsae_sha384:
         case SignatureScheme.rsa_pss_rsae_sha512:
             return loadCredentialedSigner(cryptoParams, "rsa-sign", signatureAndHashAlgorithm);
+        case SignatureScheme.mldsa44:
+            return loadCredentialedSigner(cryptoParams, "ml_dsa_44", signatureAndHashAlgorithm);
+        case SignatureScheme.mldsa65:
+            return loadCredentialedSigner(cryptoParams, "ml_dsa_65", signatureAndHashAlgorithm);
+        case SignatureScheme.mldsa87:
+            return loadCredentialedSigner(cryptoParams, "ml_dsa_87", signatureAndHashAlgorithm);
 
         // TODO[tls] Add test resources for these
         case SignatureScheme.ecdsa_brainpoolP256r1tls13_sha256:
@@ -195,9 +201,21 @@ public abstract class TlsCryptoTest
         case SignatureScheme.ecdsa_secp384r1_sha384:
         case SignatureScheme.ecdsa_secp521r1_sha512:
         case SignatureScheme.sm2sig_sm3:
-        case SignatureScheme.DRAFT_mldsa44:
-        case SignatureScheme.DRAFT_mldsa65:
-        case SignatureScheme.DRAFT_mldsa87:
+            return null;
+
+        // TODO[tls-slhdsa] Add test resources for these
+        case SignatureScheme.DRAFT_slhdsa_sha2_128s:
+        case SignatureScheme.DRAFT_slhdsa_sha2_128f:
+        case SignatureScheme.DRAFT_slhdsa_sha2_192s:
+        case SignatureScheme.DRAFT_slhdsa_sha2_192f:
+        case SignatureScheme.DRAFT_slhdsa_sha2_256s:
+        case SignatureScheme.DRAFT_slhdsa_sha2_256f:
+        case SignatureScheme.DRAFT_slhdsa_shake_128s:
+        case SignatureScheme.DRAFT_slhdsa_shake_128f:
+        case SignatureScheme.DRAFT_slhdsa_shake_192s:
+        case SignatureScheme.DRAFT_slhdsa_shake_192f:
+        case SignatureScheme.DRAFT_slhdsa_shake_256s:
+        case SignatureScheme.DRAFT_slhdsa_shake_256f:
 
         default:
             return null;
@@ -221,6 +239,14 @@ public abstract class TlsCryptoTest
             implTestDHDomain(new TlsDHConfig(namedGroup, false));
             implTestDHDomain(new TlsDHConfig(namedGroup, true));
         }
+    }
+
+    public void testDHExplicit() throws Exception
+    {
+        if (!crypto.hasDHAgreement())
+        {
+            return;
+        }
 
         new DefaultTlsDHGroupVerifier()
         {{
@@ -236,9 +262,10 @@ public abstract class TlsCryptoTest
                 assertSame(dhGroup, TlsDHUtils.getStandardGroupForDHParameters(p, g));
 
                 int namedGroup = TlsDHUtils.getNamedGroupForDHParameters(p, g);
+
+                // Named groups tested elsewhere
                 if (NamedGroup.refersToASpecificFiniteField(namedGroup))
                 {
-                    // Already tested the named groups
                     continue;
                 }
 
@@ -596,8 +623,14 @@ public abstract class TlsCryptoTest
             SignatureScheme.ecdsa_secp521r1_sha512, SignatureScheme.ed25519, SignatureScheme.ed448,
             SignatureScheme.rsa_pss_pss_sha256, SignatureScheme.rsa_pss_pss_sha384, SignatureScheme.rsa_pss_pss_sha512,
             SignatureScheme.rsa_pss_rsae_sha256, SignatureScheme.rsa_pss_rsae_sha384,
-            SignatureScheme.rsa_pss_rsae_sha512, SignatureScheme.sm2sig_sm3, SignatureScheme.DRAFT_mldsa44,
-            SignatureScheme.DRAFT_mldsa65, SignatureScheme.DRAFT_mldsa87,
+            SignatureScheme.rsa_pss_rsae_sha512, SignatureScheme.sm2sig_sm3,
+            SignatureScheme.mldsa44, SignatureScheme.mldsa65, SignatureScheme.mldsa87,
+            SignatureScheme.DRAFT_slhdsa_sha2_128s, SignatureScheme.DRAFT_slhdsa_sha2_128f,
+            SignatureScheme.DRAFT_slhdsa_sha2_192s, SignatureScheme.DRAFT_slhdsa_sha2_192f,
+            SignatureScheme.DRAFT_slhdsa_sha2_256s, SignatureScheme.DRAFT_slhdsa_sha2_256f,
+            SignatureScheme.DRAFT_slhdsa_shake_128s, SignatureScheme.DRAFT_slhdsa_shake_128f,
+            SignatureScheme.DRAFT_slhdsa_shake_192s, SignatureScheme.DRAFT_slhdsa_shake_192f,
+            SignatureScheme.DRAFT_slhdsa_shake_256s, SignatureScheme.DRAFT_slhdsa_shake_256f,
             // These are only used for certs in 1.3 (cert verification is not done by TlsCrypto)
 //            SignatureScheme.ecdsa_sha1, SignatureScheme.rsa_pkcs1_sha1, SignatureScheme.rsa_pkcs1_sha256,
 //            SignatureScheme.rsa_pkcs1_sha384, SignatureScheme.rsa_pkcs1_sha512,

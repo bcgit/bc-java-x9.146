@@ -145,7 +145,7 @@ public abstract class TlsProtocol
     private TlsOutputStream tlsOutputStream = null;
 
     private volatile boolean closed = false;
-    private volatile boolean failedWithError = false;
+    private volatile boolean failed = false;
     private volatile boolean appDataReady = false;
     private volatile boolean appDataSplitEnabled = true;
     private volatile boolean keyUpdateEnabled = false;
@@ -159,6 +159,7 @@ public abstract class TlsProtocol
     protected TlsSecret sessionMasterSecret = null;
 
     protected byte[] retryCookie = null;
+    // TODO[api] Remove and manage via SecurityParameters.negotiatedGroup    
     protected int retryGroup = -1;
     protected Hashtable clientExtensions = null;
     protected Hashtable serverExtensions = null;
@@ -325,7 +326,7 @@ public abstract class TlsProtocol
     protected void handleFailure() throws IOException
     {
         this.closed = true;
-        this.failedWithError = true;
+        this.failed = true;
 
         /*
          * RFC 2246 7.2.1. The session becomes unresumable if any connection is terminated
@@ -571,7 +572,7 @@ public abstract class TlsProtocol
                 throw new TlsFatalAlert(AlertDescription.unexpected_message);
             }
             applicationDataQueue.addData(buf, off, len);
-            processApplicationDataQueue();
+//            processApplicationDataQueue();
             break;
         }
         case ContentType.change_cipher_spec:
@@ -717,15 +718,6 @@ public abstract class TlsProtocol
         }
     }
 
-    private void processApplicationDataQueue()
-    {
-        /*
-         * There is nothing we need to do here.
-         * 
-         * This function could be used for callbacks when application data arrives in the future.
-         */
-    }
-
     private void processAlertQueue()
         throws IOException
     {
@@ -829,7 +821,7 @@ public abstract class TlsProtocol
         {
             if (this.closed)
             {
-                if (this.failedWithError)
+                if (this.failed)
                 {
                     throw new IOException("Cannot read application data on failed TLS connection");
                 }
@@ -895,7 +887,7 @@ public abstract class TlsProtocol
         }
         catch (TlsFatalAlertReceived e)
         {
-            // Connection failure already handled at source
+//            assert isFailed();
             throw e;
         }
         catch (TlsFatalAlert e)
@@ -926,6 +918,11 @@ public abstract class TlsProtocol
         {
             return recordStream.readFullRecord(input, inputOff, inputLen);
         }
+        catch (TlsFatalAlertReceived e)
+        {
+//            assert isFailed();
+            throw e;
+        }
         catch (TlsFatalAlert e)
         {
             handleException(e.getAlertDescription(), "Failed to process record", e);
@@ -948,7 +945,7 @@ public abstract class TlsProtocol
     {
         try
         {
-            recordStream.writeRecord(type, buf, offset, len);
+            writeRecord(type, buf, offset, len);
         }
         catch (TlsFatalAlert e)
         {
@@ -965,6 +962,12 @@ public abstract class TlsProtocol
             handleException(AlertDescription.internal_error, "Failed to write record", e);
             throw new TlsFatalAlert(AlertDescription.internal_error, e);
         }
+    }
+
+    protected void writeRecord(short type, byte[] buf, int off, int len)
+        throws IOException
+    {
+        recordStream.writeRecord(type, buf, off, len);
     }
 
     /**
@@ -1706,7 +1709,7 @@ public abstract class TlsProtocol
 
         try
         {
-            recordStream.writeRecord(ContentType.alert, alert, 0, 2);
+            writeRecord(ContentType.alert, alert, 0, 2);
         }
         catch (Exception e)
         {
@@ -1930,6 +1933,11 @@ public abstract class TlsProtocol
         return null != context && context.isConnected();
     }
 
+    public boolean isFailed()
+    {
+        return failed;
+    }
+
     public boolean isHandshaking()
     {
         if (closed)
@@ -1945,6 +1953,7 @@ public abstract class TlsProtocol
     /**
      * @deprecated Will be removed.
      */
+    @Deprecated
     protected short processMaxFragmentLengthExtension(Hashtable clientExtensions, Hashtable serverExtensions,
         short alertDescription)
         throws IOException

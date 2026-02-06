@@ -9,6 +9,7 @@ import org.bouncycastle.crypto.params.RSAKeyParameters;
 import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.mldsa.MLDSAPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAPrivateKeyParameters;
 import org.bouncycastle.tls.Certificate;
 import org.bouncycastle.tls.DefaultTlsCredentialedSigner;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
@@ -79,7 +80,6 @@ public class BcDefaultTlsCredentialedSigner
         {
             if (signatureAndHashAlgorithm != null)
             {
-                // try
                 TlsSigner signer = BcTlsMLDSASigner.create(crypto, (MLDSAPrivateKeyParameters)privateKey,
                     SignatureScheme.from(signatureAndHashAlgorithm));
                 if (signer != null)
@@ -88,16 +88,21 @@ public class BcDefaultTlsCredentialedSigner
                 }
             }
 
-
             throw new IllegalArgumentException("ML-DSA private key of wrong type for signature algorithm");
         }
-        //TODO[x9.146]: should we have a class for each signer or have a general pq signer?
-        else if (privateKey instanceof DilithiumPrivateKeyParameters ||
-                privateKey instanceof FalconPrivateKeyParameters)
+        else if (privateKey instanceof SLHDSAPrivateKeyParameters)
         {
-            int signatureScheme = SignatureScheme.from(signatureAndHashAlgorithm);
+            if (signatureAndHashAlgorithm != null)
+            {
+                TlsSigner signer = BcTlsSLHDSASigner.create(crypto, (SLHDSAPrivateKeyParameters)privateKey,
+                    SignatureScheme.from(signatureAndHashAlgorithm));
+                if (signer != null)
+                {
+                    return signer;
+                }
+            }
 
-            return new BcTlsPQSigner(crypto, privateKey, signatureScheme);
+            throw new IllegalArgumentException("SLH-DSA private key of wrong type for signature algorithm");
         }
         else
         {

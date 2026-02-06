@@ -274,9 +274,24 @@ public class JcaTlsCertificate
         // TODO[RFC 8998]
 //        case SignatureScheme.sm2sig_sm3:
 
-        case SignatureScheme.DRAFT_mldsa44:
-        case SignatureScheme.DRAFT_mldsa65:
-        case SignatureScheme.DRAFT_mldsa87:
+        case SignatureScheme.mldsa44:
+        case SignatureScheme.mldsa65:
+        case SignatureScheme.mldsa87:
+            return crypto.createTls13Verifier("ML-DSA", null, getPubKeyMLDSA());
+
+        case SignatureScheme.DRAFT_slhdsa_sha2_128s:
+        case SignatureScheme.DRAFT_slhdsa_sha2_128f:
+        case SignatureScheme.DRAFT_slhdsa_sha2_192s:
+        case SignatureScheme.DRAFT_slhdsa_sha2_192f:
+        case SignatureScheme.DRAFT_slhdsa_sha2_256s:
+        case SignatureScheme.DRAFT_slhdsa_sha2_256f:
+        case SignatureScheme.DRAFT_slhdsa_shake_128s:
+        case SignatureScheme.DRAFT_slhdsa_shake_128f:
+        case SignatureScheme.DRAFT_slhdsa_shake_192s:
+        case SignatureScheme.DRAFT_slhdsa_shake_192f:
+        case SignatureScheme.DRAFT_slhdsa_shake_256s:
+        case SignatureScheme.DRAFT_slhdsa_shake_256f:
+            return crypto.createTls13Verifier("SLH-DSA", null, getPubKeySLHDSA());
 
         default:
             throw new TlsFatalAlert(AlertDescription.internal_error);
@@ -423,6 +438,16 @@ public class JcaTlsCertificate
     PublicKey getPubKeyRSA() throws IOException
     {
         // TODO[tls] How to reliably check that this is an RSA key?
+        return getPublicKey();
+    }
+
+    PublicKey getPubKeyMLDSA() throws IOException
+    {
+        return getPublicKey();
+    }
+
+    PublicKey getPubKeySLHDSA() throws IOException
+    {
         return getPublicKey();
     }
 

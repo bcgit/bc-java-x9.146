@@ -51,11 +51,9 @@ import org.bouncycastle.asn1.ASN1OutputStream;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1String;
-import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.style.RFC4519Style;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
-import org.bouncycastle.asn1.x509.AuthorityKeyIdentifier;
 import org.bouncycastle.asn1.x509.CRLDistPoint;
 import org.bouncycastle.asn1.x509.CRLReason;
 import org.bouncycastle.asn1.x509.DistributionPoint;
@@ -1234,23 +1232,26 @@ class CertPathValidatorUtilities
                 "Subject criteria for certificate selector to find issuer certificate could not be set.", e);
         }
 
-        try
-        {
-            byte[] akiExtensionValue = cert.getExtensionValue(AUTHORITY_KEY_IDENTIFIER);
-            if (akiExtensionValue != null)
-            {
-                ASN1OctetString aki = ASN1OctetString.getInstance(akiExtensionValue);
-                byte[] authorityKeyIdentifier = AuthorityKeyIdentifier.getInstance(aki.getOctets()).getKeyIdentifier();
-                if (authorityKeyIdentifier != null)
-                {
-                    selector.setSubjectKeyIdentifier(new DEROctetString(authorityKeyIdentifier).getEncoded());
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            // authority key identifier could not be retrieved from target cert, just search without it
-        }
+        // RFC 4158: 3.5.12: explicitly disallows this - subject key identifier may be calculated differently
+//        try
+//        {
+//            byte[] akiExtValue = cert.getExtensionValue(AUTHORITY_KEY_IDENTIFIER);
+//            if (akiExtValue != null)
+//            {
+//                AuthorityKeyIdentifier aki = AuthorityKeyIdentifier.getInstance(
+//                    ASN1OctetString.getInstance(akiExtValue).getOctets());
+//
+//                ASN1OctetString keyIdentifier = aki.getKeyIdentifierObject();
+//                if (keyIdentifier != null)
+//                {
+//                    selector.setSubjectKeyIdentifier(keyIdentifier.getEncoded(ASN1Encoding.DER));
+//                }
+//            }
+//        }
+//        catch (Exception e)
+//        {
+//            // authority key identifier could not be retrieved from target cert, just search without it
+//        }
 
         PKIXCertStoreSelector certSelect = new PKIXCertStoreSelector.Builder(selector).build();
         Set certs = new LinkedHashSet();

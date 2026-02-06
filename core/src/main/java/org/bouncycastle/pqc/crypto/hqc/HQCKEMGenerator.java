@@ -28,14 +28,11 @@ public class HQCKEMGenerator
         byte[] v = new byte[key.getParameters().getN1N2_BYTES()];
         byte[] salt = new byte[key.getParameters().getSALT_SIZE_BYTES()];
         byte[] pk = key.getPublicKey();
-        byte[] seed = new byte[48];
 
-        sr.nextBytes(seed);
-
-        engine.encaps(u, v, K, pk, seed, salt);
+        engine.encaps(u, v, K, pk, salt, sr);
 
         byte[] cipherText = Arrays.concatenate(u, v, salt);
 
-        return new SecretWithEncapsulationImpl(Arrays.copyOfRange(K, 0, key.getParameters().getK()), cipherText);
+        return new SecretWithEncapsulationImpl(Arrays.copyOfRange(K, 0, 32), cipherText);
     }
 }

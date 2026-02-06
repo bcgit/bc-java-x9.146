@@ -64,7 +64,7 @@ public class DLExternalTest
         {
             isEquals("check message", "too few objects in input sequence", iae.getMessage());
         }
-        vec.add(new DLTaggedObject(true, 0, new ASN1Integer(1234567890L)));
+        vec.add(new DLTaggedObject(true, 0, ASN1Integer.valueOf(1234567890)));
 
         DLExternal dle = new DLExternal(new DLSequence(vec));
 
@@ -81,9 +81,9 @@ public class DLExternalTest
         isEquals("check value of external content", "1234567890", ((ASN1Integer)dle.getExternalContent()).getValue().toString());
 
         vec = new ASN1EncodableVector();
-        vec.add(new ASN1Integer(9L));
+        vec.add(ASN1Integer.valueOf(9));
         vec.add(new DERUTF8String("something completely different"));
-        vec.add(new DLTaggedObject(true, 0, new ASN1Integer(1234567890L)));
+        vec.add(new DLTaggedObject(true, 0, ASN1Integer.valueOf(1234567890)));
         dle = new DLExternal(vec);
 
         isEquals("check direct reference", null, dle.getDirectReference());
@@ -184,7 +184,7 @@ public class DLExternalTest
         isTrue("check tag", objNameTagged.hasContextTag(3));
         isEquals("check implicit", false, objNameTagged.isExplicit());
         isEquals("check tagged object: " + objNameTagged.getBaseUniversal(false, BERTags.OCTET_STRING).getClass(), DEROctetString.class.getName(), objNameTagged.getBaseUniversal(false, BERTags.OCTET_STRING).getClass().getName());
-        isEquals("check O", "Organization", new String(((DEROctetString)objNameTagged.getBaseUniversal(false, BERTags.OCTET_STRING)).getOctets(), "8859_1"));
+        isEquals("check O", "Organization", StringTestUtil.fromISO_8891(((DEROctetString)objNameTagged.getBaseUniversal(false, BERTags.OCTET_STRING)).getOctets()));
         isEquals("check fourth element in set: " + objNameElems.getObjectAt(3).getClass(), DLTaggedObject.class.getName(), objNameElems.getObjectAt(3).getClass().getName());
         objNameTagged = (DLTaggedObject)objNameElems.getObjectAt(3);
         isTrue("check tag", objNameTagged.hasContextTag(5));
@@ -194,7 +194,7 @@ public class DLExternalTest
         isTrue("check tag", objNameTagged.hasContextTag(0));
         isEquals("check implicit", false, objNameTagged.isExplicit());
         isEquals("check tagged object: " + objNameTagged.getBaseUniversal(false, BERTags.OCTET_STRING).getClass(), DEROctetString.class.getName(), objNameTagged.getBaseUniversal(false, BERTags.OCTET_STRING).getClass().getName());
-        isEquals("check CN", "Common Name", new String(((DEROctetString)objNameTagged.getBaseUniversal(false, BERTags.OCTET_STRING)).getOctets(), "8859_1"));
+        isEquals("check CN", "Common Name", StringTestUtil.fromISO_8891(((DEROctetString)objNameTagged.getBaseUniversal(false, BERTags.OCTET_STRING)).getOctets()));
 
         isEquals("check second element in set: " + msBindSet.getObjectAt(1).getClass(), DLTaggedObject.class.getName(), msBindSet.getObjectAt(1).getClass().getName());
         DLTaggedObject password = (DLTaggedObject)msBindSet.getObjectAt(1);
@@ -210,14 +210,14 @@ public class DLExternalTest
         ASN1EncodableVector vec = new ASN1EncodableVector();
 
         vec.add(new ASN1ObjectIdentifier("2.1.1"));
-        vec.add(new ASN1Integer(9));
+        vec.add(ASN1Integer.valueOf(9));
         vec.add(new DERUTF8String("example data representing the User Data of an OSI.6 ConnectP containing an MSBind with username and password"));
 
         ASN1EncodableVector objectNameVec = new ASN1EncodableVector();
         objectNameVec.add(new DLTaggedObject(BERTags.APPLICATION, 0, new DERPrintableString("de")));
         objectNameVec.add(new DLTaggedObject(BERTags.APPLICATION, 2, new DERPrintableString("viaT")));
-        objectNameVec.add(new DLTaggedObject(false, 3, new DEROctetString("Organization".getBytes("8859_1"))));
-        objectNameVec.add(new DLTaggedObject(true, 5, new DLTaggedObject(false, 0, new DEROctetString("Common Name".getBytes("8859_1")))));
+        objectNameVec.add(new DLTaggedObject(false, 3, new DEROctetString(StringTestUtil.toISO_8891("Organization"))));
+        objectNameVec.add(new DLTaggedObject(true, 5, new DLTaggedObject(false, 0, new DEROctetString(StringTestUtil.toISO_8891("Common Name")))));
 
         DLTaggedObject objectName = new DLTaggedObject(BERTags.APPLICATION, 0, new DLSequence(objectNameVec));
         DLTaggedObject password = new DLTaggedObject(true, 2, new DERIA5String("SomePassword"));

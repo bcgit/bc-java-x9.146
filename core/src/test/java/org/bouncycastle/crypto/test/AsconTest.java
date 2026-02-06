@@ -3,6 +3,7 @@ package org.bouncycastle.crypto.test;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.Random;
 
@@ -44,9 +45,16 @@ public class AsconTest
     public void performTest()
         throws Exception
     {
+        testCounter();
+        testVectorsAsconCXof128_512();
+        DigestTest.checkXof(new AsconXof128(), 1429, 317, new SecureRandom(), this);
+        DigestTest.checkXof(new AsconCXof128(), 1429, 317, new SecureRandom(), this);
+        DigestTest.checkXof(new AsconXof(AsconXof.AsconParameters.AsconXof), 1429, 317, new SecureRandom(), this);
+        DigestTest.checkXof(new AsconXof(AsconXof.AsconParameters.AsconXofA), 1429, 317, new SecureRandom(), this);
+
+        testVectorsEngine_asconaead128();
         testVectorsDigest_AsconHash256();
         testVectorsXof_AsconXof128();
-        testVectorsEngine_asconaead128();
 
         testBufferingEngine_asconaead128();
         testBufferingEngine_ascon128();
@@ -63,9 +71,14 @@ public class AsconTest
         testExceptionsEngine_ascon80pq();
 
         testExceptionsXof_AsconXof128();
-        testExceptionsXof_AsconCxof128();
+        testExceptionsXof_AsconCXof128();
         testExceptionsXof_AsconXof();
         testExceptionsXof_AsconXofA();
+
+        testOutputXof_AsconXof128();
+        testOutputXof_AsconCXof128();
+        testOutputXof_AsconXof();
+        testOutputXof_AsconXofA();
 
         testParametersDigest_AsconHash256();
         testParametersDigest_AsconHash();
@@ -77,7 +90,7 @@ public class AsconTest
         testParametersEngine_ascon80pq();
 
         testParametersXof_AsconXof128();
-        testParametersXof_AsconCxof128();
+        testParametersXof_AsconCXof128();
         testParametersXof_AsconXof();
         testParametersXof_AsconXofA();
 
@@ -91,10 +104,16 @@ public class AsconTest
         testVectorsXof_AsconXof();
         testVectorsXof_AsconXofA();
 
-        CipherTest.checkAEADParemeter(this, 16,16, 16, 16, new AsconAEAD128());
-        CipherTest.checkAEADParemeter(this, 16,16, 16, 16, new AsconEngine(AsconEngine.AsconParameters.ascon128));
-        CipherTest.checkAEADParemeter(this, 16,16, 16, 16, new AsconEngine(AsconEngine.AsconParameters.ascon128a));
-        CipherTest.checkAEADParemeter(this, 20,16, 16, 16, new AsconEngine(AsconEngine.AsconParameters.ascon80pq));
+        CipherTest.checkAEADParemeter(this, 16, 16, 16, 16, new AsconAEAD128());
+        CipherTest.checkAEADParemeter(this, 16, 16, 16, 16, new AsconEngine(AsconEngine.AsconParameters.ascon128));
+        CipherTest.checkAEADParemeter(this, 16, 16, 16, 16, new AsconEngine(AsconEngine.AsconParameters.ascon128a));
+        CipherTest.checkAEADParemeter(this, 20, 16, 16, 16, new AsconEngine(AsconEngine.AsconParameters.ascon80pq));
+
+        CipherTest.testOverlapping(this, 16, 16, 16, 16, new AsconAEAD128());
+        CipherTest.testOverlapping(this, 16, 16, 16, 16, new AsconEngine(AsconEngine.AsconParameters.ascon128));
+        CipherTest.testOverlapping(this, 16, 16, 16, 16, new AsconEngine(AsconEngine.AsconParameters.ascon128a));
+        CipherTest.testOverlapping(this, 20, 16, 16, 16, new AsconEngine(AsconEngine.AsconParameters.ascon80pq));
+
 
         CipherTest.checkCipher(32, 16, 100, 128, new CipherTest.Instance()
         {
@@ -140,10 +159,6 @@ public class AsconTest
         DigestTest.checkDigestReset(this, new AsconXof(AsconXof.AsconParameters.AsconXofA));
         DigestTest.checkDigestReset(this, new AsconDigest(AsconDigest.AsconParameters.AsconHash));
         DigestTest.checkDigestReset(this, new AsconDigest(AsconDigest.AsconParameters.AsconHashA));
-        CipherTest.checkAEADCipherMultipleBlocks(this, 1025, 41, 10, 128, 16, new AsconAEAD128());
-        CipherTest.checkAEADCipherMultipleBlocks(this, 1025, 41, 10, 128, 16, new  AsconEngine(AsconEngine.AsconParameters.ascon128));
-        CipherTest.checkAEADCipherMultipleBlocks(this, 1025, 41, 10, 128, 16, new AsconEngine(AsconEngine.AsconParameters.ascon128a));
-        CipherTest.checkAEADCipherMultipleBlocks(this, 1025, 41, 10, 160, 16, new AsconEngine(AsconEngine.AsconParameters.ascon80pq));
     }
 
     public void testBufferingEngine_ascon128()
@@ -328,7 +343,7 @@ public class AsconTest
         });
     }
 
-    public void testExceptionsXof_AsconCxof128()
+    public void testExceptionsXof_AsconCXof128()
         throws Exception
     {
         implTestExceptionsXof(new CreateDigest()
@@ -339,6 +354,26 @@ public class AsconTest
                 return new AsconCXof128();
             }
         });
+    }
+
+    public void testOutputXof_AsconXof()
+    {
+        implTestOutputXof(new AsconXof(AsconXof.AsconParameters.AsconXof));
+    }
+
+    public void testOutputXof_AsconXofA()
+    {
+        implTestOutputXof(new AsconXof(AsconXof.AsconParameters.AsconXofA));
+    }
+
+    public void testOutputXof_AsconXof128()
+    {
+        implTestOutputXof(new AsconXof128());
+    }
+
+    public void testOutputXof_AsconCXof128()
+    {
+        implTestOutputXof(new AsconCXof128());
     }
 
     public void testParametersDigest_AsconHash()
@@ -457,7 +492,7 @@ public class AsconTest
         }, 32);
     }
 
-    public void testParametersXof_AsconCxof128()
+    public void testParametersXof_AsconCXof128()
         throws Exception
     {
         implTestParametersDigest(new CreateDigest()
@@ -516,6 +551,12 @@ public class AsconTest
         throws Exception
     {
         implTestVectorsXof(new AsconXof128(), "crypto/ascon/asconxof128", "LWC_HASH_KAT_256.txt");
+    }
+
+    public void testVectorsAsconCXof128_512()
+        throws Exception
+    {
+        implTestVectorsAsconCXof128(512 / 8, "crypto/ascon/asconcxof128", "LWC_CXOF_KAT_128_512.txt");
     }
 
     public void testVectorsXof_AsconXof()
@@ -996,6 +1037,35 @@ public class AsconTest
         }
     }
 
+    private void implTestOutputXof(Xof ascon)
+    {
+        Random random = new Random();
+
+        byte[] expected = new byte[64];
+        ascon.doFinal(expected, 0, expected.length);
+
+        byte[] output = new byte[64];
+        for (int i = 0; i < 64; ++i)
+        {
+            random.nextBytes(output);
+
+            int pos = 0;
+            while (pos <= output.length - 16)
+            {
+                int len = random.nextInt(17);
+                ascon.doOutput(output, pos, len);
+                pos += len;
+            }
+
+            ascon.doFinal(output, pos, output.length - pos);
+
+            if (!areEqual(expected, output))
+            {
+                fail("");
+            }
+        }
+    }
+
     private void implTestParametersDigest(CreateDigest operator, int digestSize)
     {
         ExtendedDigest ascon = operator.createDigest();
@@ -1170,6 +1240,54 @@ public class AsconTest
         }
     }
 
+    private void implTestVectorsAsconCXof128(int hash_length, String path, String filename)
+        throws Exception
+    {
+        Random random = new Random();
+
+        InputStream src = TestResourceFinder.findTestResource(path, filename);
+        BufferedReader bin = new BufferedReader(new InputStreamReader(src));
+        String line;
+        HashMap<String, String> map = new HashMap<String, String>();
+        while ((line = bin.readLine()) != null)
+        {
+            int a = line.indexOf('=');
+            if (a < 0)
+            {
+                byte[] zByte = Hex.decode((String)map.get("Z"));
+                byte[] ptByte = Hex.decode((String)map.get("Msg"));
+                byte[] expected = Hex.decode((String)map.get("MD"));
+
+                byte[] hash = new byte[hash_length];
+
+                AsconCXof128 ascon = new AsconCXof128(zByte);
+                ascon.update(ptByte, 0, ptByte.length);
+                ascon.doFinal(hash, 0, hash_length);
+                if (!areEqual(hash, expected))
+                {
+                    mismatch("Keystream " + map.get("Count"), (String)map.get("MD"), hash);
+                }
+
+                if (ptByte.length > 1)
+                {
+                    int split = random.nextInt(ptByte.length - 1) + 1;
+                    ascon = new AsconCXof128(zByte);
+                    ascon.update(ptByte, 0, split);
+                    ascon.update(ptByte, split, ptByte.length - split);
+                    ascon.doFinal(hash, 0, hash_length);
+                    if (!areEqual(hash, expected))
+                    {
+                        mismatch("Keystream " + map.get("Count"), (String)map.get("MD"), hash);
+                    }
+                }
+            }
+            else
+            {
+                map.put(line.substring(0, a).trim(), line.substring(a + 1).trim());
+            }
+        }
+    }
+
     private void implTestVectorsXof(Xof ascon, String path, String filename)
         throws Exception
     {
@@ -1237,5 +1355,128 @@ public class AsconTest
 
         AEADParameters parameters = new AEADParameters(new KeyParameter(new byte[keySize]), macSize, new byte[ivSize], null);
         ascon.init(forEncryption, parameters);
+    }
+
+    protected static class Counter
+    {
+        int n;
+        int[] counter;
+
+        public void init(int n)
+        {
+            if (this.n != n)
+            {
+                this.n = n;
+                int len = (n + 31) >>> 5;
+                if (counter == null || len != counter.length)
+                {
+                    counter = new int[len];
+                }
+                else
+                {
+                    reset();
+                }
+            }
+        }
+
+        public boolean increment()
+        {
+            int i = counter.length;
+            while (--i >= 0)
+            {
+                if (++counter[i] != 0)
+                {
+                    break;
+                }
+            }
+            int r = n & 31;
+            return i <= 0 && counter[0] == (r == 0 ? 0 : (1 << r));
+        }
+
+        public boolean increment(int delta)
+        {
+            // Convert to long to handle unsigned arithmetic
+            long carry = delta & 0xFFFFFFFFL;
+            // Process each word starting from LSB
+            int i = counter.length;
+            while (carry != 0 && --i >= 0)
+            {
+                long sum = (counter[i] & 0xFFFFFFFFL) + carry;
+                counter[i] = (int)sum;
+                carry = sum >>> 32;
+            }
+
+            // Final limit check if we didn't overflow
+            return carry != 0 || checkLimit();
+        }
+
+        private boolean checkLimit()
+        {
+            int bitIndex = ((n - 1) & 31) + 1;
+            long bound = 1L << bitIndex;
+            long val = counter[0] & 0xFFFFFFFFL;
+            if (val > bound)
+            {
+                return true;
+            }
+            if (val < bound)
+            {
+                return false;
+            }
+            // Check if we've reached/exceeded 2^n
+            for (int i = 1; i < counter.length; ++i)
+            {
+                val = counter[i] & 0xFFFFFFFFL;
+                if (val > 0)
+                {
+                    return true;
+                }
+            }
+            return true;  // Exactly equal to 2^n
+        }
+
+        public void reset()
+        {
+            Arrays.fill(counter, 0);
+        }
+    }
+
+    public void testCounter()
+    {
+        Counter counter = new Counter();
+        counter.init(64);
+        isTrue(!counter.increment(-1));
+        isTrue(!counter.increment());
+        isTrue(!counter.increment(-1));
+        isTrue(!counter.increment());
+
+        counter.init(33);
+        isTrue(!counter.increment(-1));
+        isTrue(!counter.increment());
+        isTrue(!counter.increment(-1));
+        isTrue(counter.increment());
+
+        counter.init(32);
+        isTrue(!counter.increment(-1));
+        isTrue(counter.increment());
+        counter.reset();
+        isTrue(!counter.increment());
+        counter.reset();
+        isTrue(!counter.increment(-1));
+        isTrue(counter.increment(1));
+
+        counter.init(31);
+        isTrue(!counter.increment((1 << 31) - 1));
+        isTrue(counter.increment());
+        counter.reset();
+        isTrue(!counter.increment(1 << 30));
+        isTrue(counter.increment(1 << 30));
+        counter.reset();
+        isTrue(!counter.increment(1 << 30));
+        isTrue(counter.increment((1 << 30) + 1));
+
+        counter.init(5);
+        isTrue(!counter.increment((1 << 5) - 1));
+        isTrue(counter.increment());
     }
 }

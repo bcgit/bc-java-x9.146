@@ -1,6 +1,7 @@
 package org.bouncycastle.crypto.signers;
 
 import java.math.BigInteger;
+import java.security.SecureRandom;
 
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.CryptoException;
@@ -78,9 +79,10 @@ public class SM2Signer
             baseParam = ((ParametersWithID)param).getParameters();
             userID = ((ParametersWithID)param).getID();
 
+            // The length in bits must be expressible in two bytes
             if (userID.length >= 8192)
             {
-                throw new IllegalArgumentException("SM2 user ID must be less than 2^13 bits long");
+                throw new IllegalArgumentException("SM2 user ID must be less than 2^16 bits long");
             }
         }
         else
@@ -92,35 +94,37 @@ public class SM2Signer
 
         if (forSigning)
         {
+            SecureRandom random = null;
             if (baseParam instanceof ParametersWithRandom)
             {
-                ParametersWithRandom rParam = (ParametersWithRandom)baseParam;
-
-                ecKey = (ECKeyParameters)rParam.getParameters();
-                ecParams = ecKey.getParameters();
-                kCalculator.init(ecParams.getN(), rParam.getRandom());
-            }
-            else
-            {
-                ecKey = (ECKeyParameters)baseParam;
-                ecParams = ecKey.getParameters();
-                kCalculator.init(ecParams.getN(), CryptoServicesRegistrar.getSecureRandom());
+                ParametersWithRandom withRandom = (ParametersWithRandom)baseParam;
+                baseParam = withRandom.getParameters();
+                random = withRandom.getRandom();
             }
 
-            BigInteger d = ((ECPrivateKeyParameters)ecKey).getD();
-            BigInteger nSub1 = ecParams.getN().subtract(BigIntegers.ONE);
+            ECPrivateKeyParameters ecPrivateKey = (ECPrivateKeyParameters)baseParam;
 
-            if (d.compareTo(ONE) < 0  || d.compareTo(nSub1) >= 0)
+            ecKey = ecPrivateKey;
+            ecParams = ecPrivateKey.getParameters();
+
+            BigInteger d = ecPrivateKey.getD();
+            BigInteger n = ecParams.getN();
+
+            if (d.compareTo(ONE) < 0  || d.compareTo(n.subtract(ONE)) >= 0)
             {
                 throw new IllegalArgumentException("SM2 private key out of range");
             }
+
+            kCalculator.init(n, CryptoServicesRegistrar.getSecureRandom(random));
             pubPoint = createBasePointMultiplier().multiply(ecParams.getG(), d).normalize();
         }
         else
         {
-            ecKey = (ECKeyParameters)baseParam;
-            ecParams = ecKey.getParameters();
-            pubPoint = ((ECPublicKeyParameters)ecKey).getQ();
+            ECPublicKeyParameters ecPublicKey = (ECPublicKeyParameters)baseParam;
+
+            ecKey = ecPublicKey;
+            ecParams = ecPublicKey.getParameters();
+            pubPoint = ecPublicKey.getQ();
         }
 
         CryptoServicesRegistrar.checkConstraints(Utils.getDefaultProperties("ECNR", ecKey, forSigning));
@@ -320,6 +324,8 @@ public class SM2Signer
     private void addUserID(Digest digest, byte[] userID)
     {
         int len = userID.length * 8;
+//        assert len >>> 16 == 0;
+
         digest.update((byte)(len >>> 8));
         digest.update((byte)len);
         digest.update(userID, 0, userID.length);

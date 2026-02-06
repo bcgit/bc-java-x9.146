@@ -314,6 +314,12 @@ class ProvTlsServer
     }
 
     @Override
+    public boolean preferLocalSupportedGroups()
+    {
+        return sslParameters.getUseNamedGroupsOrder();
+    }
+
+    @Override
     protected boolean selectCipherSuite(int cipherSuite) throws IOException
     {
         TlsCredentials cipherSuiteCredentials = null;
@@ -334,12 +340,10 @@ class ProvTlsServer
             }
         }
 
-        boolean result = super.selectCipherSuite(cipherSuite);
-        if (result)
-        {
-            this.credentials = cipherSuiteCredentials;
-        }
-        return result;
+        this.selectedCipherSuite = cipherSuite;
+        this.credentials = cipherSuiteCredentials;
+
+        return true;
     }
 
     @Override
@@ -442,13 +446,13 @@ class ProvTlsServer
     @Override
     public int getMaxCertificateChainLength()
     {
-        return JsseUtils.getMaxCertificateChainLength();
+        return JsseUtils.getMaxInboundCertChainLenServer();
     }
 
     @Override
     public int getMaxHandshakeMessageSize()
     {
-        return JsseUtils.getMaxHandshakeMessageSize();
+        return manager.getContextData().getMaxHandshakeMessageSize();
     }
 
     public synchronized boolean isHandshakeComplete()
@@ -903,8 +907,8 @@ class ProvTlsServer
             // TODO[tls13] Resumption/PSK
             boolean addToCache = provServerEnableSessionResumption && !TlsUtils.isTLSv13(context);
 
-            this.sslSession = sslSessionContext.reportSession(peerHost, peerPort, connectionTlsSession,
-                jsseSessionParameters, addToCache);
+            this.sslSession = sslSessionContext.reportSession(manager.getBCHandshakeSessionImpl(), peerHost, peerPort,
+                connectionTlsSession, jsseSessionParameters, addToCache);
         }
 
         manager.notifyHandshakeComplete(new ProvSSLConnection(this));
@@ -1293,7 +1297,7 @@ class ProvTlsServer
         return JsseUtils.createCredentialedSigner(context, getCrypto(), x509Key, null);
     }
 
-    private void handleKeyManagerMisses(LinkedHashMap<String, SignatureSchemeInfo> keyTypeMap, String selectedKeyType)
+    private void handleKeyManagerMisses(Map<String, SignatureSchemeInfo> keyTypeMap, String selectedKeyType)
     {
         for (Map.Entry<String, SignatureSchemeInfo> entry : keyTypeMap.entrySet())
         {

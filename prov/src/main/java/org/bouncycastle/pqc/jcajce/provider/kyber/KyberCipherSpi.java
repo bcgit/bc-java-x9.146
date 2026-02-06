@@ -154,7 +154,7 @@ class KyberCipherSpi
             if (key instanceof BCKyberPublicKey)
             {
                 wrapKey = (BCKyberPublicKey)key;
-                kemGen = new MLKEMGenerator(CryptoServicesRegistrar.getSecureRandom(random));
+                kemGen = new MLKEMGenerator(random);
             }
             else
             {
@@ -235,6 +235,7 @@ class KyberCipherSpi
         throw new IllegalStateException("Not supported in a wrapping mode");
     }
 
+    @SuppressWarnings("Finally")
     protected byte[] engineWrap(
         Key key)
         throws IllegalBlockSizeException, InvalidKeyException

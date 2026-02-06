@@ -24,7 +24,6 @@ import junit.framework.TestSuite;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.cms.CMSAlgorithm;
-import org.bouncycastle.cms.CMSAuthEnvelopedDataGenerator;
 import org.bouncycastle.cms.KeyTransRecipientId;
 import org.bouncycastle.cms.RecipientId;
 import org.bouncycastle.cms.RecipientInformation;
@@ -184,7 +183,7 @@ public class NewSMIMEAuthEnvelopedTest
         throws Exception
     {
         MimeBodyPart msg = SMIMETestUtil.makeMimeBodyPart("WallaWallaWashington");
-        String algorithm = SMIMEAuthEnvelopedGenerator.AES256_GCM;
+        String algorithm = SMIMEAuthEnvelopedGenerator.AES128_GCM;
 
         verifyAlgorithm(algorithm, msg);
     }
@@ -193,7 +192,7 @@ public class NewSMIMEAuthEnvelopedTest
         throws Exception
     {
         MimeBodyPart msg = SMIMETestUtil.makeMimeBodyPart("WallaWallaWashington");
-        String algorithm = SMIMEAuthEnvelopedGenerator.AES256_GCM;
+        String algorithm = SMIMEAuthEnvelopedGenerator.AES192_GCM;
 
         verifyAlgorithm(algorithm, msg);
     }
@@ -333,6 +332,43 @@ public class NewSMIMEAuthEnvelopedTest
         // we want encrypted.
         //
         MimeBodyPart mp = gen.generate(msg, new JceCMSContentEncryptorBuilder(CMSAlgorithm.AES256_GCM).setProvider(BC).build());
+
+        SMIMEAuthEnveloped m = new SMIMEAuthEnveloped(mp);
+
+        dig.update(_reciCert.getPublicKey().getEncoded());
+
+        RecipientId recId = new KeyTransRecipientId(dig.digest());
+
+        RecipientInformationStore recipients = m.getRecipientInfos();
+        RecipientInformation recipient = recipients.get(recId);
+
+        MimeBodyPart res = SMIMEUtil.toMimeBodyPart(recipient.getContent(new JceKeyTransEnvelopedRecipient(_reciKP.getPrivate()).setProvider(BC)));
+
+        SMIMETestUtil.verifyMessageBytes(msg, res);
+    }
+
+    public void testChacha20Poly1305Encrypt()
+        throws Exception
+    {
+        MimeBodyPart msg = SMIMETestUtil.makeMimeBodyPart("WallaWallaWashington");
+
+        SMIMEAuthEnvelopedGenerator gen = new SMIMEAuthEnvelopedGenerator();
+
+        //
+        // create a subject key id - this has to be done the same way as
+        // it is done in the certificate associated with the private key
+        //
+        MessageDigest dig = MessageDigest.getInstance("SHA256", BC);
+
+        dig.update(_reciCert.getPublicKey().getEncoded());
+
+        gen.addRecipientInfoGenerator(new JceKeyTransRecipientInfoGenerator(dig.digest(), _reciCert.getPublicKey()).setProvider(BC));
+
+        //
+        // generate a MimeBodyPart object which encapsulates the content
+        // we want encrypted.
+        //
+        MimeBodyPart mp = gen.generate(msg, new JceCMSContentEncryptorBuilder(CMSAlgorithm.ChaCha20Poly1305).setProvider(BC).build());
 
         SMIMEAuthEnveloped m = new SMIMEAuthEnveloped(mp);
 
@@ -494,7 +530,7 @@ public class NewSMIMEAuthEnvelopedTest
 
         SMIMEAuthEnveloped ed = new SMIMEAuthEnveloped(res);
 
-        assertEquals(ed.getEncryptionAlgOID(), CMSAuthEnvelopedDataGenerator.AES128_GCM);
+        assertEquals(ed.getEncryptionAlgOID(), SMIMEAuthEnvelopedGenerator.AES128_GCM);
 
         RecipientInformationStore recipients = ed.getRecipientInfos();
 

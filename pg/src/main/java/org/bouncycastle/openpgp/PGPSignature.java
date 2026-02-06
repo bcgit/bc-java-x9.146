@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 
 import org.bouncycastle.asn1.ASN1EncodableVector;
@@ -23,6 +24,8 @@ import org.bouncycastle.bcpg.SignatureSubpacket;
 import org.bouncycastle.bcpg.TrustPacket;
 import org.bouncycastle.bcpg.sig.IssuerFingerprint;
 import org.bouncycastle.bcpg.sig.IssuerKeyID;
+import org.bouncycastle.bcpg.sig.RevocationReason;
+import org.bouncycastle.bcpg.sig.RevocationReasonTags;
 import org.bouncycastle.math.ec.rfc8032.Ed25519;
 import org.bouncycastle.math.ec.rfc8032.Ed448;
 import org.bouncycastle.openpgp.operator.PGPContentVerifier;
@@ -195,7 +198,7 @@ public class PGPSignature
      */
     public static final int THIRD_PARTY_CONFIRMATION = 0x50;
 
-    private final SignaturePacket sigPck;
+    final SignaturePacket sigPck;
     private final TrustPacket trustPck;
 
     private volatile PGPContentVerifier verifier;
@@ -635,9 +638,28 @@ public class PGPSignature
     public List<KeyIdentifier> getKeyIdentifiers()
     {
         List<KeyIdentifier> identifiers = new ArrayList<KeyIdentifier>();
-        identifiers.addAll(getHashedKeyIdentifiers());
-        identifiers.addAll(getUnhashedKeyIdentifiers());
+        if (getVersion() <= SignaturePacket.VERSION_3)
+        {
+            identifiers.add(new KeyIdentifier(getKeyID()));
+        }
+        else
+        {
+            identifiers.addAll(getHashedKeyIdentifiers());
+            identifiers.addAll(getUnhashedKeyIdentifiers());
+        }
         return identifiers;
+    }
+
+    public boolean hasKeyIdentifier(KeyIdentifier identifier)
+    {
+        for (Iterator it = getKeyIdentifiers().iterator(); it.hasNext(); )
+        {
+            if (((KeyIdentifier)it.next()).matchesExplicit(identifier))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -782,12 +804,20 @@ public class PGPSignature
                 byte[] b = BigIntegers.asUnsignedByteArray(sigValues[1].getValue());
                 if (a.length + b.length > Ed25519.SIGNATURE_SIZE)
                 {
+                    if (a.length > Ed448.PUBLIC_KEY_SIZE || b.length > Ed448.SIGNATURE_SIZE)
+                    {
+                        throw new PGPException("Malformed Ed448 signature encoding (too long).");
+                    }
                     signature = new byte[Ed448.SIGNATURE_SIZE];
                     System.arraycopy(a, 0, signature, Ed448.PUBLIC_KEY_SIZE - a.length, a.length);
                     System.arraycopy(b, 0, signature, Ed448.SIGNATURE_SIZE - b.length, b.length);
                 }
                 else
                 {
+                    if (a.length > Ed25519.PUBLIC_KEY_SIZE || b.length > Ed25519.SIGNATURE_SIZE)
+                    {
+                        throw new PGPException("Malformed Ed25519 signature encoding (too long).");
+                    }
                     signature = new byte[Ed25519.SIGNATURE_SIZE];
                     System.arraycopy(a, 0, signature, Ed25519.PUBLIC_KEY_SIZE - a.length, a.length);
                     System.arraycopy(b, 0, signature, Ed25519.SIGNATURE_SIZE - b.length, b.length);
@@ -905,6 +935,46 @@ public class PGPSignature
             || PGPSignature.POSITIVE_CERTIFICATION == signatureType;
     }
 
+    public static boolean isRevocation(int signatureType)
+    {
+        return PGPSignature.KEY_REVOCATION == signatureType
+            || PGPSignature.CERTIFICATION_REVOCATION == signatureType
+            || PGPSignature.SUBKEY_REVOCATION == signatureType;
+    }
+
+    public boolean isHardRevocation()
+    {
+        if (!isRevocation(getSignatureType()))
+        {
+            return false; // no revocation
+        }
+
+        if (!hasSubpackets())
+        {
+            return true; // consider missing subpackets (and therefore missing reason) as hard revocation
+        }
+
+        // only consider reasons from the hashed packet area
+        RevocationReason reason = getHashedSubPackets() != null ?
+            getHashedSubPackets().getRevocationReason() : null;
+        if (reason == null)
+        {
+            return true; // missing reason packet is hard
+        }
+
+        byte code = reason.getRevocationReason();
+        if (code >= 100 && code <= 110)
+        {
+            // private / experimental reasons are considered hard
+            return true;
+        }
+
+        // Reason is not from the set of known soft reasons
+        return code != RevocationReasonTags.KEY_SUPERSEDED &&
+            code != RevocationReasonTags.KEY_RETIRED &&
+            code != RevocationReasonTags.USER_NO_LONGER_VALID;
+    }
+
     /**
      * Return true, if the cryptographic signature encoding of the two signatures match.
      *
@@ -971,16 +1041,7 @@ public class PGPSignature
 
         SignatureSubpacket[] unhashed = (SignatureSubpacket[])merged.toArray(new SignatureSubpacket[0]);
         return new PGPSignature(
-            new SignaturePacket(
-                sig1.getSignatureType(),
-                sig1.getKeyID(),
-                sig1.getKeyAlgorithm(),
-                sig1.getHashAlgorithm(),
-                sig1.getHashedSubPackets().packets,
-                unhashed,
-                sig1.getDigestPrefix(),
-                sig1.sigPck.getSignature()
-            )
+            SignaturePacket.copyOfWith(sig1.sigPck, unhashed)
         );
     }
 }

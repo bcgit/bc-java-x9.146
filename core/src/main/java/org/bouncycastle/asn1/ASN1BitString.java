@@ -56,9 +56,14 @@ public abstract class ASN1BitString
         throw new IllegalArgumentException("illegal object in getInstance: " + obj.getClass().getName());
     }
 
-    public static ASN1BitString getInstance(ASN1TaggedObject taggedObject, boolean explicit)
+    public static ASN1BitString getInstance(ASN1TaggedObject taggedObject, boolean declaredExplicit)
     {
-        return (ASN1BitString)TYPE.getContextInstance(taggedObject, explicit);
+        return (ASN1BitString)TYPE.getContextTagged(taggedObject, declaredExplicit);
+    }
+
+    public static ASN1BitString getTagged(ASN1TaggedObject taggedObject, boolean declaredExplicit)
+    {
+        return (ASN1BitString)TYPE.getTagged(taggedObject, declaredExplicit);
     }
 
     private static final char[]  table = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
@@ -247,7 +252,7 @@ public abstract class ASN1BitString
             throw new ASN1ParsingException("Internal error encoding BitString: " + e.getMessage(), e);
         }
 
-        StringBuffer buf = new StringBuffer(1 + string.length * 2);
+        StringBuilder buf = new StringBuilder(1 + string.length * 2);
         buf.append('#');
 
         for (int i = 0; i != string.length; i++)
@@ -309,6 +314,16 @@ public abstract class ASN1BitString
         // DER requires pad bits be zero
         rv[rv.length - 1] &= (byte)(0xFF << padBits);
         return rv;
+    }
+
+    public int getBytesLength()
+    {
+        return contents.length - 1;
+    }
+
+    public boolean isOctetAligned()
+    {
+        return getPadBits() == 0;
     }
 
     public int getPadBits()

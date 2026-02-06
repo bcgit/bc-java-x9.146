@@ -427,6 +427,13 @@ class ProvX509TrustManager
         BCExtendedSSLSession sslSession) throws CertificateException
     {
         String peerHost = sslSession.getPeerHost();
+
+        /*
+         * A fully qualified domain name (FQDN) may contain a trailing dot. We remove it for the purpose of
+         * SNI and endpoint ID checks (e.g. SNIHostName doesn't permit it).
+         */
+        peerHost = JsseUtils.stripTrailingDot(peerHost);
+
         if (checkServerTrusted)
         {
             BCSNIHostName sniHostName = JsseUtils.getSNIHostName(sslSession.getRequestedServerNames());
@@ -449,7 +456,20 @@ class ProvX509TrustManager
             }
         }
 
-        checkEndpointID(peerHost, certificate, endpointIDAlg);
+        try
+        {
+            checkEndpointID(peerHost, certificate, endpointIDAlg);
+        }
+        catch (CertificateException e)
+        {
+            // Special case for SunJSSE compatibility
+            if (!checkServerTrusted && "HTTPS".equalsIgnoreCase(endpointIDAlg))
+            {
+                throw new CertificateException("Endpoint ID algorithm 'HTTPS' is not supported on the server side");
+            }
+
+            throw e;
+        }
     }
 
     private static X509CertSelector createTargetCertConstraints(final X509Certificate eeCert,

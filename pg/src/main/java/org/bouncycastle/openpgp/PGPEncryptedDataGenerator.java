@@ -88,6 +88,7 @@ public class PGPEncryptedDataGenerator
     // If true, force generation of a session key, even if we only have a single password-based encryption method
     //  and could therefore use the S2K output as session key directly.
     private boolean forceSessionKey = true;
+    private SessionKeyExtractionCallback sessionKeyExtractionCallback = null;
 
     /**
      * Base constructor.
@@ -140,6 +141,10 @@ public class PGPEncryptedDataGenerator
         methods.add(method);
     }
 
+    public void setSessionKeyExtractionCallback(SessionKeyExtractionCallback callback)
+    {
+        this.sessionKeyExtractionCallback = callback;
+    }
 
     /**
      * Create an OutputStream based on the configured methods.
@@ -213,13 +218,25 @@ public class PGPEncryptedDataGenerator
             messageKey = sessionKey;
         }
 
+        if (sessionKeyExtractionCallback != null)
+        {
+            sessionKeyExtractionCallback.extractSessionKey(new PGPSessionKey(defAlgorithm, sessionKey));
+        }
+
         PGPDataEncryptor dataEncryptor = dataEncryptorBuilder.build(messageKey);
         digestCalc = dataEncryptor.getIntegrityCalculator();
         BCPGHeaderObject encOut;
         for (int i = 0; i < methods.size(); i++)
         {
             PGPKeyEncryptionMethodGenerator method = (PGPKeyEncryptionMethodGenerator)methods.get(i);
-            pOut.writePacket(method.generate(dataEncryptorBuilder, sessionKey));
+            if (directS2K)
+            {
+                pOut.writePacket(method.generate(dataEncryptorBuilder, null));
+            }
+            else
+            {
+                pOut.writePacket(method.generate(dataEncryptorBuilder, sessionKey));
+            }
         }
         try
         {
@@ -394,6 +411,8 @@ public class PGPEncryptedDataGenerator
                 //
                 BCPGOutputStream bOut = new BCPGOutputStream(genOut, PacketTags.MOD_DETECTION_CODE, 20);
 
+                // For clarity; really only required if using partial body lengths
+                bOut.finish();
                 bOut.flush();
 
                 byte[] dig = digestCalc.getDigest();
@@ -440,5 +459,10 @@ public class PGPEncryptedDataGenerator
         {
             this.finish();
         }
+    }
+
+    public interface SessionKeyExtractionCallback
+    {
+        void extractSessionKey(PGPSessionKey sessionKey);
     }
 }

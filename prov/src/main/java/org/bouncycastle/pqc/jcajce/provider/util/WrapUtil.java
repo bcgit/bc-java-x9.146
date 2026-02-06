@@ -55,10 +55,10 @@ public class WrapUtil
     public static Wrapper getWrapper(String keyAlgorithmName)
     {
         Wrapper kWrap;
-
+           
         if (keyAlgorithmName.equalsIgnoreCase("AESWRAP") || keyAlgorithmName.equalsIgnoreCase("AES"))
         {
-            kWrap = new RFC3394WrapEngine(new AESEngine());
+            kWrap = new RFC3394WrapEngine(AESEngine.newInstance());
         }
         else if (keyAlgorithmName.equalsIgnoreCase("ARIA"))
         {
@@ -89,6 +89,16 @@ public class WrapUtil
             throw new UnsupportedOperationException("unknown key algorithm: " + keyAlgorithmName);
         }
         return kWrap;
+    }
+
+    public static byte[] trimSecret(String algName, byte[] secret)
+    {
+        if (algName.equals("SEED"))
+        {
+            return Arrays.copyOfRange(secret, 0, 16);
+        }
+        
+        return secret;
     }
 
     private static byte[] makeKeyBytes(KTSParameterSpec ktsSpec, byte[] secret)

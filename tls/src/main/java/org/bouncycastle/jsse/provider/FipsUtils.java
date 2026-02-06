@@ -168,10 +168,17 @@ abstract class FipsUtils
         case NamedGroup.ffdhe4096:
         case NamedGroup.ffdhe6144:
         case NamedGroup.ffdhe8192:
+        case NamedGroup.SecP256r1MLKEM768:
+        case NamedGroup.SecP384r1MLKEM1024:
             return true;
 
         case NamedGroup.x25519:
         case NamedGroup.x448:
+        case NamedGroup.MLKEM512:
+        case NamedGroup.MLKEM768:
+        case NamedGroup.MLKEM1024:
+        case NamedGroup.X25519MLKEM768:
+        case NamedGroup.curveSM2MLKEM768:
         default:
             return false;
         }
@@ -209,6 +216,21 @@ abstract class FipsUtils
 
         case SignatureScheme.ed25519:
         case SignatureScheme.ed448:
+        case SignatureScheme.mldsa44:
+        case SignatureScheme.mldsa65:
+        case SignatureScheme.mldsa87:
+        case SignatureScheme.DRAFT_slhdsa_sha2_128s:
+        case SignatureScheme.DRAFT_slhdsa_sha2_128f:
+        case SignatureScheme.DRAFT_slhdsa_sha2_192s:
+        case SignatureScheme.DRAFT_slhdsa_sha2_192f:
+        case SignatureScheme.DRAFT_slhdsa_sha2_256s:
+        case SignatureScheme.DRAFT_slhdsa_sha2_256f:
+        case SignatureScheme.DRAFT_slhdsa_shake_128s:
+        case SignatureScheme.DRAFT_slhdsa_shake_128f:
+        case SignatureScheme.DRAFT_slhdsa_shake_192s:
+        case SignatureScheme.DRAFT_slhdsa_shake_192f:
+        case SignatureScheme.DRAFT_slhdsa_shake_256s:
+        case SignatureScheme.DRAFT_slhdsa_shake_256f:
         default:
             return false;
         }

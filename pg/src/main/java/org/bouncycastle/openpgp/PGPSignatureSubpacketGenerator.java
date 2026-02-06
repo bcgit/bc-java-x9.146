@@ -1,11 +1,14 @@
 package org.bouncycastle.openpgp;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 
+import org.bouncycastle.bcpg.BCPGOutputStream;
+import org.bouncycastle.bcpg.PacketFormat;
 import org.bouncycastle.bcpg.SignatureSubpacket;
 import org.bouncycastle.bcpg.SignatureSubpacketTags;
 import org.bouncycastle.bcpg.sig.EmbeddedSignature;
@@ -69,10 +72,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setRevocable(boolean isCritical, boolean isRevocable)
     {
-        if (contains(SignatureSubpacketTags.REVOCABLE))
-        {
-            throw new IllegalStateException("Revocable exists in the Signature Subpacket Generator");
-        }
+        removePacketsOfType(SignatureSubpacketTags.REVOCABLE);
         packets.add(new Revocable(isCritical, isRevocable));
     }
 
@@ -97,10 +97,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setExportable(boolean isCritical, boolean isExportable)
     {
-        if (contains(SignatureSubpacketTags.EXPORTABLE))
-        {
-            throw new IllegalStateException("Exportable Certification exists in the Signature Subpacket Generator");
-        }
+        removePacketsOfType(SignatureSubpacketTags.EXPORTABLE);
         packets.add(new Exportable(isCritical, isExportable));
     }
 
@@ -108,10 +105,11 @@ public class PGPSignatureSubpacketGenerator
      * Specify the set of features of the key.
      *
      * @param isCritical true if should be treated as critical, false otherwise.
-     * @param feature    features
+     * @param feature    features bitmap
      */
     public void setFeature(boolean isCritical, byte feature)
     {
+        removePacketsOfType(SignatureSubpacketTags.FEATURES);
         packets.add(new Features(isCritical, feature));
     }
 
@@ -126,6 +124,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setTrust(boolean isCritical, int depth, int trustAmount)
     {
+        removePacketsOfType(SignatureSubpacketTags.TRUST_SIG);
         packets.add(new TrustSignature(isCritical, depth, trustAmount));
     }
 
@@ -150,6 +149,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setKeyExpirationTime(boolean isCritical, long seconds)
     {
+        removePacketsOfType(SignatureSubpacketTags.KEY_EXPIRE_TIME);
         packets.add(new KeyExpirationTime(isCritical, seconds));
     }
 
@@ -175,6 +175,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setSignatureExpirationTime(boolean isCritical, long seconds)
     {
+        removePacketsOfType(SignatureSubpacketTags.EXPIRE_TIME);
         packets.add(new SignatureExpirationTime(isCritical, seconds));
     }
 
@@ -200,6 +201,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setSignatureCreationTime(boolean isCritical, Date date)
     {
+        removePacketsOfType(SignatureSubpacketTags.CREATION_TIME);
         packets.add(new SignatureCreationTime(isCritical, date));
     }
 
@@ -212,6 +214,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setPreferredHashAlgorithms(boolean isCritical, int[] algorithms)
     {
+        removePacketsOfType(SignatureSubpacketTags.PREFERRED_HASH_ALGS);
         packets.add(new PreferredAlgorithms(SignatureSubpacketTags.PREFERRED_HASH_ALGS, isCritical,
             algorithms));
     }
@@ -225,6 +228,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setPreferredSymmetricAlgorithms(boolean isCritical, int[] algorithms)
     {
+        removePacketsOfType(SignatureSubpacketTags.PREFERRED_SYM_ALGS);
         packets.add(new PreferredAlgorithms(SignatureSubpacketTags.PREFERRED_SYM_ALGS, isCritical,
             algorithms));
     }
@@ -238,6 +242,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setPreferredCompressionAlgorithms(boolean isCritical, int[] algorithms)
     {
+        removePacketsOfType(SignatureSubpacketTags.PREFERRED_COMP_ALGS);
         packets.add(new PreferredAlgorithms(SignatureSubpacketTags.PREFERRED_COMP_ALGS, isCritical,
             algorithms));
     }
@@ -254,6 +259,7 @@ public class PGPSignatureSubpacketGenerator
     @Deprecated
     public void setPreferredAEADAlgorithms(boolean isCritical, int[] algorithms)
     {
+        removePacketsOfType(SignatureSubpacketTags.PREFERRED_AEAD_ALGORITHMS);
         packets.add(new PreferredAlgorithms(SignatureSubpacketTags.PREFERRED_AEAD_ALGORITHMS, isCritical,
             algorithms));
     }
@@ -268,6 +274,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setPreferredAEADCiphersuites(boolean isCritical, PreferredAEADCiphersuites.Combination[] algorithms)
     {
+        removePacketsOfType(SignatureSubpacketTags.PREFERRED_AEAD_ALGORITHMS);
         packets.add(new PreferredAEADCiphersuites(isCritical, algorithms));
     }
 
@@ -280,6 +287,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setPreferredAEADCiphersuites(PreferredAEADCiphersuites.Builder builder)
     {
+        removePacketsOfType(SignatureSubpacketTags.PREFERRED_AEAD_ALGORITHMS);
         packets.add(builder.build());
     }
 
@@ -300,6 +308,7 @@ public class PGPSignatureSubpacketGenerator
     @Deprecated
     public void setPreferredLibrePgpEncryptionModes(boolean isCritical, int[] algorithms)
     {
+        removePacketsOfType(SignatureSubpacketTags.LIBREPGP_PREFERRED_ENCRYPTION_MODES);
         packets.add(new LibrePGPPreferredEncryptionModes(isCritical, algorithms));
     }
 
@@ -309,8 +318,23 @@ public class PGPSignatureSubpacketGenerator
      *
      * @param isCritical true if the subpacket should be treated as critical
      * @param uri        key server URI
+     * @deprecated use {@link #addPreferredKeyServer(boolean, String)} instead.
      */
+    @Deprecated
+    @SuppressWarnings("InlineMeSuggester")
     public void setPreferredKeyServer(boolean isCritical, String uri)
+    {
+        addPreferredKeyServer(isCritical, uri);
+    }
+
+    /**
+     * Specify a preferred key server for the signed user-id / key.
+     * Note, that the key server might also be a http/ftp etc. URI pointing to the key itself.
+     *
+     * @param isCritical true if the subpacket should be treated as critical
+     * @param uri        key server URI
+     */
+    public void addPreferredKeyServer(boolean isCritical, String uri)
     {
         packets.add(new PreferredKeyServer(isCritical, uri));
     }
@@ -341,6 +365,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setKeyFlags(boolean isCritical, int flags)
     {
+        removePacketsOfType(SignatureSubpacketTags.KEY_FLAGS);
         packets.add(new KeyFlags(isCritical, flags));
     }
 
@@ -424,9 +449,16 @@ public class PGPSignatureSubpacketGenerator
     public void addEmbeddedSignature(boolean isCritical, PGPSignature pgpSignature)
         throws IOException
     {
-        byte[] sig = pgpSignature.getEncoded();
+        // Encode the signature forcing legacy packet format, such that we consistently cut off the proper amount
+        // of header bytes
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+        BCPGOutputStream pOut = new BCPGOutputStream(bOut, PacketFormat.LEGACY);
+        pgpSignature.encode(pOut);
+        pOut.close();
+        byte[] sig = bOut.toByteArray();
         byte[] data;
 
+        // Cut off the header bytes
         if (sig.length - 1 > 256)
         {
             data = new byte[sig.length - 3];
@@ -443,6 +475,7 @@ public class PGPSignatureSubpacketGenerator
 
     public void setPrimaryUserID(boolean isCritical, boolean isPrimaryUserID)
     {
+        removePacketsOfType(SignatureSubpacketTags.PRIMARY_USER_ID);
         packets.add(new PrimaryUserID(isCritical, isPrimaryUserID));
     }
 
@@ -485,6 +518,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setRevocationReason(boolean isCritical, byte reason, String description)
     {
+        removePacketsOfType(SignatureSubpacketTags.REVOCATION_REASON);
         packets.add(new RevocationReason(isCritical, reason, description));
     }
 
@@ -523,6 +557,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setIssuerKeyID(boolean isCritical, long keyID)
     {
+        removePacketsOfType(SignatureSubpacketTags.ISSUER_KEY_ID);
         packets.add(new IssuerKeyID(isCritical, keyID));
     }
 
@@ -536,6 +571,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setSignatureTarget(boolean isCritical, int publicKeyAlgorithm, int hashAlgorithm, byte[] hashData)
     {
+        removePacketsOfType(SignatureSubpacketTags.SIGNATURE_TARGET);
         packets.add(new SignatureTarget(isCritical, publicKeyAlgorithm, hashAlgorithm, hashData));
     }
 
@@ -558,6 +594,7 @@ public class PGPSignatureSubpacketGenerator
      */
     public void setIssuerFingerprint(boolean isCritical, PGPPublicKey publicKey)
     {
+        removePacketsOfType(SignatureSubpacketTags.ISSUER_FINGERPRINT);
         packets.add(new IssuerFingerprint(isCritical, publicKey.getVersion(), publicKey.getFingerprint()));
     }
 

@@ -58,6 +58,7 @@ public class JcaContentSignerBuilder
 
     static
     {
+        isAlgIdFromPrivate.add("COMPOSITE");
         isAlgIdFromPrivate.add("DILITHIUM");
         isAlgIdFromPrivate.add("SPHINCS+");
         isAlgIdFromPrivate.add("SPHINCSPlus");
@@ -200,7 +201,7 @@ public class JcaContentSignerBuilder
         throws OperatorCreationException
     {
         //Use this legacy method only for composite private keys (they have that identifier)
-        if (privateKey instanceof CompositePrivateKey && ((CompositePrivateKey)privateKey).getAlgorithmIdentifier().equals(MiscObjectIdentifiers.id_composite_key))
+        if (privateKey instanceof CompositePrivateKey && ((CompositePrivateKey)privateKey).getAlgorithmIdentifier().getAlgorithm().equals(MiscObjectIdentifiers.id_composite_key))
         {
             return buildComposite((CompositePrivateKey)privateKey);
         }
@@ -399,8 +400,8 @@ public class JcaContentSignerBuilder
         return new RSASSAPSSparams(
             digId,
             new AlgorithmIdentifier(PKCSObjectIdentifiers.id_mgf1, mgfDig),
-            new ASN1Integer(pssSpec.getSaltLength()),
-            new ASN1Integer(pssSpec.getTrailerField()));
+            ASN1Integer.valueOf(pssSpec.getSaltLength()),
+            ASN1Integer.valueOf(pssSpec.getTrailerField()));
     }
 
     private static ASN1Sequence createCompParams(CompositeAlgorithmSpec compSpec)

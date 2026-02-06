@@ -1,26 +1,22 @@
 package org.bouncycastle.crypto.digests;
 
 import org.bouncycastle.crypto.DataLengthException;
-import org.bouncycastle.crypto.OutputLengthException;
-import org.bouncycastle.crypto.Xof;
 import org.bouncycastle.util.Pack;
 
 /**
  * Ascon-CXOF128 was introduced in NIST Special Publication (SP) 800-232
- * (Initial Public Draft).
  * <p>
  * Additional details and the specification can be found in:
- * <a href="https://csrc.nist.gov/pubs/sp/800/232/ipd">NIST SP 800-232 (Initial Public Draft)</a>.
+ * <a href="https://csrc.nist.gov/pubs/sp/800/232/final">NIST SP 800-232
+ * Ascon-Based Lightweight Cryptography Standards for Constrained Devices</a>.
  * For reference source code and implementation details, please see:
  * <a href="https://github.com/ascon/ascon-c">Reference, highly optimized, masked C and
  * ASM implementations of Ascon (NIST SP 800-232)</a>.
  * </p>
  */
 public class AsconCXof128
-    extends AsconBaseDigest
-    implements Xof
+    extends AsconXofBase
 {
-    private boolean m_squeezing = false;
     private final long z0, z1, z2, z3, z4;
 
     public AsconCXof128()
@@ -35,41 +31,19 @@ public class AsconCXof128
 
     public AsconCXof128(byte[] s, int off, int len)
     {
-        if ((off + len) > s.length)
-        {
-            throw new DataLengthException("input buffer too short");
-        }
+        algorithmName = "Ascon-CXOF128";
+        ensureSufficientInputBuffer(s, off, len);
         if (len > 256)
         {
             throw new DataLengthException("customized string is too long");
         }
         initState(s, off, len);
         // NOTE: Cache the initialized state
-        z0 = x0;
-        z1 = x1;
-        z2 = x2;
-        z3 = x3;
-        z4 = x4;
-    }
-
-    @Override
-    public void update(byte in)
-    {
-        if (m_squeezing)
-        {
-            throw new IllegalArgumentException("attempt to absorb while squeezing");
-        }
-        super.update(in);
-    }
-
-    @Override
-    public void update(byte[] input, int inOff, int len)
-    {
-        if (m_squeezing)
-        {
-            throw new IllegalArgumentException("attempt to absorb while squeezing");
-        }
-        super.update(input, inOff, len);
+        z0 = p.x0;
+        z1 = p.x1;
+        z2 = p.x2;
+        z3 = p.x3;
+        z4 = p.x4;
     }
 
     protected long pad(int i)
@@ -84,7 +58,7 @@ public class AsconCXof128
 
     protected long loadBytes(final byte[] bytes, int inOff, int n)
     {
-        return Pack.littleEndianToLong(bytes, inOff, n);
+        return n <= 0 ? 0L : Pack.littleEndianToLong_Low(bytes, inOff, n);
     }
 
     protected void setBytes(long w, byte[] bytes, int inOff)
@@ -94,69 +68,34 @@ public class AsconCXof128
 
     protected void setBytes(long w, byte[] bytes, int inOff, int n)
     {
-        Pack.longToLittleEndian(w, bytes, inOff, n);
-    }
-
-    protected void padAndAbsorb()
-    {
-        m_squeezing = true;
-        super.padAndAbsorb();
-    }
-
-    @Override
-    public String getAlgorithmName()
-    {
-        return "Ascon-CXOF128";
-    }
-
-    @Override
-    public int doOutput(byte[] output, int outOff, int outLen)
-    {
-        if (CRYPTO_BYTES + outOff > output.length)
+        if (n > 0)
         {
-            throw new OutputLengthException("output buffer is too short");
+            Pack.longToLittleEndian_Low(w, bytes, inOff, n);
         }
-        padAndAbsorb();
-        /* squeeze full output blocks */
-        squeeze(output, outOff, outLen);
-        return outLen;
-    }
-
-
-    @Override
-    public int doFinal(byte[] output, int outOff, int outLen)
-    {
-        int rlt = doOutput(output, outOff, outLen);
-        reset();
-        return rlt;
     }
 
     @Override
     public void reset()
     {
         super.reset();
-        m_squeezing = false;
         /* initialize */
-        x0 = z0;
-        x1 = z1;
-        x2 = z2;
-        x3 = z3;
-        x4 = z4;
+        p.set(z0, z1, z2, z3, z4);
     }
 
     private void initState(byte[] z, int zOff, int zLen)
     {
-        x0 = 7445901275803737603L;
-        x1 = 4886737088792722364L;
-        x2 = -1616759365661982283L;
-        x3 = 3076320316797452470L;
-        x4 = -8124743304765850554L;
-        long bitLength = ((long)zLen) << 3;
-        Pack.longToLittleEndian(bitLength, m_buf, 0);
-        p(12);
-        update(z, zOff, zLen);
-        padAndAbsorb();
-        m_squeezing = false;
+        if (zLen == 0)
+        {
+            p.set(0x500cccc894e3c9e8L, 0x5bed06f28f71248dL, 0x3b03a0f930afd512L, 0x112ef093aa5c698bL, 0x00c8356340a347f0L);
+        }
+        else
+        {
+            p.set(0x675527c2a0e8de03L, 0x43d12d7dc0377bbcL, 0xe9901dec426e81b5L, 0x2ab14907720780b6L, 0x8f3f1d02d432bc46L);
+            p.x0 ^= ((long)zLen) << 3;
+            p.p(12);
+            update(z, zOff, zLen);
+            padAndAbsorb();
+        }
+        super.reset();
     }
 }
-

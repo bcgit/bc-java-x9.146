@@ -3,11 +3,11 @@ package org.bouncycastle.crypto.digests;
 import org.bouncycastle.util.Pack;
 
 /**
- * ASCON v1.2 Digest, https://ascon.iaik.tugraz.at/ .
+ * ASCON v1.2 Digest, <a href="https://ascon.iaik.tugraz.at/">...</a> .
  * <p>
- * https://csrc.nist.gov/CSRC/media/Projects/lightweight-cryptography/documents/finalist-round/updated-spec-doc/ascon-spec-final.pdf
+ * <a href="https://csrc.nist.gov/CSRC/media/Projects/lightweight-cryptography/documents/finalist-round/updated-spec-doc/ascon-spec-final.pdf">...</a>
  * <p>
- * ASCON v1.2 Digest with reference to C Reference Impl from: https://github.com/ascon/ascon-c .
+ * ASCON v1.2 Digest with reference to C Reference Impl from: <a href="https://github.com/ascon/ascon-c">...</a> .
  *
  * @deprecated use Ascon Hash 256 Digest
  */
@@ -41,8 +41,6 @@ public class AsconDigest
         reset();
     }
 
-    private final String algorithmName;
-
     protected long pad(int i)
     {
         return 0x80L << (56 - (i << 3));
@@ -55,7 +53,7 @@ public class AsconDigest
 
     protected long loadBytes(final byte[] bytes, int inOff, int n)
     {
-        return Pack.bigEndianToLong(bytes, inOff, n);
+        return n <= 0 ? 0L : Pack.bigEndianToLong_High(bytes, inOff, n);
     }
 
     protected void setBytes(long w, byte[] bytes, int inOff)
@@ -65,13 +63,10 @@ public class AsconDigest
 
     protected void setBytes(long w, byte[] bytes, int inOff, int n)
     {
-        Pack.longToBigEndian(w, bytes, inOff, n);
-    }
-
-    @Override
-    public String getAlgorithmName()
-    {
-        return algorithmName;
+        if (n > 0)
+        {
+            Pack.longToBigEndian_High(w, bytes, inOff, n);
+        }
     }
 
     @Override
@@ -82,18 +77,10 @@ public class AsconDigest
         switch (asconParameters)
         {
         case AsconHashA:
-            x0 = 92044056785660070L;
-            x1 = 8326807761760157607L;
-            x2 = 3371194088139667532L;
-            x3 = -2956994353054992515L;
-            x4 = -6828509670848688761L;
+            p.set(92044056785660070L, 8326807761760157607L, 3371194088139667532L, -2956994353054992515L, -6828509670848688761L);
             break;
         case AsconHash:
-            x0 = -1255492011513352131L;
-            x1 = -8380609354527731710L;
-            x2 = -5437372128236807582L;
-            x3 = 4834782570098516968L;
-            x4 = 3787428097924915520L;
+            p.set(-1255492011513352131L, -8380609354527731710L, -5437372128236807582L, 4834782570098516968L, 3787428097924915520L);
             break;
         }
     }

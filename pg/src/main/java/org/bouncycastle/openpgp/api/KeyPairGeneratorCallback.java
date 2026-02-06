@@ -7,7 +7,6 @@ import org.bouncycastle.openpgp.operator.PGPKeyPairGenerator;
 /**
  * Callback to generate a {@link PGPKeyPair} from a {@link PGPKeyPairGenerator} instance.
  */
-@FunctionalInterface
 public interface KeyPairGeneratorCallback
 {
     /**
@@ -19,4 +18,46 @@ public interface KeyPairGeneratorCallback
      */
     PGPKeyPair generateFrom(PGPKeyPairGenerator generator)
         throws PGPException;
+
+    static class Util
+    {
+        public static KeyPairGeneratorCallback primaryKey()
+        {
+            return new KeyPairGeneratorCallback()
+            {
+                @Override
+                public PGPKeyPair generateFrom(PGPKeyPairGenerator generator)
+                    throws PGPException
+                {
+                    return generator.generatePrimaryKey();
+                }
+            };
+        }
+
+        public static KeyPairGeneratorCallback encryptionKey()
+        {
+            return new KeyPairGeneratorCallback()
+            {
+                @Override
+                public PGPKeyPair generateFrom(PGPKeyPairGenerator generator)
+                    throws PGPException
+                {
+                    return generator.generateEncryptionSubkey();
+                }
+            };
+        }
+
+        public static KeyPairGeneratorCallback signingKey()
+        {
+            return new KeyPairGeneratorCallback()
+            {
+                @Override
+                public PGPKeyPair generateFrom(PGPKeyPairGenerator generator)
+                    throws PGPException
+                {
+                    return generator.generateSigningSubkey();
+                }
+            };
+        }
+    }
 }
