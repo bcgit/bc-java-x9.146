@@ -62,18 +62,18 @@ public class SignatureScheme
     /*
      * draft-reddy-tls-slhdsa-01
      */
-    public static final int DRAFT_slhdsa_sha2_128s = 0x0911;
-    public static final int DRAFT_slhdsa_sha2_128f = 0x0912;
-    public static final int DRAFT_slhdsa_sha2_192s = 0x0913;
-    public static final int DRAFT_slhdsa_sha2_192f = 0x0914;
-    public static final int DRAFT_slhdsa_sha2_256s = 0x0915;
-    public static final int DRAFT_slhdsa_sha2_256f = 0x0916;
-    public static final int DRAFT_slhdsa_shake_128s = 0x0917;
-    public static final int DRAFT_slhdsa_shake_128f = 0x0918;
-    public static final int DRAFT_slhdsa_shake_192s = 0x0919;
-    public static final int DRAFT_slhdsa_shake_192f = 0x091A;
-    public static final int DRAFT_slhdsa_shake_256s = 0x091B;
-    public static final int DRAFT_slhdsa_shake_256f = 0x091C;
+    public static final int DRAFT_slhdsa_sha2_128s = 0xF911;
+    public static final int DRAFT_slhdsa_sha2_128f = 0xF912;
+    public static final int DRAFT_slhdsa_sha2_192s = 0xF913;
+    public static final int DRAFT_slhdsa_sha2_192f = 0xF914;
+    public static final int DRAFT_slhdsa_sha2_256s = 0xF915;
+    public static final int DRAFT_slhdsa_sha2_256f = 0xF916;
+    public static final int DRAFT_slhdsa_shake_128s = 0xF917;
+    public static final int DRAFT_slhdsa_shake_128f = 0xF918;
+    public static final int DRAFT_slhdsa_shake_192s = 0xF919;
+    public static final int DRAFT_slhdsa_shake_192f = 0xF91A;
+    public static final int DRAFT_slhdsa_shake_256s = 0xF91B;
+    public static final int DRAFT_slhdsa_shake_256f = 0xF91C;
 
 
     /*

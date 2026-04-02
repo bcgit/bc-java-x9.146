@@ -89,8 +89,6 @@ class SignatureSchemeInfo
         rsa_pkcs1_sha384(SignatureScheme.rsa_pkcs1_sha384, "SHA384withRSA", "RSA", true),
         rsa_pkcs1_sha512(SignatureScheme.rsa_pkcs1_sha512, "SHA512withRSA", "RSA", true),
 
-        sm2sig_sm3(SignatureScheme.sm2sig_sm3, "SM3withSM2", "EC"),
-
         // TODO[tls] Need mechanism for restricting signature schemes to TLS 1.3+ before adding
         // TODO[CHECK]
         DRAFT_mldsa44(SignatureScheme.DRAFT_mldsa44, "ML-DSA-44", "ML-DSA-44"),

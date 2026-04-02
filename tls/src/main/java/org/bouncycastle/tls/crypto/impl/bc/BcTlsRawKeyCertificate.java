@@ -29,6 +29,7 @@ import org.bouncycastle.crypto.signers.PSSSigner;
 import org.bouncycastle.crypto.signers.RSADigestSigner;
 import org.bouncycastle.crypto.util.PublicKeyFactory;
 import org.bouncycastle.pqc.crypto.MessageSignerAdapter;
+import org.bouncycastle.pqc.crypto.falcon.FalconPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters;
 import org.bouncycastle.pqc.crypto.mldsa.MLDSAPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.mldsa.MLDSASigner;
@@ -628,17 +629,17 @@ public class BcTlsRawKeyCertificate
             throw new TlsFatalAlert(AlertDescription.certificate_unknown, "Public key not Ed448", e);
         }
     }
-    private FalconPublicKeyParameters getPubKeyFalcon(SubjectPublicKeyInfo keyInfo) throws IOException
-    {
-        try
-        {
-            return (FalconPublicKeyParameters) getPQCPublicKey(keyInfo);
-        }
-        catch (ClassCastException e)
-        {
-            throw new TlsFatalAlert(AlertDescription.certificate_unknown, e);
-        }
-    }
+//    private FalconPublicKeyParameters getPubKeyFalcon(SubjectPublicKeyInfo keyInfo) throws IOException
+//    {
+//        try
+//        {
+//            return (FalconPublicKeyParameters) getPQCPublicKey(keyInfo);
+//        }
+//        catch (ClassCastException e)
+//        {
+//            throw new TlsFatalAlert(AlertDescription.certificate_unknown, e);
+//        }
+//    }
     public Ed448PublicKeyParameters getPubKeyEd448() throws IOException
     {
         return getPubKeyEd448(this.keyInfo);
@@ -684,17 +685,6 @@ public class BcTlsRawKeyCertificate
         }
     }
 
-    protected AsymmetricKeyParameter getPQCPublicKey() throws IOException
-    {
-        try
-        {
-            return org.bouncycastle.pqc.crypto.util.PublicKeyFactory.createKey(keyInfo);
-        }
-        catch (RuntimeException e)
-        {
-            throw new TlsFatalAlert(AlertDescription.unsupported_certificate, e);
-        }
-    }
 
     public RSAKeyParameters getPubKeyRSA() throws IOException
     {
