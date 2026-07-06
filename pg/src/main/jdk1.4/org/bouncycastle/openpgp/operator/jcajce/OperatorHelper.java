@@ -15,6 +15,7 @@ import java.security.Signature;
 import javax.crypto.Cipher;
 import javax.crypto.KeyAgreement;
 import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
@@ -57,9 +58,10 @@ class OperatorHelper
         }
         catch (NoSuchAlgorithmException e)
         {
-            if (algorithm >= HashAlgorithmTags.SHA256 && algorithm <= HashAlgorithmTags.SHA224)
+            if (algorithm == HashAlgorithmTags.SHA1
+                || (algorithm >= HashAlgorithmTags.SHA256 && algorithm <= HashAlgorithmTags.SHA224))
             {
-                dig = helper.createMessageDigest("SHA" + digestName.substring(4));
+                dig = helper.createMessageDigest("SHA-" + digestName.substring(3));
             }
             else
             {
@@ -151,6 +153,11 @@ class OperatorHelper
 
     static long getChunkLength(int chunkSize)
     {
+        // RFC 9580 - 5.13.2
+        if (chunkSize < 0 || chunkSize > 16)
+        {
+            throw new IllegalStateException("chunkSize out of range");
+        }
         return 1L << (chunkSize + 6);
     }
 
@@ -257,6 +264,12 @@ class OperatorHelper
         {
             throw new PGPException("cannot create cipher: " + e.getMessage(), e);
         }
+    }
+
+    SecretKeyFactory createSecretKeyFactory(String algorithm)
+        throws GeneralSecurityException
+    {
+        return helper.createSecretKeyFactory(algorithm);
     }
 
     Cipher createPublicKeyCipher(int encAlgorithm)

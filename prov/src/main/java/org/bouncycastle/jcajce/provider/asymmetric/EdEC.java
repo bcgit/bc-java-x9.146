@@ -3,6 +3,7 @@ package org.bouncycastle.jcajce.provider.asymmetric;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.internal.asn1.edec.EdECObjectIdentifiers;
 import org.bouncycastle.jcajce.provider.asymmetric.edec.KeyFactorySpi;
 import org.bouncycastle.jcajce.provider.config.ConfigurableProvider;
@@ -43,6 +44,11 @@ public class EdEC
             provider.addAlgorithm("Alg.Alias.Signature", EdECObjectIdentifiers.id_Ed448, "ED448");
             provider.addAlgorithm("Alg.Alias.Signature", EdECObjectIdentifiers.id_Ed25519, "ED25519");
 
+            provider.addAlgorithm("AlgorithmParameters.ED448", PREFIX + "AlgorithmParametersSpi$Ed448");
+            provider.addAlgorithm("AlgorithmParameters.ED25519", PREFIX + "AlgorithmParametersSpi$Ed25519");
+            provider.addAlgorithm("Alg.Alias.AlgorithmParameters", EdECObjectIdentifiers.id_Ed448, "ED448");
+            provider.addAlgorithm("Alg.Alias.AlgorithmParameters", EdECObjectIdentifiers.id_Ed25519, "ED25519");
+
             provider.addAlgorithm("KeyPairGenerator.EDDSA", PREFIX + "KeyPairGeneratorSpi$EdDSA");
             provider.addAlgorithm("KeyPairGenerator.ED448", PREFIX + "KeyPairGeneratorSpi$Ed448");
             provider.addAlgorithm("KeyPairGenerator.ED25519", PREFIX + "KeyPairGeneratorSpi$Ed25519");
@@ -71,6 +77,14 @@ public class EdEC
 
             provider.addAlgorithm("KeyAgreement.X448withSHA512HKDF", PREFIX + "KeyAgreementSpi$X448withSHA512HKDF");
             provider.addAlgorithm("KeyAgreement.X25519withSHA256HKDF", PREFIX + "KeyAgreementSpi$X25519withSHA256HKDF");
+
+            // RFC 8418 - HKDF-based ECDH key agreement for X25519/X448 in CMS.
+            provider.addAlgorithm("KeyAgreement.XDHwithSHA256HKDF", PREFIX + "KeyAgreementSpi$XDHwithSHA256HKDF");
+            provider.addAlgorithm("KeyAgreement.XDHwithSHA384HKDF", PREFIX + "KeyAgreementSpi$XDHwithSHA384HKDF");
+            provider.addAlgorithm("KeyAgreement.XDHwithSHA512HKDF", PREFIX + "KeyAgreementSpi$XDHwithSHA512HKDF");
+            provider.addAlgorithm("KeyAgreement", PKCSObjectIdentifiers.dhSinglePass_stdDH_hkdf_sha256_scheme, PREFIX + "KeyAgreementSpi$XDHwithSHA256HKDF");
+            provider.addAlgorithm("KeyAgreement", PKCSObjectIdentifiers.dhSinglePass_stdDH_hkdf_sha384_scheme, PREFIX + "KeyAgreementSpi$XDHwithSHA384HKDF");
+            provider.addAlgorithm("KeyAgreement", PKCSObjectIdentifiers.dhSinglePass_stdDH_hkdf_sha512_scheme, PREFIX + "KeyAgreementSpi$XDHwithSHA512HKDF");
 
             provider.addAlgorithm("KeyPairGenerator.XDH", PREFIX + "KeyPairGeneratorSpi$XDH");
             provider.addAlgorithm("KeyPairGenerator.X448", PREFIX + "KeyPairGeneratorSpi$X448");

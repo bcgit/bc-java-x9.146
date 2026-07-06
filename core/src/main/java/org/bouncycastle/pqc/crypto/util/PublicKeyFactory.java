@@ -17,6 +17,13 @@ import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.pqc.crypto.mqom.MQOMParameters;
+import org.bouncycastle.pqc.crypto.mqom.MQOMPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.sdith.SDitHParameters;
+import org.bouncycastle.pqc.crypto.sdith.SDitHPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.uov.UOVParameters;
+import org.bouncycastle.pqc.crypto.uov.UOVPublicKeyParameters;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
 import org.bouncycastle.internal.asn1.isara.IsaraObjectIdentifiers;
 import org.bouncycastle.pqc.asn1.CMCEPublicKey;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
@@ -24,16 +31,26 @@ import org.bouncycastle.pqc.asn1.SPHINCS256KeyParams;
 import org.bouncycastle.pqc.asn1.XMSSKeyParams;
 import org.bouncycastle.pqc.asn1.XMSSMTKeyParams;
 import org.bouncycastle.pqc.asn1.XMSSPublicKey;
-import org.bouncycastle.pqc.crypto.bike.BIKEParameters;
-import org.bouncycastle.pqc.crypto.bike.BIKEPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.aimer.AIMerParameters;
+import org.bouncycastle.pqc.crypto.aimer.AIMerPublicKeyParameters;
+import org.bouncycastle.pqc.legacy.bike.BIKEParameters;
+import org.bouncycastle.pqc.legacy.bike.BIKEPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.cmce.CMCEParameters;
 import org.bouncycastle.pqc.crypto.cmce.CMCEPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumParameters;
 import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.faest.FaestParameters;
+import org.bouncycastle.pqc.crypto.faest.FaestPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.qruov.QRUOVParameters;
+import org.bouncycastle.pqc.crypto.qruov.QRUOVPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.frodo.FrodoParameters;
 import org.bouncycastle.pqc.crypto.frodo.FrodoPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.haetae.HAETAEParameters;
+import org.bouncycastle.pqc.crypto.haetae.HAETAEPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.hawk.HawkParameters;
+import org.bouncycastle.pqc.crypto.hawk.HawkPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.lms.HSSPublicKeyParameters;
@@ -53,23 +70,27 @@ import org.bouncycastle.pqc.crypto.ntruprime.NTRULPRimeParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.NTRULPRimePublicKeyParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.SNTRUPrimeParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.SNTRUPrimePublicKeyParameters;
-import org.bouncycastle.pqc.crypto.picnic.PicnicParameters;
-import org.bouncycastle.pqc.crypto.picnic.PicnicPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.rainbow.RainbowParameters;
-import org.bouncycastle.pqc.crypto.rainbow.RainbowPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.saber.SABERParameters;
 import org.bouncycastle.pqc.crypto.saber.SABERPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAParameters;
 import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.snova.SnovaParameters;
 import org.bouncycastle.pqc.crypto.snova.SnovaPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.sqisign.SQIsignParameters;
+import org.bouncycastle.pqc.crypto.sqisign.SQIsignPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.sphincs.SPHINCSPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusParameters;
-import org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSMTParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSMTPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSPublicKeyParameters;
+import org.bouncycastle.pqc.legacy.bike.BIKEParameters;
+import org.bouncycastle.pqc.legacy.bike.BIKEPublicKeyParameters;
+import org.bouncycastle.pqc.legacy.picnic.PicnicParameters;
+import org.bouncycastle.pqc.legacy.picnic.PicnicPublicKeyParameters;
+import org.bouncycastle.pqc.legacy.rainbow.RainbowParameters;
+import org.bouncycastle.pqc.legacy.rainbow.RainbowPublicKeyParameters;
+import org.bouncycastle.pqc.legacy.sphincsplus.SPHINCSPlusParameters;
+import org.bouncycastle.pqc.legacy.sphincsplus.SPHINCSPlusPublicKeyParameters;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Pack;
 
@@ -89,6 +110,8 @@ public class PublicKeyFactory
         converters.put(PQCObjectIdentifiers.xmss_mt, new XMSSMTConverter());
         converters.put(IsaraObjectIdentifiers.id_alg_xmss, new XMSSConverter());
         converters.put(IsaraObjectIdentifiers.id_alg_xmssmt, new XMSSMTConverter());
+        converters.put(IANAObjectIdentifiers.id_alg_xmss_hashsig, new XMSSConverter());
+        converters.put(IANAObjectIdentifiers.id_alg_xmssmt_hashsig, new XMSSMTConverter());
         converters.put(PKCSObjectIdentifiers.id_alg_hss_lms_hashsig, new LMSConverter());
         converters.put(BCObjectIdentifiers.sphincsPlus, new SPHINCSPlusConverter());
 
@@ -214,9 +237,6 @@ public class PublicKeyFactory
         converters.put(BCObjectIdentifiers.dilithium2, new DilithiumConverter());
         converters.put(BCObjectIdentifiers.dilithium3, new DilithiumConverter());
         converters.put(BCObjectIdentifiers.dilithium5, new DilithiumConverter());
-        converters.put(BCObjectIdentifiers.dilithium2_aes, new DilithiumConverter());
-        converters.put(BCObjectIdentifiers.dilithium3_aes, new DilithiumConverter());
-        converters.put(BCObjectIdentifiers.dilithium5_aes, new DilithiumConverter());
         converters.put(BCObjectIdentifiers.bike128, new BIKEConverter());
         converters.put(BCObjectIdentifiers.bike192, new BIKEConverter());
         converters.put(BCObjectIdentifiers.bike256, new BIKEConverter());
@@ -305,9 +325,116 @@ public class PublicKeyFactory
         converters.put(BCObjectIdentifiers.snova_75_33_2_shake_esk, new SnovaConverter());
         converters.put(BCObjectIdentifiers.snova_75_33_2_shake_ssk, new SnovaConverter());
 
-        converters.put(BCObjectIdentifiers.ntruPlus768, new NTRUPlusConverter());
-        converters.put(BCObjectIdentifiers.ntruPlus864, new NTRUPlusConverter());
-        converters.put(BCObjectIdentifiers.ntruPlus1152, new NTRUPlusConverter());
+        converters.put(BCObjectIdentifiers.ntruplus768, new NTRUPlusConverter());
+        converters.put(BCObjectIdentifiers.ntruplus864, new NTRUPlusConverter());
+        converters.put(BCObjectIdentifiers.ntruplus1152, new NTRUPlusConverter());
+
+        converters.put(BCObjectIdentifiers.aimer_128f, new AIMerConverter());
+        converters.put(BCObjectIdentifiers.aimer_128s, new AIMerConverter());
+        converters.put(BCObjectIdentifiers.aimer_192f, new AIMerConverter());
+        converters.put(BCObjectIdentifiers.aimer_192s, new AIMerConverter());
+        converters.put(BCObjectIdentifiers.aimer_256f, new AIMerConverter());
+        converters.put(BCObjectIdentifiers.aimer_256s, new AIMerConverter());
+
+        converters.put(BCObjectIdentifiers.hawk256, new HawkConverter());
+        converters.put(BCObjectIdentifiers.hawk512, new HawkConverter());
+        converters.put(BCObjectIdentifiers.hawk1024, new HawkConverter());
+
+        converters.put(BCObjectIdentifiers.faest_128s, new FaestConverter());
+        converters.put(BCObjectIdentifiers.faest_128f, new FaestConverter());
+        converters.put(BCObjectIdentifiers.faest_192s, new FaestConverter());
+        converters.put(BCObjectIdentifiers.faest_192f, new FaestConverter());
+        converters.put(BCObjectIdentifiers.faest_256s, new FaestConverter());
+        converters.put(BCObjectIdentifiers.faest_256f, new FaestConverter());
+        converters.put(BCObjectIdentifiers.faest_em_128s, new FaestConverter());
+        converters.put(BCObjectIdentifiers.faest_em_128f, new FaestConverter());
+        converters.put(BCObjectIdentifiers.faest_em_192s, new FaestConverter());
+        converters.put(BCObjectIdentifiers.faest_em_192f, new FaestConverter());
+        converters.put(BCObjectIdentifiers.faest_em_256s, new FaestConverter());
+        converters.put(BCObjectIdentifiers.faest_em_256f, new FaestConverter());
+        converters.put(BCObjectIdentifiers.qruov1q127L3v156m54, new QRUOVConverter());
+        converters.put(BCObjectIdentifiers.qruov1q31L3v165m60, new QRUOVConverter());
+        converters.put(BCObjectIdentifiers.qruov1q31L10v600m70, new QRUOVConverter());
+        converters.put(BCObjectIdentifiers.qruov1q7L10v740m100, new QRUOVConverter());
+        converters.put(BCObjectIdentifiers.qruov3q127L3v228m78, new QRUOVConverter());
+        converters.put(BCObjectIdentifiers.qruov3q31L3v246m87, new QRUOVConverter());
+        converters.put(BCObjectIdentifiers.qruov3q31L10v890m100, new QRUOVConverter());
+        converters.put(BCObjectIdentifiers.qruov3q7L10v1100m140, new QRUOVConverter());
+        converters.put(BCObjectIdentifiers.qruov5q127L3v306m105, new QRUOVConverter());
+        converters.put(BCObjectIdentifiers.qruov5q31L3v324m114, new QRUOVConverter());
+        converters.put(BCObjectIdentifiers.qruov5q31L10v1120m120, new QRUOVConverter());
+        converters.put(BCObjectIdentifiers.qruov5q7L10v1490m190, new QRUOVConverter());
+
+        converters.put(BCObjectIdentifiers.sqisign_lvl1, new SQIsignConverter());
+        converters.put(BCObjectIdentifiers.sqisign_lvl3, new SQIsignConverter());
+        converters.put(BCObjectIdentifiers.sqisign_lvl5, new SQIsignConverter());
+
+        converters.put(BCObjectIdentifiers.haetae2, new HaetaeConverter());
+        converters.put(BCObjectIdentifiers.haetae3, new HaetaeConverter());
+        converters.put(BCObjectIdentifiers.haetae5, new HaetaeConverter());
+
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf2_fast_r3,     new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf2_fast_r5,     new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf2_short_r3,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf2_short_r5,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf16_fast_r3,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf16_fast_r5,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf16_short_r3,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf16_short_r5,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf256_fast_r3,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf256_fast_r5,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf256_short_r3,  new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat1_gf256_short_r5,  new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf2_fast_r3,     new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf2_fast_r5,     new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf2_short_r3,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf2_short_r5,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf16_fast_r3,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf16_fast_r5,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf16_short_r3,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf16_short_r5,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf256_fast_r3,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf256_fast_r5,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf256_short_r3,  new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat3_gf256_short_r5,  new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf2_fast_r3,     new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf2_fast_r5,     new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf2_short_r3,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf2_short_r5,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf16_fast_r3,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf16_fast_r5,    new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf16_short_r3,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf16_short_r5,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf256_fast_r3,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf256_fast_r5,   new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf256_short_r3,  new MQOMConverter());
+        converters.put(BCObjectIdentifiers.mqom2_cat5_gf256_short_r5,  new MQOMConverter());
+
+        converters.put(BCObjectIdentifiers.uov_Is_classic,   new UOVConverter());
+        converters.put(BCObjectIdentifiers.uov_Is_pkc,       new UOVConverter());
+        converters.put(BCObjectIdentifiers.uov_Is_pkc_skc,   new UOVConverter());
+        converters.put(BCObjectIdentifiers.uov_Ip_classic,   new UOVConverter());
+        converters.put(BCObjectIdentifiers.uov_Ip_pkc,       new UOVConverter());
+        converters.put(BCObjectIdentifiers.uov_Ip_pkc_skc,   new UOVConverter());
+        converters.put(BCObjectIdentifiers.uov_III_classic,  new UOVConverter());
+        converters.put(BCObjectIdentifiers.uov_III_pkc,      new UOVConverter());
+        converters.put(BCObjectIdentifiers.uov_III_pkc_skc,  new UOVConverter());
+        converters.put(BCObjectIdentifiers.uov_V_classic,    new UOVConverter());
+        converters.put(BCObjectIdentifiers.uov_V_pkc,        new UOVConverter());
+        converters.put(BCObjectIdentifiers.uov_V_pkc_skc,    new UOVConverter());
+
+        converters.put(BCObjectIdentifiers.sdith_hypercube_cat1_gf256, new SDitHConverter());
+        converters.put(BCObjectIdentifiers.sdith_hypercube_cat3_gf256, new SDitHConverter());
+        converters.put(BCObjectIdentifiers.sdith_hypercube_cat5_gf256, new SDitHConverter());
+        converters.put(BCObjectIdentifiers.sdith_hypercube_cat1_p251, new SDitHConverter());
+        converters.put(BCObjectIdentifiers.sdith_hypercube_cat3_p251, new SDitHConverter());
+        converters.put(BCObjectIdentifiers.sdith_hypercube_cat5_p251, new SDitHConverter());
+        converters.put(BCObjectIdentifiers.sdith_threshold_cat1_gf256, new SDitHConverter());
+        converters.put(BCObjectIdentifiers.sdith_threshold_cat3_gf256, new SDitHConverter());
+        converters.put(BCObjectIdentifiers.sdith_threshold_cat5_gf256, new SDitHConverter());
+        converters.put(BCObjectIdentifiers.sdith_threshold_cat1_p251, new SDitHConverter());
+        converters.put(BCObjectIdentifiers.sdith_threshold_cat3_p251, new SDitHConverter());
+        converters.put(BCObjectIdentifiers.sdith_threshold_cat5_p251, new SDitHConverter());
     }
 
     /**
@@ -437,11 +564,36 @@ public class PublicKeyFactory
             }
             else
             {
-                byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePublicKey()).getOctets();
+                // RFC 9802 carries the raw RFC 8391 key; the legacy draft form wrapped it in an OCTET STRING.
+                byte[] keyEnc = keyInfo.getPublicKeyData().getOctets();
+                ASN1OctetString data = Utils.parseOctetData(keyEnc);
 
-                return new XMSSPublicKeyParameters
-                    .Builder(XMSSParameters.lookupByOID(Pack.bigEndianToInt(keyEnc, 0)))
-                    .withPublicKey(keyEnc).build();
+                if (data != null)
+                {
+                    keyEnc = data.getOctets();
+                }
+
+                if (keyEnc.length < 4)
+                {
+                    throw new IOException("XMSS public key data too short");
+                }
+
+                XMSSParameters parameters = XMSSParameters.lookupByOID(Pack.bigEndianToInt(keyEnc, 0));
+                if (parameters == null)
+                {
+                    throw new IOException("unknown XMSS public key OID: " + Pack.bigEndianToInt(keyEnc, 0));
+                }
+
+                try
+                {
+                    return new XMSSPublicKeyParameters
+                        .Builder(parameters)
+                        .withPublicKey(keyEnc).build();
+                }
+                catch (IllegalArgumentException e)
+                {
+                    throw new IOException("malformed XMSS public key: " + e.getMessage());
+                }
             }
         }
     }
@@ -467,11 +619,36 @@ public class PublicKeyFactory
             }
             else
             {
-                byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePublicKey()).getOctets();
+                // RFC 9802 carries the raw RFC 8391 key; the legacy draft form wrapped it in an OCTET STRING.
+                byte[] keyEnc = keyInfo.getPublicKeyData().getOctets();
+                ASN1OctetString data = Utils.parseOctetData(keyEnc);
 
-                return new XMSSMTPublicKeyParameters
-                    .Builder(XMSSMTParameters.lookupByOID(Pack.bigEndianToInt(keyEnc, 0)))
-                    .withPublicKey(keyEnc).build();
+                if (data != null)
+                {
+                    keyEnc = data.getOctets();
+                }
+
+                if (keyEnc.length < 4)
+                {
+                    throw new IOException("XMSS^MT public key data too short");
+                }
+
+                XMSSMTParameters parameters = XMSSMTParameters.lookupByOID(Pack.bigEndianToInt(keyEnc, 0));
+                if (parameters == null)
+                {
+                    throw new IOException("unknown XMSS^MT public key OID: " + Pack.bigEndianToInt(keyEnc, 0));
+                }
+
+                try
+                {
+                    return new XMSSMTPublicKeyParameters
+                        .Builder(parameters)
+                        .withPublicKey(keyEnc).build();
+                }
+                catch (IllegalArgumentException e)
+                {
+                    throw new IOException("malformed XMSS^MT public key: " + e.getMessage());
+                }
             }
         }
     }
@@ -899,6 +1076,62 @@ public class PublicKeyFactory
         }
     }
 
+    private static class SQIsignConverter
+        extends SubjectPublicKeyInfoConverter
+    {
+        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
+            throws IOException
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePublicKey()).getOctets();
+
+            SQIsignParameters sqisignParams = Utils.sqisignParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
+
+            return new SQIsignPublicKeyParameters(sqisignParams, keyEnc);
+        }
+    }
+
+    private static class FaestConverter
+        extends SubjectPublicKeyInfoConverter
+    {
+        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
+            throws IOException
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePublicKey()).getOctets();
+
+            FaestParameters faestParams = Utils.faestParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
+
+            return new FaestPublicKeyParameters(faestParams, keyEnc);
+        }
+    }
+
+    private static class QRUOVConverter
+        extends SubjectPublicKeyInfoConverter
+    {
+        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
+            throws IOException
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePublicKey()).getOctets();
+
+            QRUOVParameters qruovParams = Utils.qruovParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
+
+            return new QRUOVPublicKeyParameters(qruovParams, keyEnc);
+        }
+    }
+
+    private static class HaetaeConverter
+        extends SubjectPublicKeyInfoConverter
+    {
+        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
+            throws IOException
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePublicKey()).getOctets();
+
+            HAETAEParameters haetaeParams = Utils.haetaeParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
+
+            return new HAETAEPublicKeyParameters(haetaeParams, keyEnc);
+        }
+    }
+
     private static class NTRUPlusConverter
         extends SubjectPublicKeyInfoConverter
     {
@@ -910,6 +1143,67 @@ public class PublicKeyFactory
             NTRUPlusParameters ntruPlusParams = Utils.ntruPlusParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
 
             return new NTRUPlusPublicKeyParameters(ntruPlusParams, keyEnc);
+        }
+    }
+
+    private static class AIMerConverter
+        extends SubjectPublicKeyInfoConverter
+    {
+        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
+            throws IOException
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePublicKey()).getOctets();
+
+            AIMerParameters aimerParams = Utils.aimerParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
+
+            return new AIMerPublicKeyParameters(aimerParams, keyEnc);
+        }
+    }
+
+    private static class HawkConverter
+        extends SubjectPublicKeyInfoConverter
+    {
+        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
+            throws IOException
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePublicKey()).getOctets();
+
+            HawkParameters hawkParams = Utils.hawkParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
+
+            return new HawkPublicKeyParameters(hawkParams, keyEnc, 0, keyEnc.length);
+        }
+    }
+
+    static class MQOMConverter
+        extends SubjectPublicKeyInfoConverter
+    {
+        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
+            throws IOException
+        {
+            MQOMParameters mqomParams = Utils.mqomParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
+            return new MQOMPublicKeyParameters(mqomParams, keyInfo.getPublicKeyData().getOctets());
+        }
+    }
+
+    static class UOVConverter
+        extends SubjectPublicKeyInfoConverter
+    {
+        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
+            throws IOException
+        {
+            UOVParameters params = Utils.uovParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
+            return new UOVPublicKeyParameters(params, keyInfo.getPublicKeyData().getOctets());
+        }
+    }
+
+    static class SDitHConverter
+        extends SubjectPublicKeyInfoConverter
+    {
+        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
+            throws IOException
+        {
+            SDitHParameters params = Utils.sdithParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
+            return new SDitHPublicKeyParameters(params, keyInfo.getPublicKeyData().getOctets());
         }
     }
 }

@@ -27,6 +27,8 @@ import java.util.Enumeration;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.bouncycastle.asn1.bc.EncryptedObjectStoreData;
@@ -50,6 +52,7 @@ import org.bouncycastle.internal.asn1.misc.ScryptParams;
 import org.bouncycastle.jcajce.BCFKSLoadStoreParameter;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Properties;
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.Hex;
 import org.bouncycastle.util.test.SimpleTest;
@@ -1127,6 +1130,58 @@ public class BCFKSStoreTest
         checkOneSecretKey(new SecretKeySpec(Hex.decode("000102030405060708090a0b0c0d0e0f"), "AES"), testPassword);
     }
 
+    // Regression test for https://github.com/bcgit/bc-java/issues/2164
+    public void shouldStoreOnePBEKey()
+        throws Exception
+    {
+        char[] pwd = "secretPassword".toCharArray();
+        byte[] salt = Hex.decode("0001020304050607");
+        int iterations = 4096;
+
+        SecretKeyFactory kFact = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256", "BC");
+        SecretKey pbeKey = kFact.generateSecret(new PBEKeySpec(pwd, salt, iterations, 256));
+
+        isTrue("not a PBEKey", pbeKey instanceof javax.crypto.interfaces.PBEKey);
+        String origAlg = pbeKey.getAlgorithm();
+        byte[] origEncoded = pbeKey.getEncoded();
+
+        KeyStore store1 = KeyStore.getInstance("BCFKS", "BC");
+        store1.load(null, null);
+        store1.setKeyEntry("pbeKey", pbeKey, testPassword, null);
+
+        isTrue("size != 1", 1 == store1.size());
+
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+        store1.store(bOut, testPassword);
+
+        KeyStore store2 = KeyStore.getInstance("BCFKS", "BC");
+        store2.load(new ByteArrayInputStream(bOut.toByteArray()), testPassword);
+
+        Key recovered = store2.getKey("pbeKey", testPassword);
+        isTrue("recovered key not a PBEKey", recovered instanceof javax.crypto.interfaces.PBEKey);
+
+        javax.crypto.interfaces.PBEKey rPbe = (javax.crypto.interfaces.PBEKey)recovered;
+        isTrue("password mismatch", Arrays.areEqual(pwd, rPbe.getPassword()));
+        isTrue("salt mismatch", Arrays.areEqual(salt, rPbe.getSalt()));
+        isEquals(iterations, rPbe.getIterationCount());
+        isTrue("algorithm mismatch: " + rPbe.getAlgorithm(), origAlg.equals(rPbe.getAlgorithm()));
+        isTrue("encoded mismatch", Arrays.areEqual(origEncoded, rPbe.getEncoded()));
+
+        // chain must be rejected
+        try
+        {
+            KeyStore badStore = KeyStore.getInstance("BCFKS", "BC");
+            badStore.load(null, null);
+            badStore.setKeyEntry("pbeKey", pbeKey, testPassword, new java.security.cert.Certificate[0]);
+            fail("no exception on PBE key with chain");
+        }
+        catch (KeyStoreException e)
+        {
+            isTrue("unexpected message: " + e.getMessage(),
+                e.getMessage().equals("BCFKS KeyStore cannot store certificate chain with PBE key."));
+        }
+    }
+
     private void checkOneSecretKey(SecretKey key, char[] passwd)
         throws Exception
     {
@@ -1490,6 +1545,69 @@ public class BCFKSStoreTest
         doStoreUsingPBKDF2(PBKDF2Config.PRF_SHA3_512);
     }
 
+    // The integrity-MAC key is derived from KDF parameters carried in the (not-yet-verified)
+    // keystore, so an attacker-supplied cost must be bounded before the derivation runs. Stored
+    // here with modest costs, then loaded with the bound lowered below them to confirm the guard
+    // fires before the (expensive) derivation.
+    private void shouldRejectExcessiveMacKdfCost()
+        throws Exception
+    {
+        byte[] pbkdf2Enc = doStoreUsingStoreParameter(new PBKDF2Config.Builder()
+            .withPRF(PBKDF2Config.PRF_SHA512)
+            .withIterationCount(1024)
+            .withSaltLength(20).build());
+
+        String oldIt = System.getProperty(Properties.BCFKS_MAX_IT_COUNT);
+        System.setProperty(Properties.BCFKS_MAX_IT_COUNT, "100");
+        try
+        {
+            KeyStore ks = KeyStore.getInstance("BCFKS", "BC");
+            ks.load(new ByteArrayInputStream(pbkdf2Enc), testPassword);
+            fail("excessive BCFKS MAC iteration count accepted");
+        }
+        catch (IOException e)
+        {
+            isTrue("unexpected message: " + e.getMessage(), e.getMessage().indexOf("greater than 100") >= 0);
+        }
+        finally
+        {
+            restoreProperty(Properties.BCFKS_MAX_IT_COUNT, oldIt);
+        }
+
+        byte[] scryptEnc = doStoreUsingStoreParameter(new ScryptConfig.Builder(1024, 8, 1)
+            .withSaltLength(20).build());
+
+        String oldMem = System.getProperty(Properties.BCFKS_MAX_SCRYPT_MEMORY);
+        System.setProperty(Properties.BCFKS_MAX_SCRYPT_MEMORY, "1024");
+        try
+        {
+            KeyStore ks = KeyStore.getInstance("BCFKS", "BC");
+            ks.load(new ByteArrayInputStream(scryptEnc), testPassword);
+            fail("excessive BCFKS scrypt cost accepted");
+        }
+        catch (IOException e)
+        {
+            isTrue("unexpected message: " + e.getMessage(),
+                e.getMessage().indexOf("scrypt cost parameters require more than") >= 0);
+        }
+        finally
+        {
+            restoreProperty(Properties.BCFKS_MAX_SCRYPT_MEMORY, oldMem);
+        }
+    }
+
+    private static void restoreProperty(String name, String old)
+    {
+        if (old == null)
+        {
+            System.clearProperty(name);
+        }
+        else
+        {
+            System.setProperty(name, old);
+        }
+    }
+
     private void doStoreUsingPBKDF2(AlgorithmIdentifier prf)
         throws Exception
     {
@@ -1630,9 +1748,11 @@ public class BCFKSStoreTest
         shouldStoreOnePrivateKey();
         shouldStoreOnePrivateKeyWithChain();
         shouldStoreOneSecretKey();
+        shouldStoreOnePBEKey();
         shouldStoreSecretKeys();
         shouldStoreUsingSCRYPT();
         shouldStoreUsingPBKDF2();
+        shouldRejectExcessiveMacKdfCost();
         shouldFailOnWrongPassword();
         shouldParseKWPKeyStore();
         shouldFailOnRemovesOrOverwrite();

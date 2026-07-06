@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.io.PipedInputStream;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
+import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.Security;
@@ -27,8 +28,10 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters;
 import org.bouncycastle.crypto.params.RSAPrivateCrtKeyParameters;
 import org.bouncycastle.crypto.util.PrivateKeyFactory;
+import org.bouncycastle.crypto.util.SubjectPublicKeyInfoFactory;
 import org.bouncycastle.test.TestResourceFinder;
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.BasicTlsPSKIdentity;
@@ -36,6 +39,7 @@ import org.bouncycastle.tls.Certificate;
 import org.bouncycastle.tls.CertificateEntry;
 import org.bouncycastle.tls.CertificateKeySelection;
 import org.bouncycastle.tls.CertificateKeySelectionType;
+import org.bouncycastle.tls.CertificateType;
 import org.bouncycastle.tls.ProtocolVersion;
 import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
@@ -46,15 +50,16 @@ import org.bouncycastle.tls.TlsCredentialedDecryptor;
 import org.bouncycastle.tls.TlsCredentialedSigner;
 import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.TlsPSKIdentity;
-import org.bouncycastle.tls.TlsServerCertificate;
 import org.bouncycastle.tls.TlsUtils;
 import org.bouncycastle.tls.crypto.TlsCertificate;
 import org.bouncycastle.tls.crypto.TlsCrypto;
+import org.bouncycastle.tls.crypto.TlsCryptoException;
 import org.bouncycastle.tls.crypto.TlsCryptoParameters;
 import org.bouncycastle.tls.crypto.impl.bc.BcDefaultTlsCredentialedAgreement;
 import org.bouncycastle.tls.crypto.impl.bc.BcDefaultTlsCredentialedDecryptor;
 import org.bouncycastle.tls.crypto.impl.bc.BcDefaultTlsCredentialedSigner;
 import org.bouncycastle.tls.crypto.impl.bc.BcTlsCrypto;
+import org.bouncycastle.tls.crypto.impl.bc.BcTlsRawKeyCertificate;
 import org.bouncycastle.tls.crypto.impl.jcajce.JcaDefaultTlsCredentialedSigner;
 import org.bouncycastle.tls.crypto.impl.jcajce.JcaTlsCrypto;
 import org.bouncycastle.tls.crypto.impl.jcajce.JceDefaultTlsCredentialedAgreement;
@@ -125,7 +130,7 @@ public class TlsTestUtils
 
     static String getCACertResource(short signatureAlgorithm) throws IOException
     {
-        return "x509-ca-" + getResourceName(signatureAlgorithm) + ".pem";
+        return "x509-ca-" + getResourceName12(signatureAlgorithm, false) + ".pem";
     }
 
     static String getCACertResource(String eeCertResource) throws IOException
@@ -270,7 +275,7 @@ public class TlsTestUtils
 
     static String getCACertResource13(int signatureScheme) throws IOException
     {
-        return "x509-ca-" + getResourceName13(signatureScheme) + ".pem";
+        return "x509-ca-" + getResourceName13(signatureScheme, false) + ".pem";
     }
 
     static String getPSKPassword(boolean badKey)
@@ -283,15 +288,30 @@ public class TlsTestUtils
         return Strings.toUTF8ByteArray(getPSKPassword(badKey));
     }
 
-    static String getResourceName(short signatureAlgorithm) throws IOException
+    static String getResourceName12(short signatureAlgorithm, boolean forServer) throws IOException
+    {
+        String resourceName = findResourceName12(signatureAlgorithm, forServer);
+        if (resourceName == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+        return resourceName;
+    }
+
+    static String getResourceName13(int signatureScheme, boolean forServer) throws IOException
+    {
+        String resourceName = findResourceName13(signatureScheme, forServer);
+        if (resourceName == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+        return resourceName;
+    }
+
+    public static String findResourceName12(short signatureAlgorithm, boolean forServer)
     {
         switch (signatureAlgorithm)
         {
-        case SignatureAlgorithm.rsa:
-        case SignatureAlgorithm.rsa_pss_rsae_sha256:
-        case SignatureAlgorithm.rsa_pss_rsae_sha384:
-        case SignatureAlgorithm.rsa_pss_rsae_sha512:
-            return "rsa";
         case SignatureAlgorithm.dsa:
             return "dsa";
         case SignatureAlgorithm.ecdsa:
@@ -306,24 +326,41 @@ public class TlsTestUtils
             return "rsa_pss_384";
         case SignatureAlgorithm.rsa_pss_pss_sha512:
             return "rsa_pss_512";
+        case SignatureAlgorithm.rsa:
+        case SignatureAlgorithm.rsa_pss_rsae_sha256:
+        case SignatureAlgorithm.rsa_pss_rsae_sha384:
+        case SignatureAlgorithm.rsa_pss_rsae_sha512:
+            return forServer ? "rsa-sign" : "rsa";
 
         // TODO[RFC 9189] Choose names here and apply reverse mappings in getCACertResource(String)
         case SignatureAlgorithm.gostr34102012_256:
         case SignatureAlgorithm.gostr34102012_512:
 
         default:
-            throw new TlsFatalAlert(AlertDescription.internal_error);
+            return null;
         }
     }
 
-    static String getResourceName13(int signatureScheme) throws IOException
+    public static String findResourceName13(int signatureScheme, boolean forServer)
     {
         switch (signatureScheme)
         {
+        case SignatureScheme.ecdsa_secp256r1_sha256:
+            return "ecdsa";
         case SignatureScheme.ed25519:
             return "ed25519";
         case SignatureScheme.ed448:
             return "ed448";
+        case SignatureScheme.rsa_pss_pss_sha256:
+            return "rsa_pss_256";
+        case SignatureScheme.rsa_pss_pss_sha384:
+            return "rsa_pss_384";
+        case SignatureScheme.rsa_pss_pss_sha512:
+            return "rsa_pss_512";
+        case SignatureScheme.rsa_pss_rsae_sha256:
+        case SignatureScheme.rsa_pss_rsae_sha384:
+        case SignatureScheme.rsa_pss_rsae_sha512:
+            return forServer ? "rsa-sign" : "rsa";
         case SignatureScheme.mldsa44:
             return "ml_dsa_44";
         case SignatureScheme.mldsa65:
@@ -354,8 +391,19 @@ public class TlsTestUtils
             return "slh_dsa_shake_256s";
         case SignatureScheme.DRAFT_slhdsa_shake_256f:
             return "slh_dsa_shake_256f";
+
+        // TODO[tls] Add test resources for these
+        case SignatureScheme.ecdsa_brainpoolP256r1tls13_sha256:
+        case SignatureScheme.ecdsa_brainpoolP384r1tls13_sha384:
+        case SignatureScheme.ecdsa_brainpoolP512r1tls13_sha512:
+        case SignatureScheme.ecdsa_secp384r1_sha384:
+        case SignatureScheme.ecdsa_secp521r1_sha512:
+
+        // TODO[RFC 8998]
+        case SignatureScheme.sm2sig_sm3:
+
         default:
-            throw new TlsFatalAlert(AlertDescription.internal_error);
+            return null;
         }
     }
 
@@ -575,22 +623,58 @@ public class TlsTestUtils
     static TlsCredentialedSigner loadSignerCredentialsServer(TlsContext context, Vector supportedSignatureAlgorithms,
         short signatureAlgorithm) throws IOException
     {
-        String sigName = getResourceName(signatureAlgorithm);
-
-        switch (signatureAlgorithm)
-        {
-        case SignatureAlgorithm.rsa:
-        case SignatureAlgorithm.rsa_pss_rsae_sha256:
-        case SignatureAlgorithm.rsa_pss_rsae_sha384:
-        case SignatureAlgorithm.rsa_pss_rsae_sha512:
-            sigName += "-sign";
-            break;
-        }
+        String sigName = getResourceName12(signatureAlgorithm, true);
 
         String certResource = "x509-server-" + sigName + ".pem";
         String keyResource = "x509-server-key-" + sigName + ".pem";
 
         return loadSignerCredentials(context, supportedSignatureAlgorithms, signatureAlgorithm, certResource, keyResource);
+    }
+
+    /**
+     * Build a fresh Ed25519 raw public key (RFC 7250) signer credential for the connection's crypto
+     * backend, exercising either {@code BcTlsRawKeyCertificate} or {@code JcaTlsRawKeyCertificate}.
+     */
+    static TlsCredentialedSigner createRawKeyEd25519Credentials(TlsContext context) throws IOException
+    {
+        TlsCrypto crypto = context.getCrypto();
+        byte[] certificateRequestContext = TlsUtils.isTLSv13(context) ? TlsUtils.EMPTY_BYTES : null;
+
+        if (crypto instanceof BcTlsCrypto)
+        {
+            BcTlsCrypto bcCrypto = (BcTlsCrypto)crypto;
+
+            Ed25519PrivateKeyParameters privateKey = new Ed25519PrivateKeyParameters(bcCrypto.getSecureRandom());
+            TlsCertificate rawKeyCert = new BcTlsRawKeyCertificate(bcCrypto,
+                SubjectPublicKeyInfoFactory.createSubjectPublicKeyInfo(privateKey.generatePublicKey()));
+            Certificate certificate = new Certificate(CertificateType.RawPublicKey, certificateRequestContext,
+                new CertificateEntry[]{ new CertificateEntry(rawKeyCert, null) });
+
+            return new BcDefaultTlsCredentialedSigner(new TlsCryptoParameters(context), bcCrypto, privateKey,
+                certificate, SignatureAndHashAlgorithm.ed25519);
+        }
+        else
+        {
+            JcaTlsCrypto jcaCrypto = (JcaTlsCrypto)crypto;
+
+            KeyPair keyPair;
+            try
+            {
+                keyPair = jcaCrypto.getHelper().createKeyPairGenerator("Ed25519").generateKeyPair();
+            }
+            catch (GeneralSecurityException e)
+            {
+                throw new TlsCryptoException("unable to generate Ed25519 key pair", e);
+            }
+
+            TlsCertificate rawKeyCert = jcaCrypto.createCertificate(CertificateType.RawPublicKey,
+                keyPair.getPublic().getEncoded());
+            Certificate certificate = new Certificate(CertificateType.RawPublicKey, certificateRequestContext,
+                new CertificateEntry[]{ new CertificateEntry(rawKeyCert, null) });
+
+            return new JcaDefaultTlsCredentialedSigner(new TlsCryptoParameters(context), jcaCrypto,
+                keyPair.getPrivate(), certificate, SignatureAndHashAlgorithm.ed25519);
+        }
     }
 
     static Certificate loadCertificateChain(ProtocolVersion protocolVersion, TlsCrypto crypto, String[] resources)

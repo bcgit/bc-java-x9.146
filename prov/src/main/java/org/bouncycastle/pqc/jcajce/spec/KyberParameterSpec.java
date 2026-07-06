@@ -4,7 +4,7 @@ import java.security.spec.AlgorithmParameterSpec;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.bouncycastle.pqc.crypto.mlkem.MLKEMParameters;
+import org.bouncycastle.crypto.params.MLKEMParameters;
 import org.bouncycastle.util.Strings;
 
 public class KyberParameterSpec
@@ -18,6 +18,13 @@ public class KyberParameterSpec
 
     static
     {
+        // getName() returns the ML-KEM name (e.g. "ML-KEM-512"), so it must be a key
+        // for fromName(getName()) to round-trip; the legacy "kyber*" names are kept as
+        // aliases. Mirrors org.bouncycastle.jcajce.spec.MLKEMParameterSpec.
+        parameters.put("ml-kem-512", kyber512);
+        parameters.put("ml-kem-768", kyber768);
+        parameters.put("ml-kem-1024", kyber1024);
+
         parameters.put("kyber512", kyber512);
         parameters.put("kyber768", kyber768);
         parameters.put("kyber1024", kyber1024);

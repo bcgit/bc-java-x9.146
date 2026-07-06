@@ -80,12 +80,14 @@ public abstract class ECFieldElement
 
     public String toString()
     {
-        return this.toBigInteger().toString(16);
+        return toBigInteger().toString(16);
     }
 
     public byte[] getEncoded()
     {
-        return BigIntegers.asUnsignedByteArray(getEncodedLength(), toBigInteger());
+        byte[] buf = new byte[getEncodedLength()];
+        encodeTo(buf, 0);
+        return buf;
     }
 
     public int getEncodedLength()
@@ -507,7 +509,7 @@ public abstract class ECFieldElement
 //            }
 
             int n = (m + 1) >>> 1;
-            int k = 31 - Integers.numberOfLeadingZeros(n);
+            int k = Integers.bitLength(n) - 1;
             int nk = 1;
 
             ECFieldElement ht = this;
@@ -539,7 +541,7 @@ public abstract class ECFieldElement
 //                tr = tr.square().add(this);
 //            }
 
-            int k = 31 - Integers.numberOfLeadingZeros(m);
+            int k = Integers.bitLength(m) - 1;
             int mk = 1;
 
             ECFieldElement tr = this;

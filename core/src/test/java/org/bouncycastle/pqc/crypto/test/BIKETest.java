@@ -8,13 +8,13 @@ import java.util.HashMap;
 import junit.framework.TestCase;
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
 import org.bouncycastle.crypto.SecretWithEncapsulation;
-import org.bouncycastle.pqc.crypto.bike.BIKEKEMExtractor;
-import org.bouncycastle.pqc.crypto.bike.BIKEKEMGenerator;
-import org.bouncycastle.pqc.crypto.bike.BIKEKeyGenerationParameters;
-import org.bouncycastle.pqc.crypto.bike.BIKEKeyPairGenerator;
-import org.bouncycastle.pqc.crypto.bike.BIKEParameters;
-import org.bouncycastle.pqc.crypto.bike.BIKEPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.bike.BIKEPublicKeyParameters;
+import org.bouncycastle.pqc.legacy.bike.BIKEKEMExtractor;
+import org.bouncycastle.pqc.legacy.bike.BIKEKEMGenerator;
+import org.bouncycastle.pqc.legacy.bike.BIKEKeyGenerationParameters;
+import org.bouncycastle.pqc.legacy.bike.BIKEKeyPairGenerator;
+import org.bouncycastle.pqc.legacy.bike.BIKEParameters;
+import org.bouncycastle.pqc.legacy.bike.BIKEPrivateKeyParameters;
+import org.bouncycastle.pqc.legacy.bike.BIKEPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.util.PrivateKeyFactory;
 import org.bouncycastle.pqc.crypto.util.PrivateKeyInfoFactory;
 import org.bouncycastle.pqc.crypto.util.PublicKeyFactory;
@@ -36,8 +36,6 @@ public class BIKETest
     public void testVectors()
         throws Exception
     {
-//        boolean full = System.getProperty("test.full", "false").equals("true");
-
         String[] files;
         files = new String[]{
             "PQCkemKAT_BIKE_3114.rsp",
@@ -133,5 +131,46 @@ public class BIKETest
             }
             // System.out.println("Testing successful!");
         }
+    }
+
+    /**
+     * A ciphertext that fails to decode must be handled by Fujisaki-Okamoto implicit rejection
+     * (returning a pseudo-random shared secret), not by throwing. The decoder previously returned
+     * null on a decoding failure, which surfaced as a NullPointerException out of decapsulation --
+     * an uncaught crash on malformed input and a decryption-failure oracle.
+     */
+    public void testDecodingFailureImplicitRejection()
+        throws Exception
+    {
+        byte[] seed = new byte[48];
+        for (int i = 0; i != seed.length; i++)
+        {
+            seed[i] = (byte)i;
+        }
+
+        NISTSecureRandom random = new NISTSecureRandom(seed, null);
+        BIKEParameters parameters = BIKEParameters.bike128;
+
+        BIKEKeyPairGenerator bikeKeyGen = new BIKEKeyPairGenerator();
+        bikeKeyGen.init(new BIKEKeyGenerationParameters(random, parameters));
+        AsymmetricCipherKeyPair pair = bikeKeyGen.generateKeyPair();
+
+        BIKEKEMGenerator bikekemGenerator = new BIKEKEMGenerator(random);
+        SecretWithEncapsulation enc = bikekemGenerator.generateEncapsulated((BIKEPublicKeyParameters)pair.getPublic());
+        byte[] goodSecret = enc.getSecret();
+
+        // An all-ones ciphertext is a high-weight vector that will not decode, forcing the
+        // decoder's failure path. extractSecret must still return a session key of the correct
+        // length rather than throwing, and (with overwhelming probability) a different one.
+        byte[] badCt = new byte[enc.getEncapsulation().length];
+        Arrays.fill(badCt, (byte)0xFF);
+
+        BIKEKEMExtractor extractor = new BIKEKEMExtractor((BIKEPrivateKeyParameters)pair.getPrivate());
+        byte[] rejectKey = extractor.extractSecret(badCt);
+
+        assertNotNull("decapsulation of a non-decodable ciphertext must not return null", rejectKey);
+        assertEquals(parameters.getSessionKeySize() / 8, rejectKey.length);
+        assertFalse("implicit rejection key must differ from the genuine shared secret",
+            Arrays.areEqual(rejectKey, goodSecret));
     }
 }

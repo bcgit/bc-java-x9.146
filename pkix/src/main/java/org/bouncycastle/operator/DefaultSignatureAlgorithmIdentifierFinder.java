@@ -29,14 +29,38 @@ import org.bouncycastle.asn1.x509.X509ObjectIdentifiers;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.util.Strings;
 
+/**
+ * Default implementation of {@link SignatureAlgorithmIdentifierFinder},
+ * returning the {@code AlgorithmIdentifier} (algorithm OID plus any
+ * algorithm-specific parameters) used to name a signature scheme in
+ * X.509 certificates, CMS SignedData, OCSP responses and related PKIX
+ * structures.
+ *
+ * <p><b>Parameter-field convention for RSA-PSS:</b> when this finder builds
+ * the {@code RSASSA-PSS-params} structure for {@code SHA*WITHRSAANDMGF1}
+ * names, the hash sub-identifier inside the {@code hashAlgorithm} field (and
+ * the inner hash inside {@code MGF1}) is emitted with {@code NULL}
+ * parameters, following
+ * <a href="https://www.rfc-editor.org/rfc/rfc4055#section-2.1">RFC 4055 §2.1</a>
+ * which defines {@code sha256Identifier ::= { id-sha256, NULL }} (and the same
+ * pattern for SHA-1 / SHA-224 / SHA-384 / SHA-512). SHA-3 inside PSS follows
+ * the same NULL-parameter convention here for consistency.</p>
+ *
+ * <p>This is a different convention from
+ * {@link DefaultDigestAlgorithmIdentifierFinder}, which (for the CMS contexts
+ * it serves) follows RFC 5754 §2 and emits SHA-2 / SHA-3 digest identifiers
+ * with the {@code parameters} field <em>absent</em>. Both forms are
+ * standards-compliant in their respective slots; the practical consequence is
+ * that a single CMS SignedData with a PSS SignerInfo will validly contain the
+ * same SHA-2 OID encoded both ways. See the class-level javadoc on
+ * {@link DefaultDigestAlgorithmIdentifierFinder} for the cross-reference.</p>
+ */
 public class DefaultSignatureAlgorithmIdentifierFinder
     implements SignatureAlgorithmIdentifierFinder
 {
     private static Map algorithms = new HashMap();
     private static Set noParams = new HashSet();
     private static Map params = new HashMap();
-    private static Set pkcs15RsaEncryption = new HashSet();
-    private static Map digestOids = new HashMap();
 
     private static void addAlgorithm(String algorithmName, ASN1ObjectIdentifier algOid)
     {
@@ -46,16 +70,6 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         }
 
         algorithms.put(algorithmName, algOid);
-    }
-
-    private static void addDigestOid(ASN1ObjectIdentifier signatureOid, ASN1ObjectIdentifier digestOid)
-    {
-        if (digestOids.containsKey(signatureOid))
-        {
-            throw new IllegalStateException("signatureOid already present in addDigestOid");
-        }
-
-        digestOids.put(signatureOid, digestOid);
     }
 
     private static void addParameters(String algorithmName, ASN1Encodable parameters)
@@ -83,6 +97,8 @@ public class DefaultSignatureAlgorithmIdentifierFinder
 
     static
     {
+        addAlgorithm("COMPOSITE", MiscObjectIdentifiers.id_alg_composite);
+
         addAlgorithm("MD2WITHRSAENCRYPTION", PKCSObjectIdentifiers.md2WithRSAEncryption);
         addAlgorithm("MD2WITHRSA", PKCSObjectIdentifiers.md2WithRSAEncryption);
         addAlgorithm("MD5WITHRSAENCRYPTION", PKCSObjectIdentifiers.md5WithRSAEncryption);
@@ -222,13 +238,13 @@ public class DefaultSignatureAlgorithmIdentifierFinder
 
         addAlgorithm("LMS", PKCSObjectIdentifiers.id_alg_hss_lms_hashsig);
 
-        addAlgorithm("XMSS", IsaraObjectIdentifiers.id_alg_xmss);
+        addAlgorithm("XMSS", IANAObjectIdentifiers.id_alg_xmss_hashsig);   // RFC 9802
         addAlgorithm("XMSS-SHA256", BCObjectIdentifiers.xmss_SHA256);
         addAlgorithm("XMSS-SHA512", BCObjectIdentifiers.xmss_SHA512);
         addAlgorithm("XMSS-SHAKE128", BCObjectIdentifiers.xmss_SHAKE128);
         addAlgorithm("XMSS-SHAKE256", BCObjectIdentifiers.xmss_SHAKE256);
 
-        addAlgorithm("XMSSMT", IsaraObjectIdentifiers.id_alg_xmssmt);
+        addAlgorithm("XMSSMT", IANAObjectIdentifiers.id_alg_xmssmt_hashsig);   // RFC 9802
         addAlgorithm("XMSSMT-SHA256", BCObjectIdentifiers.xmss_mt_SHA256);
         addAlgorithm("XMSSMT-SHA512", BCObjectIdentifiers.xmss_mt_SHA512);
         addAlgorithm("XMSSMT-SHAKE128", BCObjectIdentifiers.xmss_mt_SHAKE128);
@@ -263,9 +279,6 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         addAlgorithm("DILITHIUM2", NISTObjectIdentifiers.id_ml_dsa_44);
         addAlgorithm("DILITHIUM3", NISTObjectIdentifiers.id_ml_dsa_65);
         addAlgorithm("DILITHIUM5", NISTObjectIdentifiers.id_ml_dsa_87);
-        addAlgorithm("DILITHIUM2-AES", BCObjectIdentifiers.dilithium2_aes);
-        addAlgorithm("DILITHIUM3-AES", BCObjectIdentifiers.dilithium3_aes);
-        addAlgorithm("DILITHIUM5-AES", BCObjectIdentifiers.dilithium5_aes);
 
         addAlgorithm("ML-DSA-44", NISTObjectIdentifiers.id_ml_dsa_44);
         addAlgorithm("ML-DSA-65", NISTObjectIdentifiers.id_ml_dsa_65);
@@ -308,7 +321,16 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         addAlgorithm("SHA512WITHPICNIC", BCObjectIdentifiers.picnic_with_sha512);
         addAlgorithm("SHA3-512WITHPICNIC", BCObjectIdentifiers.picnic_with_sha3_512);
         addAlgorithm("SHAKE256WITHPICNIC", BCObjectIdentifiers.picnic_with_shake256);
-        
+
+        addAlgorithm("MAYO-1", BCObjectIdentifiers.mayo1);
+        addAlgorithm("MAYO-2", BCObjectIdentifiers.mayo_2);
+        addAlgorithm("MAYO-3", BCObjectIdentifiers.mayo_3);
+        addAlgorithm("MAYO-5", BCObjectIdentifiers.mayo_5);
+        addAlgorithm("MAYO_1", BCObjectIdentifiers.mayo1);
+        addAlgorithm("MAYO_2", BCObjectIdentifiers.mayo_2);
+        addAlgorithm("MAYO_3", BCObjectIdentifiers.mayo_3);
+        addAlgorithm("MAYO_5", BCObjectIdentifiers.mayo_5);
+
         addAlgorithm("HASHMLDSA44-RSA2048-PSS-SHA256", MiscObjectIdentifiers.id_HashMLDSA44_RSA2048_PSS_SHA256);
         addAlgorithm("HASHMLDSA44-RSA2048-PKCS15-SHA256", MiscObjectIdentifiers.id_HashMLDSA44_RSA2048_PKCS15_SHA256);
         addAlgorithm("HASHMLDSA44-ED25519-SHA512", MiscObjectIdentifiers.id_HashMLDSA44_Ed25519_SHA512);
@@ -367,6 +389,7 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         noParams.add(NISTObjectIdentifiers.id_ecdsa_with_sha3_384);
         noParams.add(NISTObjectIdentifiers.id_ecdsa_with_sha3_512);
 
+        noParams.add(BSIObjectIdentifiers.ecdsa_plain_SHA1);
         noParams.add(BSIObjectIdentifiers.ecdsa_plain_SHA224);
         noParams.add(BSIObjectIdentifiers.ecdsa_plain_SHA256);
         noParams.add(BSIObjectIdentifiers.ecdsa_plain_SHA384);
@@ -454,9 +477,6 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         // Dilithium
         //
         noParams.add(BCObjectIdentifiers.dilithium);
-        noParams.add(BCObjectIdentifiers.dilithium2_aes);
-        noParams.add(BCObjectIdentifiers.dilithium3_aes);
-        noParams.add(BCObjectIdentifiers.dilithium5_aes);
 
         noParams.add(PKCSObjectIdentifiers.id_alg_hss_lms_hashsig);
         noParams.add(NISTObjectIdentifiers.id_ml_dsa_44);
@@ -507,6 +527,8 @@ public class DefaultSignatureAlgorithmIdentifierFinder
 
         noParams.add(IsaraObjectIdentifiers.id_alg_xmss);
         noParams.add(IsaraObjectIdentifiers.id_alg_xmssmt);
+        noParams.add(IANAObjectIdentifiers.id_alg_xmss_hashsig);
+        noParams.add(IANAObjectIdentifiers.id_alg_xmssmt_hashsig);
 
         //
         // qTESLA
@@ -529,7 +551,7 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         noParams.add(EdECObjectIdentifiers.id_Ed25519);
         noParams.add(EdECObjectIdentifiers.id_Ed448);
 
-        // RFC 8692
+        // RFC 8692 (X.509) / RFC 8702 (CMS) - parameters MUST be absent
         noParams.add(X509ObjectIdentifiers.id_rsassa_pss_shake128);
         noParams.add(X509ObjectIdentifiers.id_rsassa_pss_shake256);
         noParams.add(X509ObjectIdentifiers.id_ecdsa_with_shake128);
@@ -574,23 +596,13 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         noParams.add(IANAObjectIdentifiers.id_MLDSA87_RSA3072_PSS_SHA512);
         noParams.add(IANAObjectIdentifiers.id_MLDSA87_RSA4096_PSS_SHA512);
         noParams.add(IANAObjectIdentifiers.id_MLDSA87_ECDSA_P521_SHA512);
+
+        // Mayo - experimental
         //
-        // PKCS 1.5 encrypted  algorithms
-        //
-        pkcs15RsaEncryption.add(PKCSObjectIdentifiers.sha1WithRSAEncryption);
-        pkcs15RsaEncryption.add(PKCSObjectIdentifiers.sha224WithRSAEncryption);
-        pkcs15RsaEncryption.add(PKCSObjectIdentifiers.sha256WithRSAEncryption);
-        pkcs15RsaEncryption.add(PKCSObjectIdentifiers.sha384WithRSAEncryption);
-        pkcs15RsaEncryption.add(PKCSObjectIdentifiers.sha512WithRSAEncryption);
-        pkcs15RsaEncryption.add(PKCSObjectIdentifiers.sha512_224WithRSAEncryption);
-        pkcs15RsaEncryption.add(PKCSObjectIdentifiers.sha512_256WithRSAEncryption);
-        pkcs15RsaEncryption.add(TeleTrusTObjectIdentifiers.rsaSignatureWithripemd128);
-        pkcs15RsaEncryption.add(TeleTrusTObjectIdentifiers.rsaSignatureWithripemd160);
-        pkcs15RsaEncryption.add(TeleTrusTObjectIdentifiers.rsaSignatureWithripemd256);
-        pkcs15RsaEncryption.add(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_224);
-        pkcs15RsaEncryption.add(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_256);
-        pkcs15RsaEncryption.add(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_384);
-        pkcs15RsaEncryption.add(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_512);
+        noParams.add(BCObjectIdentifiers.mayo_1);
+        noParams.add(BCObjectIdentifiers.mayo_2);
+        noParams.add(BCObjectIdentifiers.mayo_3);
+        noParams.add(BCObjectIdentifiers.mayo_5);
 
         //
         // explicit params
@@ -622,127 +634,6 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         AlgorithmIdentifier sha3_512AlgId = new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha3_512, DERNull.INSTANCE);
         addParameters("SHA3-512WITHRSAANDMGF1", createPSSParams(sha3_512AlgId, 64));
 
-        //
-        // digests
-        //
-        addDigestOid(PKCSObjectIdentifiers.sha224WithRSAEncryption, NISTObjectIdentifiers.id_sha224);
-        addDigestOid(PKCSObjectIdentifiers.sha256WithRSAEncryption, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(PKCSObjectIdentifiers.sha384WithRSAEncryption, NISTObjectIdentifiers.id_sha384);
-        addDigestOid(PKCSObjectIdentifiers.sha512WithRSAEncryption, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(PKCSObjectIdentifiers.sha512_224WithRSAEncryption, NISTObjectIdentifiers.id_sha512_224);
-        addDigestOid(PKCSObjectIdentifiers.sha512_256WithRSAEncryption, NISTObjectIdentifiers.id_sha512_256);
-        addDigestOid(NISTObjectIdentifiers.dsa_with_sha224, NISTObjectIdentifiers.id_sha224);
-        addDigestOid(NISTObjectIdentifiers.dsa_with_sha256, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(NISTObjectIdentifiers.dsa_with_sha384, NISTObjectIdentifiers.id_sha384);
-        addDigestOid(NISTObjectIdentifiers.dsa_with_sha512, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(NISTObjectIdentifiers.id_dsa_with_sha3_224, NISTObjectIdentifiers.id_sha3_224);
-        addDigestOid(NISTObjectIdentifiers.id_dsa_with_sha3_256, NISTObjectIdentifiers.id_sha3_256);
-        addDigestOid(NISTObjectIdentifiers.id_dsa_with_sha3_384, NISTObjectIdentifiers.id_sha3_384);
-        addDigestOid(NISTObjectIdentifiers.id_dsa_with_sha3_512, NISTObjectIdentifiers.id_sha3_512);
-        addDigestOid(NISTObjectIdentifiers.id_ecdsa_with_sha3_224, NISTObjectIdentifiers.id_sha3_224);
-        addDigestOid(NISTObjectIdentifiers.id_ecdsa_with_sha3_256, NISTObjectIdentifiers.id_sha3_256);
-        addDigestOid(NISTObjectIdentifiers.id_ecdsa_with_sha3_384, NISTObjectIdentifiers.id_sha3_384);
-        addDigestOid(NISTObjectIdentifiers.id_ecdsa_with_sha3_512, NISTObjectIdentifiers.id_sha3_512);
-        addDigestOid(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_224, NISTObjectIdentifiers.id_sha3_224);
-        addDigestOid(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_256, NISTObjectIdentifiers.id_sha3_256);
-        addDigestOid(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_384, NISTObjectIdentifiers.id_sha3_384);
-        addDigestOid(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_512, NISTObjectIdentifiers.id_sha3_512);
-
-        addDigestOid(PKCSObjectIdentifiers.md2WithRSAEncryption, PKCSObjectIdentifiers.md2);
-        addDigestOid(PKCSObjectIdentifiers.md4WithRSAEncryption, PKCSObjectIdentifiers.md4);
-        addDigestOid(PKCSObjectIdentifiers.md5WithRSAEncryption, PKCSObjectIdentifiers.md5);
-        addDigestOid(PKCSObjectIdentifiers.sha1WithRSAEncryption, OIWObjectIdentifiers.idSHA1);
-        addDigestOid(TeleTrusTObjectIdentifiers.rsaSignatureWithripemd128, TeleTrusTObjectIdentifiers.ripemd128);
-        addDigestOid(TeleTrusTObjectIdentifiers.rsaSignatureWithripemd160, TeleTrusTObjectIdentifiers.ripemd160);
-        addDigestOid(TeleTrusTObjectIdentifiers.rsaSignatureWithripemd256, TeleTrusTObjectIdentifiers.ripemd256);
-        addDigestOid(CryptoProObjectIdentifiers.gostR3411_94_with_gostR3410_94, CryptoProObjectIdentifiers.gostR3411);
-        addDigestOid(CryptoProObjectIdentifiers.gostR3411_94_with_gostR3410_2001, CryptoProObjectIdentifiers.gostR3411);
-        addDigestOid(RosstandartObjectIdentifiers.id_tc26_signwithdigest_gost_3410_12_256, RosstandartObjectIdentifiers.id_tc26_gost_3411_12_256);
-        addDigestOid(RosstandartObjectIdentifiers.id_tc26_signwithdigest_gost_3410_12_512, RosstandartObjectIdentifiers.id_tc26_gost_3411_12_512);
-
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_128s_r3, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_128f_r3, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_128s_r3, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_128f_r3, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_192s_r3, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_192f_r3, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_192s_r3, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_192f_r3, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_256s_r3, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_256f_r3, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_256s_r3, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_256f_r3, NISTObjectIdentifiers.id_shake256);
-
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_128s_r3_simple, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_128f_r3_simple, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_128s_r3_simple, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_128f_r3_simple, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_192s_r3_simple, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_192f_r3_simple, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_192s_r3_simple, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_192f_r3_simple, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_256s_r3_simple, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_256f_r3_simple, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_256s_r3_simple, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_256f_r3_simple, NISTObjectIdentifiers.id_shake256);
-
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_128s, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_128f, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_128s, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_128f, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_192s, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_192f, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_192s, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_192f, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_256s, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_sha2_256f, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_256s, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(BCObjectIdentifiers.sphincsPlus_shake_256f, NISTObjectIdentifiers.id_shake256);
-
-//        addDigestOid(GMObjectIdentifiers.sm2sign_with_rmd160, TeleTrusTObjectIdentifiers.ripemd160);
-//        addDigestOid(GMObjectIdentifiers.sm2sign_with_sha1, OIWObjectIdentifiers.idSHA1);
-//        addDigestOid(GMObjectIdentifiers.sm2sign_with_sha224, NISTObjectIdentifiers.id_sha224);
-        addDigestOid(GMObjectIdentifiers.sm2sign_with_sha256, NISTObjectIdentifiers.id_sha256);
-//        addDigestOid(GMObjectIdentifiers.sm2sign_with_sha384, NISTObjectIdentifiers.id_sha384);
-//        addDigestOid(GMObjectIdentifiers.sm2sign_with_sha512, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(GMObjectIdentifiers.sm2sign_with_sm3, GMObjectIdentifiers.sm3);
-
-        addDigestOid(X509ObjectIdentifiers.id_rsassa_pss_shake128, NISTObjectIdentifiers.id_shake128);
-        addDigestOid(X509ObjectIdentifiers.id_rsassa_pss_shake256, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(X509ObjectIdentifiers.id_ecdsa_with_shake128, NISTObjectIdentifiers.id_shake128);
-        addDigestOid(X509ObjectIdentifiers.id_ecdsa_with_shake256, NISTObjectIdentifiers.id_shake256);
-
-        addDigestOid(NISTObjectIdentifiers.id_ml_dsa_44, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(NISTObjectIdentifiers.id_ml_dsa_65, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(NISTObjectIdentifiers.id_ml_dsa_87, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(NISTObjectIdentifiers.id_hash_ml_dsa_44_with_sha512, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(NISTObjectIdentifiers.id_hash_ml_dsa_65_with_sha512, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(NISTObjectIdentifiers.id_hash_ml_dsa_87_with_sha512, NISTObjectIdentifiers.id_sha512);
-
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_sha2_128s, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_sha2_128f, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_sha2_192s, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_sha2_192f, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_sha2_256s, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_sha2_256f, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_shake_128s, NISTObjectIdentifiers.id_shake128);
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_shake_128f, NISTObjectIdentifiers.id_shake128);
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_shake_192s, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_shake_192f, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_shake_256s, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(NISTObjectIdentifiers.id_slh_dsa_shake_256f, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_128f_with_sha256, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_128s_with_sha256, NISTObjectIdentifiers.id_sha256);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_192s_with_sha512, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_192f_with_sha512, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_256s_with_sha512, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_256f_with_sha512, NISTObjectIdentifiers.id_sha512);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_shake_128s_with_shake128, NISTObjectIdentifiers.id_shake128);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_shake_128f_with_shake128, NISTObjectIdentifiers.id_shake128);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_shake_192s_with_shake256, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_shake_192f_with_shake256, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_shake_256s_with_shake256, NISTObjectIdentifiers.id_shake256);
-        addDigestOid(NISTObjectIdentifiers.id_hash_slh_dsa_shake_256f_with_shake256, NISTObjectIdentifiers.id_shake256);
     }
 
     public AlgorithmIdentifier find(String sigAlgName)

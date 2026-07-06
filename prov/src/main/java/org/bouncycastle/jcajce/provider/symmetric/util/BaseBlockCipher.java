@@ -72,7 +72,9 @@ import org.bouncycastle.crypto.params.ParametersWithRandom;
 import org.bouncycastle.crypto.params.ParametersWithSBox;
 import org.bouncycastle.crypto.params.RC2Parameters;
 import org.bouncycastle.crypto.params.RC5Parameters;
+import org.bouncycastle.internal.asn1.cms.CCMParameters;
 import org.bouncycastle.internal.asn1.cms.GCMParameters;
+import org.bouncycastle.jcajce.provider.util.SecurityExceptions;
 import org.bouncycastle.jcajce.PBKDF1Key;
 import org.bouncycastle.jcajce.PBKDF1KeyWithParameters;
 import org.bouncycastle.jcajce.PBKDF2Key;
@@ -354,8 +356,23 @@ public class BaseBlockCipher
                 {
                     try
                     {
-                        engineParams = createParametersInstance("GCM");
-                        engineParams.init(new GCMParameters(aeadParams.getNonce(), aeadParams.getMacSize() / 8).getEncoded());
+                        // GCM and CCM share the GCMParameters/CCMParameters SEQUENCE wire format, but the
+                        // RFC 5084 ICV-length constraints differ (GCM: 12..16 octets; CCM: 4..16 even), so a
+                        // CCM cipher must encode its (commonly 8-octet) tag through CCMParameters - routing it
+                        // through GCMParameters would have it rejected by the stricter GCM ICV-length check.
+                        // Match "/CCM" (CCMBlockCipher's name, e.g. "AES/CCM"); this excludes the DSTU 7624
+                        // "/KCCM" mode, which is a distinct standard left on its existing path.
+                        if (cipher instanceof AEADGenericBlockCipher
+                            && ((AEADGenericBlockCipher)cipher).getAEADAlgorithmName().indexOf("/CCM") >= 0)
+                        {
+                            engineParams = createParametersInstance("CCM");
+                            engineParams.init(new CCMParameters(aeadParams.getNonce(), aeadParams.getMacSize() / 8).getEncoded());
+                        }
+                        else
+                        {
+                            engineParams = createParametersInstance("GCM");
+                            engineParams.init(new GCMParameters(aeadParams.getNonce(), aeadParams.getMacSize() / 8).getEncoded());
+                        }
                     }
                     catch (Exception e)
                     {
@@ -1264,7 +1281,7 @@ public class BaseBlockCipher
         }
         catch (DataLengthException e)
         {
-            throw new IllegalBlockSizeException(e.getMessage());
+            throw SecurityExceptions.illegalBlockSizeException(e.getMessage(), e);
         }
 
         if (len == tmp.length)
@@ -1310,11 +1327,11 @@ public class BaseBlockCipher
         }
         catch (OutputLengthException e)
         {
-            throw new IllegalBlockSizeException(e.getMessage());
+            throw SecurityExceptions.illegalBlockSizeException(e.getMessage(), e);
         }
         catch (DataLengthException e)
         {
-            throw new IllegalBlockSizeException(e.getMessage());
+            throw SecurityExceptions.illegalBlockSizeException(e.getMessage(), e);
         }
     }
 
@@ -1433,7 +1450,7 @@ public class BaseBlockCipher
             }
             catch (InvalidCipherTextException e)
             {
-                throw new BadPaddingException(e.getMessage());
+                throw SecurityExceptions.badPaddingException(e.getMessage(), e);
             }
         }
     }
@@ -1568,6 +1585,13 @@ public class BaseBlockCipher
             return cipher.getAlgorithmName();
         }
 
+        // The mode-bearing name (e.g. "AES/CCM" or "AES/GCM"); getAlgorithmName() above deliberately
+        // strips the mode to the base engine, which callers building PBE parameters rely on.
+        String getAEADAlgorithmName()
+        {
+            return cipher.getAlgorithmName();
+        }
+
         public boolean wrapOnNoPadding()
         {
             return false;
@@ -1636,7 +1660,7 @@ public class BaseBlockCipher
                         throw aeadBadTag;
                     }
                 }
-                throw new BadPaddingException(e.getMessage());
+                throw SecurityExceptions.badPaddingException(e.getMessage(), e);
             }
         }
     }

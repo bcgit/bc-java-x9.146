@@ -10,26 +10,24 @@ import java.security.Provider;
 import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
+import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.cms.IssuerAndSerialNumber;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
 import org.bouncycastle.asn1.iso.ISOIECObjectIdentifiers;
 import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
-import org.bouncycastle.asn1.rosstandart.RosstandartObjectIdentifiers;
-import org.bouncycastle.asn1.sec.SECObjectIdentifiers;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.Certificate;
 import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.cms.CMSAlgorithm;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.jcajce.util.AlgorithmParametersUtils;
@@ -40,9 +38,6 @@ import org.bouncycastle.operator.OperatorCreationException;
 
 class CMSUtils
 {
-    private static final Set mqvAlgs = new HashSet();
-    private static final Set ecAlgs = new HashSet();
-    private static final Set gostAlgs = new HashSet();
     private static final Map asymmetricWrapperAlgNames = new HashMap();
 
     private static Map<ASN1ObjectIdentifier,String> wrapAlgNames = new HashMap();
@@ -59,55 +54,11 @@ class CMSUtils
 
     static
     {
-        mqvAlgs.add(X9ObjectIdentifiers.mqvSinglePass_sha1kdf_scheme);
-        mqvAlgs.add(SECObjectIdentifiers.mqvSinglePass_sha224kdf_scheme);
-        mqvAlgs.add(SECObjectIdentifiers.mqvSinglePass_sha256kdf_scheme);
-        mqvAlgs.add(SECObjectIdentifiers.mqvSinglePass_sha384kdf_scheme);
-        mqvAlgs.add(SECObjectIdentifiers.mqvSinglePass_sha512kdf_scheme);
-
-        ecAlgs.add(X9ObjectIdentifiers.dhSinglePass_cofactorDH_sha1kdf_scheme);
-        ecAlgs.add(X9ObjectIdentifiers.dhSinglePass_stdDH_sha1kdf_scheme);
-        ecAlgs.add(SECObjectIdentifiers.dhSinglePass_cofactorDH_sha224kdf_scheme);
-        ecAlgs.add(SECObjectIdentifiers.dhSinglePass_stdDH_sha224kdf_scheme);
-        ecAlgs.add(SECObjectIdentifiers.dhSinglePass_cofactorDH_sha256kdf_scheme);
-        ecAlgs.add(SECObjectIdentifiers.dhSinglePass_stdDH_sha256kdf_scheme);
-        ecAlgs.add(SECObjectIdentifiers.dhSinglePass_cofactorDH_sha384kdf_scheme);
-        ecAlgs.add(SECObjectIdentifiers.dhSinglePass_stdDH_sha384kdf_scheme);
-        ecAlgs.add(SECObjectIdentifiers.dhSinglePass_cofactorDH_sha512kdf_scheme);
-        ecAlgs.add(SECObjectIdentifiers.dhSinglePass_stdDH_sha512kdf_scheme);
-
-        gostAlgs.add(CryptoProObjectIdentifiers.gostR3410_2001_CryptoPro_ESDH);
-        gostAlgs.add(CryptoProObjectIdentifiers.gostR3410_2001);
-        gostAlgs.add(RosstandartObjectIdentifiers.id_tc26_agreement_gost_3410_12_256);
-        gostAlgs.add(RosstandartObjectIdentifiers.id_tc26_agreement_gost_3410_12_512);
-        gostAlgs.add(RosstandartObjectIdentifiers.id_tc26_gost_3410_12_256);
-        gostAlgs.add(RosstandartObjectIdentifiers.id_tc26_gost_3410_12_512);
-
         asymmetricWrapperAlgNames.put(PKCSObjectIdentifiers.rsaEncryption, "RSA/ECB/PKCS1Padding");
         asymmetricWrapperAlgNames.put(OIWObjectIdentifiers.elGamalAlgorithm, "Elgamal/ECB/PKCS1Padding");
         asymmetricWrapperAlgNames.put(PKCSObjectIdentifiers.id_RSAES_OAEP, "RSA/ECB/OAEPPadding");
         asymmetricWrapperAlgNames.put(CryptoProObjectIdentifiers.gostR3410_2001, "ECGOST3410");
         asymmetricWrapperAlgNames.put(ISOIECObjectIdentifiers.id_kem_rsa, "RSA-KTS-KEM-KWS");
-    }
-
-    static boolean isMQV(ASN1ObjectIdentifier algorithm)
-    {
-        return mqvAlgs.contains(algorithm);
-    }
-
-    static boolean isEC(ASN1ObjectIdentifier algorithm)
-    {
-        return ecAlgs.contains(algorithm);
-    }
-
-    static boolean isGOST(ASN1ObjectIdentifier algorithm)
-    {
-        return gostAlgs.contains(algorithm);
-    }
-
-    static boolean isRFC2631(ASN1ObjectIdentifier algorithm)
-    {
-        return algorithm.equals(PKCSObjectIdentifiers.id_alg_ESDH) || algorithm.equals(PKCSObjectIdentifiers.id_alg_SSDH);
     }
 
     static String getWrapAlgorithmName(ASN1ObjectIdentifier oid)
@@ -197,6 +148,39 @@ class CMSUtils
         {
             throw new CMSException("error encoding algorithm parameters.", e);
         }
+    }
+
+    /**
+     * Return the AEAD authentication tag (ICV) length in octets used to size the MAC capture for an
+     * auth-enveloped content encryption algorithm.
+     * <p>
+     * ChaCha20Poly1305 always uses a 16 octet tag. AES-GCM and AES-CCM both carry their parameters as a
+     * SEQUENCE { nonce, ICVlen DEFAULT 12 }, so the tag length is read directly from the sequence rather
+     * than via GCMParameters.getInstance - the latter would reject anything below the RFC 5084 GCM minimum
+     * of 12 octets, whereas CCM permits valid shorter tags (e.g. 64-bit / 8 octets).
+     *
+     * @param algId the (unwrapped) content encryption algorithm identifier.
+     * @return the tag length in octets.
+     */
+    static int getAEADMacLength(AlgorithmIdentifier algId)
+    {
+        if (CMSAlgorithm.ChaCha20Poly1305.equals(algId.getAlgorithm()))
+        {
+            return 16;
+        }
+
+        ASN1Sequence seq = ASN1Sequence.getInstance(algId.getParameters());
+        if (seq.size() > 2)
+        {
+            throw new IllegalArgumentException("malformed AEAD parameters: unexpected sequence size " + seq.size());
+        }
+        int icvLen = (seq.size() > 1) ? ASN1Integer.getInstance(seq.getObjectAt(1)).intValueExact() : 12;
+        if (icvLen < 4)
+        {
+            throw new IllegalArgumentException("malformed AEAD parameters: icvLen < 4");
+        }
+
+        return icvLen;
     }
 
     static Key getJceKey(GenericKey key)

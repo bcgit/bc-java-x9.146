@@ -24,12 +24,13 @@ import org.bouncycastle.crypto.InvalidCipherTextException;
 import org.bouncycastle.crypto.SecretWithEncapsulation;
 import org.bouncycastle.crypto.Wrapper;
 import org.bouncycastle.crypto.params.KeyParameter;
+import org.bouncycastle.jcajce.provider.asymmetric.util.WrapUtil;
+import org.bouncycastle.jcajce.provider.util.SecurityExceptions;
 import org.bouncycastle.jcajce.spec.KEMParameterSpec;
 import org.bouncycastle.jcajce.spec.KTSParameterSpec;
-import org.bouncycastle.pqc.crypto.bike.BIKEKEMExtractor;
-import org.bouncycastle.pqc.crypto.bike.BIKEKEMGenerator;
-import org.bouncycastle.pqc.crypto.bike.BIKEParameters;
-import org.bouncycastle.pqc.jcajce.provider.util.WrapUtil;
+import org.bouncycastle.pqc.legacy.bike.BIKEKEMExtractor;
+import org.bouncycastle.pqc.legacy.bike.BIKEKEMGenerator;
+import org.bouncycastle.pqc.legacy.bike.BIKEParameters;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Exceptions;
 import org.bouncycastle.util.Strings;
@@ -271,11 +272,11 @@ class BIKECipherSpi
         }
         catch (IllegalArgumentException e)
         {
-            throw new IllegalBlockSizeException("unable to generate KTS secret: " + e.getMessage());
+            throw SecurityExceptions.illegalBlockSizeException("unable to generate KTS secret: " + e.getMessage(), e);
         }
         catch (DestroyFailedException e)
         {
-            throw new IllegalBlockSizeException("unable to destroy interim values: " + e.getMessage());
+            throw SecurityExceptions.illegalBlockSizeException("unable to destroy interim values: " + e.getMessage(), e);
         }
     }
 

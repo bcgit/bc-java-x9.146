@@ -11,20 +11,17 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
-import junit.framework.TestCase;
 import org.bouncycastle.jcajce.SecretKeyWithEncapsulation;
 import org.bouncycastle.jcajce.spec.KEMExtractSpec;
 import org.bouncycastle.jcajce.spec.KEMGenerateSpec;
 import org.bouncycastle.jcajce.spec.KEMParameterSpec;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.pqc.crypto.hqc.HQCKeyGenerationParameters;
-import org.bouncycastle.pqc.crypto.hqc.HQCKeyPairGenerator;
-import org.bouncycastle.pqc.crypto.hqc.HQCParameters;
 import org.bouncycastle.pqc.jcajce.provider.BouncyCastlePQCProvider;
 import org.bouncycastle.pqc.jcajce.spec.HQCParameterSpec;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.encoders.Hex;
 import org.bouncycastle.util.test.FixedSecureRandom;
+
+import junit.framework.TestCase;
 
 /**
  * KEM tests for HQC with the BCPQC provider.
@@ -123,6 +120,35 @@ public class HQCTest
         Key k = w2.unwrap(data, "AES", Cipher.SECRET_KEY);
 
         assertTrue(Arrays.areEqual(keyBytes, k.getEncoded()));
+    }
+
+    public void testParameterSpecNameRoundTrip()
+        throws Exception
+    {
+        // HQCParameters.getName() (e.g. "hqc-128") must round-trip back through fromName(); this
+        // also backs BCHQCPublicKey/PrivateKey.getParameterSpec(), which call fromName(getName()).
+        HQCParameterSpec[] specs = new HQCParameterSpec[]{ HQCParameterSpec.hqc128, HQCParameterSpec.hqc192, HQCParameterSpec.hqc256 };
+        for (int i = 0; i != specs.length; i++)
+        {
+            assertSame(specs[i], HQCParameterSpec.fromName(specs[i].getName()));
+        }
+
+        // a parameter-set-locked KeyGenerator drives HQCKeyGeneratorSpi.engineInit's canonical-name
+        // check (NPE / spurious rejection if the spec name does not match the key's algorithm).
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("HQC", "BCPQC");
+        kpg.initialize(HQCParameterSpec.hqc256, new SecureRandom());
+        KeyPair kp = kpg.generateKeyPair();
+
+        KeyGenerator keyGen = KeyGenerator.getInstance("HQC-256", "BCPQC");
+        keyGen.init(new KEMGenerateSpec(kp.getPublic(), "AES"), new SecureRandom());
+
+        SecretKeyWithEncapsulation enc = (SecretKeyWithEncapsulation)keyGen.generateKey();
+
+        assertEquals("AES", enc.getAlgorithm());
+
+        // dash form is primary, no-dash is a retained alias - both must resolve
+        assertNotNull(KeyPairGenerator.getInstance("HQC-128", "BCPQC"));
+        assertNotNull(KeyPairGenerator.getInstance("HQC128", "BCPQC"));
     }
 
     public void testGenerateAES()

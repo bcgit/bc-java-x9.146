@@ -6,7 +6,6 @@ import junit.framework.TestCase;
 import org.bouncycastle.crypto.AsymmetricCipherKeyPairGenerator;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.Signer;
-import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
 import org.bouncycastle.pqc.crypto.MessageSigner;
 import org.bouncycastle.pqc.crypto.mayo.MayoKeyGenerationParameters;
 import org.bouncycastle.pqc.crypto.mayo.MayoKeyPairGenerator;
@@ -46,7 +45,7 @@ public class MayoTest
         throws Exception
     {
         long start = System.currentTimeMillis();
-        TestUtils.testTestVector(false, true, false, "pqc/crypto/mayo", files, new TestUtils.SignerOperation()
+        TestUtils.testTestVector(true, true, false, "pqc/crypto/mayo", files, new TestUtils.SignerOperation()
         {
             @Override
             public SecureRandom getSecureRandom(byte[] seed)
@@ -65,7 +64,7 @@ public class MayoTest
             }
 
             @Override
-            public byte[] getPublicKeyEncoded(AsymmetricKeyParameter pubParams)
+            public byte[] getPublicKeyEncoded(CipherParameters pubParams)
             {
                 return ((MayoPublicKeyParameters)pubParams).getEncoded();
             }

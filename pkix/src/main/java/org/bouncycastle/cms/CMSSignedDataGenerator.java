@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.bouncycastle.asn1.ASN1EncodableVector;
+import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Set;
@@ -52,8 +53,6 @@ import org.bouncycastle.operator.DigestAlgorithmIdentifierFinder;
 public class CMSSignedDataGenerator
     extends CMSSignedGenerator
 {
-    private boolean isDefiniteLength = false;
-
     /**
      * base constructor
      */
@@ -73,10 +72,11 @@ public class CMSSignedDataGenerator
      * Specify use of definite length rather than indefinite length encoding.
      *
      * @param isDefiniteLength true use definite length, false use indefinite (default false).
+     * @deprecated use setEncoding(ANS1Encoding.DL)
      */
     public void setDefiniteLengthEncoding(boolean isDefiniteLength)
     {
-        this.isDefiniteLength = isDefiniteLength;
+        this.setEncoding((isDefiniteLength) ? ASN1Encoding.DL : ASN1Encoding.BER);
     }
 
     /**
@@ -95,7 +95,7 @@ public class CMSSignedDataGenerator
      * Generate a CMS Signed Data object which can be carrying a detached CMS signature, or have encapsulated data, depending on the value
      * of the encapsulated parameter.
      *
-     * @param content the content to be signed.
+     * @param content     the content to be signed.
      * @param encapsulate true if the content should be encapsulated in the signature, false otherwise.
      */
     public CMSSignedData generate(
@@ -142,7 +142,7 @@ public class CMSSignedDataGenerator
         //
         // add the precalculated SignerInfo objects.
         //
-        for (Iterator it = _signers.iterator(); it.hasNext();)
+        for (Iterator it = _signers.iterator(); it.hasNext(); )
         {
             SignerInformation signer = (SignerInformation)it.next();
             CMSUtils.addDigestAlgs(digestAlgs, signer, digestAlgIdFinder);
@@ -165,13 +165,13 @@ public class CMSSignedDataGenerator
 
                 writeContentViaSignerGens(content, bOut);
 
-                if (isDefiniteLength)
+                if (ASN1Encoding.BER.equals(this.encoding))
                 {
-                    encapContent = new DEROctetString(bOut.toByteArray());
+                    encapContent = new BEROctetString(bOut.toByteArray());
                 }
                 else
                 {
-                    encapContent = new BEROctetString(bOut.toByteArray());
+                    encapContent = new DEROctetString(bOut.toByteArray());
                 }
             }
             else
@@ -180,7 +180,7 @@ public class CMSSignedDataGenerator
             }
         }
 
-        for (Iterator it = signerGens.iterator(); it.hasNext();)
+        for (Iterator it = signerGens.iterator(); it.hasNext(); )
         {
             SignerInfoGenerator signerGen = (SignerInfoGenerator)it.next();
             SignerInfo signerInfo = generateSignerInfo(signerGen, encapContentType);
@@ -188,14 +188,16 @@ public class CMSSignedDataGenerator
             signerInfos.add(signerInfo);
         }
 
-        ASN1Set certificates = createSetFromList(this.certs, isDefiniteLength);
+        ASN1Set certificates = createSetFromList(this.certs, encoding);
 
-        ASN1Set crls = createSetFromList(this.crls, isDefiniteLength);
+        ASN1Set crls = createSetFromList(this.crls, encoding);
 
         ContentInfo encapContentInfo = new ContentInfo(encapContentType, encapContent);
 
         SignedData signedData = new SignedData(
-            CMSUtils.convertToDlSet(digestAlgs),
+            ASN1Encoding.DER.equals(encoding)
+                ?   CMSUtils.convertToDerSet(digestAlgs)
+                :   CMSUtils.convertToDlSet(digestAlgs),
             encapContentInfo,
             certificates,
             crls,
@@ -218,24 +220,26 @@ public class CMSSignedDataGenerator
     {
         digests.clear();
 
-        CMSTypedData content = new CMSProcessableByteArray(null, signer.getSignature());
+        ASN1ObjectIdentifier contentType = null;
+
+        CMSTypedData content = new CMSProcessableByteArray(contentType, signer.getSignature());
 
         ArrayList signerInformations = new ArrayList();
 
-        for (Iterator it = _signers.iterator(); it.hasNext();)
+        for (Iterator it = _signers.iterator(); it.hasNext(); )
         {
             SignerInformation _signer = (SignerInformation)it.next();
             SignerInfo signerInfo = _signer.toASN1Structure();
-            signerInformations.add(new SignerInformation(signerInfo, null, content, null));
+            signerInformations.add(new SignerInformation(signerInfo, contentType, content, null));
         }
 
         writeContentViaSignerGens(content, null);
 
-        for (Iterator it = signerGens.iterator(); it.hasNext();)
+        for (Iterator it = signerGens.iterator(); it.hasNext(); )
         {
             SignerInfoGenerator signerGen = (SignerInfoGenerator)it.next();
-            SignerInfo signerInfo = generateSignerInfo(signerGen, null);
-            signerInformations.add(new SignerInformation(signerInfo, null, content, null));
+            SignerInfo signerInfo = generateSignerInfo(signerGen, contentType);
+            signerInformations.add(new SignerInformation(signerInfo, contentType, content, null));
         }
 
         return new SignerInformationStore(signerInformations);
@@ -275,12 +279,14 @@ public class CMSSignedDataGenerator
         }
     }
 
-    private static ASN1Set createSetFromList(List list, boolean isDefiniteLength)
+    private static ASN1Set createSetFromList(List list, String encoding)
     {
         return list.size() < 1
-            ?  null
-            :  isDefiniteLength
-            ?  CMSUtils.createDlSetFromList(list)
-            :  CMSUtils.createBerSetFromList(list);
+            ? null
+            : ASN1Encoding.DL.equals(encoding)
+            ? CMSUtils.createDlSetFromList(list)
+            : (ASN1Encoding.DER.equals(encoding)
+            ? CMSUtils.createDerSetFromList(list)
+            : CMSUtils.createBerSetFromList(list));
     }
 }

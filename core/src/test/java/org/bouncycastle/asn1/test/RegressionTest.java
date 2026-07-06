@@ -11,6 +11,7 @@ public class RegressionTest
         new TagTest(),
         new SetTest(),
         new ASN1IntegerTest(),
+        new AllowNonDerTimeTest(),
         new DERUTF8StringTest(),
         new CertificateTest(),
         new GenerationTest(),
@@ -21,6 +22,7 @@ public class RegressionTest
         new PKCS12Test(),
         new X509NameTest(),
         new X500NameTest(),
+        new IETFUtilsTest(),
         new X509ExtensionsTest(),
         new GeneralizedTimeTest(),
         new BitStringTest(),
@@ -31,6 +33,7 @@ public class RegressionTest
         new Iso4217CurrencyCodeUnitTest(),
         new SemanticsInformationUnitTest(),
         new QCStatementUnitTest(),
+        new QcTypeUnitTest(),
         new TypeOfBiometricDataUnitTest(),
         new EncryptedPrivateKeyInfoTest(),
         new ReasonFlagsTest(),
@@ -44,8 +47,14 @@ public class RegressionTest
         new IssuingDistributionPointUnitTest(),
         new TargetInformationTest(),
         new SubjectKeyIdentifierTest(),
+        new AuthorityKeyIdentifierTest(),
+        new TBSCertListTest(),
+        new TBSCertificateIssuerTest(),
+        new AttributeCertificateInfoIssuerTest(),
+        new ParseTest(),
         new ParsingTest(),
         new GeneralNameTest(),
+        new NameConstraintsTest(),
         new ObjectIdentifierTest(),
         new RFC4519Test(),
         new PolicyConstraintsTest(),
@@ -57,7 +66,12 @@ public class RegressionTest
         new DERPrivateTest(),
         new X509AltTest(),
         new CertIDTest(),
-        new IANAObjectIdentifierTest()
+        new IANAObjectIdentifierTest(),
+        new StreamLimitTest(),
+        new ASN1GeneratorTest(),
+        new LongDefiniteLengthParserTest(),
+        new DefiniteLengthAllocationTest(),
+        new KeyPurposeIdTest()
     };
 
     public static void main(String[] args)

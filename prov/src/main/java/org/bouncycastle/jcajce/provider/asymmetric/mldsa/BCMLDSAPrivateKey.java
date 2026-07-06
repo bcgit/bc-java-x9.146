@@ -6,14 +6,14 @@ import java.io.ObjectOutputStream;
 
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
+import org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters;
+import org.bouncycastle.crypto.params.MLDSAPublicKeyParameters;
+import org.bouncycastle.crypto.util.PrivateKeyFactory;
 import org.bouncycastle.jcajce.interfaces.BCKey;
 import org.bouncycastle.jcajce.interfaces.MLDSAPrivateKey;
 import org.bouncycastle.jcajce.interfaces.MLDSAPublicKey;
+import org.bouncycastle.jcajce.provider.asymmetric.util.KeyUtil;
 import org.bouncycastle.jcajce.spec.MLDSAParameterSpec;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.util.PrivateKeyFactory;
-import org.bouncycastle.pqc.jcajce.provider.util.KeyUtil;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Fingerprint;
 import org.bouncycastle.util.Strings;
@@ -73,7 +73,7 @@ public class BCMLDSAPrivateKey
         {
             BCMLDSAPrivateKey otherKey = (BCMLDSAPrivateKey)o;
 
-            return Arrays.areEqual(params.getEncoded(), otherKey.params.getEncoded());
+            return Arrays.constantTimeAreEqual(params.getEncoded(), otherKey.params.getEncoded());
         }
 
         return false;
@@ -81,7 +81,13 @@ public class BCMLDSAPrivateKey
 
     public int hashCode()
     {
-        return Arrays.hashCode(params.getEncoded());
+        MLDSAPublicKey publicKey = getPublicKey();
+        if (publicKey != null)
+        {
+            return publicKey.hashCode();
+        }
+
+        return getParameterSpec().hashCode();
     }
 
     /**

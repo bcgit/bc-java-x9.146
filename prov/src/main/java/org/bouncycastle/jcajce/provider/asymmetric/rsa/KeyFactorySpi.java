@@ -15,8 +15,10 @@ import java.security.spec.RSAPrivateKeySpec;
 import java.security.spec.RSAPublicKeySpec;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.pkcs.RSAPrivateKey;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.params.RSAKeyParameters;
@@ -25,14 +27,31 @@ import org.bouncycastle.crypto.util.OpenSSHPrivateKeyUtil;
 import org.bouncycastle.crypto.util.OpenSSHPublicKeyUtil;
 import org.bouncycastle.jcajce.provider.asymmetric.util.BaseKeyFactorySpi;
 import org.bouncycastle.jcajce.provider.asymmetric.util.ExtendedInvalidKeySpecException;
+import org.bouncycastle.jcajce.provider.util.SecurityExceptions;
 import org.bouncycastle.jcajce.spec.OpenSSHPrivateKeySpec;
 import org.bouncycastle.jcajce.spec.OpenSSHPublicKeySpec;
+import org.bouncycastle.util.Exceptions;
+import org.bouncycastle.util.Strings;
 
 public class KeyFactorySpi
     extends BaseKeyFactorySpi
 {
+    private final AlgorithmIdentifier algorithmIdentifier;
+
     public KeyFactorySpi()
     {
+        this(null);
+    }
+
+    /**
+     * @param algorithmIdentifier the AlgorithmIdentifier to stamp on keys built from raw
+     *                            {@link RSAPublicKeySpec} / {@link RSAPrivateKeySpec} /
+     *                            {@link RSAPrivateCrtKeySpec} parameters, or null for the
+     *                            default rsaEncryption identifier.
+     */
+    protected KeyFactorySpi(AlgorithmIdentifier algorithmIdentifier)
+    {
+        this.algorithmIdentifier = algorithmIdentifier;
     }
 
     protected KeySpec engineGetKeySpec(
@@ -78,7 +97,7 @@ public class KeyFactorySpi
             }
             catch (IOException e)
             {
-                throw new IllegalArgumentException("unable to produce encoding: " + e.getMessage());
+                throw Exceptions.illegalArgumentException("unable to produce encoding", e);
             }
         }
         else if (spec.isAssignableFrom(OpenSSHPrivateKeySpec.class) && key instanceof RSAPrivateCrtKey)
@@ -98,7 +117,7 @@ public class KeyFactorySpi
             }
             catch (IOException e)
             {
-                throw new IllegalArgumentException("unable to produce encoding: " + e.getMessage());
+                throw Exceptions.illegalArgumentException("unable to produce encoding", e);
             }
         }
 
@@ -153,15 +172,42 @@ public class KeyFactorySpi
         }
         else if (keySpec instanceof RSAPrivateCrtKeySpec)
         {
+            if (algorithmIdentifier != null)
+            {
+                RSAPrivateCrtKeySpec spec = (RSAPrivateCrtKeySpec)keySpec;
+
+                return new BCRSAPrivateCrtKey(algorithmIdentifier, new RSAPrivateCrtKeyParameters(
+                    spec.getModulus(), spec.getPublicExponent(), spec.getPrivateExponent(),
+                    spec.getPrimeP(), spec.getPrimeQ(), spec.getPrimeExponentP(), spec.getPrimeExponentQ(),
+                    spec.getCrtCoefficient()));
+            }
             return new BCRSAPrivateCrtKey((RSAPrivateCrtKeySpec)keySpec);
         }
         else if (keySpec instanceof RSAPrivateKeySpec)
         {
+            if (algorithmIdentifier != null)
+            {
+                RSAPrivateKeySpec spec = (RSAPrivateKeySpec)keySpec;
+
+                return new BCRSAPrivateKey(algorithmIdentifier,
+                    new RSAKeyParameters(true, spec.getModulus(), spec.getPrivateExponent()));
+            }
             return new BCRSAPrivateKey((RSAPrivateKeySpec)keySpec);
         }
         else if (keySpec instanceof OpenSSHPrivateKeySpec)
         {
-            CipherParameters parameters = OpenSSHPrivateKeyUtil.parsePrivateKeyBlob(((OpenSSHPrivateKeySpec)keySpec).getEncoded());
+            OpenSSHPrivateKeySpec sshKeySpec = (OpenSSHPrivateKeySpec)keySpec;
+            char[] password = sshKeySpec.getPassword();
+            CipherParameters parameters;
+            try
+            {
+                parameters = OpenSSHPrivateKeyUtil.parsePrivateKeyBlob(
+                    sshKeySpec.getEncoded(), password == null ? null : Strings.toUTF8ByteArray(password));
+            }
+            catch (RuntimeException e)
+            {
+                throw SecurityExceptions.invalidKeySpecException("unable to decode OpenSSH private key: " + e.getMessage(), e);
+            }
 
             if (parameters instanceof RSAPrivateCrtKeyParameters)
             {
@@ -180,6 +226,13 @@ public class KeyFactorySpi
     {
         if (keySpec instanceof RSAPublicKeySpec)
         {
+            if (algorithmIdentifier != null)
+            {
+                RSAPublicKeySpec spec = (RSAPublicKeySpec)keySpec;
+
+                return new BCRSAPublicKey(algorithmIdentifier,
+                    new RSAKeyParameters(false, spec.getModulus(), spec.getPublicExponent()));
+            }
             return new BCRSAPublicKey((RSAPublicKeySpec)keySpec);
         }
         else if (keySpec instanceof OpenSSHPublicKeySpec)
@@ -234,6 +287,22 @@ public class KeyFactorySpi
         else
         {
             throw new IOException("algorithm identifier " + algOid + " in key not recognised");
+        }
+    }
+
+    /**
+     * KeyFactory for the "RSASSA-PSS" algorithm. Keys built from raw RSA key specs
+     * ({@link RSAPublicKeySpec} / {@link RSAPrivateKeySpec} / {@link RSAPrivateCrtKeySpec})
+     * are stamped with the id-RSASSA-PSS algorithm identifier (RFC 8017 A.2.3) so that the
+     * resulting keys report {@code RSASSA-PSS} from {@code getAlgorithm()} and encode with the
+     * correct OID, matching the keys produced by {@code KeyPairGenerator.getInstance("RSASSA-PSS")}.
+     */
+    public static class PSS
+        extends KeyFactorySpi
+    {
+        public PSS()
+        {
+            super(new AlgorithmIdentifier(PKCSObjectIdentifiers.id_RSASSA_PSS));
         }
     }
 }

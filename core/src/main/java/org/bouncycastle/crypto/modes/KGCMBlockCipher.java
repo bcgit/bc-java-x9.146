@@ -19,7 +19,16 @@ import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Pack;
 
 /**
- * Implementation of DSTU7624 GCM mode
+ * Implementation of DSTU7624 GCM mode.
+ * <p>
+ * <b>Partial-block / interop caveat:</b> associated data and payload whose length is not a multiple
+ * of the underlying block size are authenticated following the generic GCM/GMAC construction
+ * (NIST SP 800-38D): the trailing partial block is zero-padded for the GF(2^n) multiplication, and
+ * the true bit-length is bound by the trailing lambda field. DSTU 7624:2014 does not publish a
+ * partial-block GCM/GMAC test vector, so this behaviour is verified by round-trip self-consistency
+ * only and has <b>not</b> been confirmed against an independent conformant DSTU 7624 implementation.
+ * See github #287.
+ * </p>
  */
 public class KGCMBlockCipher
     implements AEADBlockCipher
@@ -45,7 +54,8 @@ public class KGCMBlockCipher
 
     private byte[] initialAssociatedText;
     private byte[] macBlock;
-    private byte[] iv;
+    private byte[] nonce;
+    private byte[] lastKey;
 
     private KGCMMultiplier multiplier;
     private long[] b;
@@ -63,7 +73,7 @@ public class KGCMBlockCipher
         this.blockSize = engine.getBlockSize();
 
         this.initialAssociatedText = new byte[blockSize];
-        this.iv = new byte[blockSize];
+        this.nonce = new byte[blockSize];
         this.multiplier = createDefaultMultiplier(blockSize);
         this.b = new long[blockSize >>> 3];
 
@@ -75,26 +85,22 @@ public class KGCMBlockCipher
     {
         this.forEncryption = forEncryption;
 
-        KeyParameter engineParam;
+        KeyParameter keyParameter = null;
+        byte[] newNonce;
         if (params instanceof AEADParameters)
         {
-            AEADParameters param = (AEADParameters)params;
+            AEADParameters aeadParameters = (AEADParameters)params;
 
-            byte[] iv = param.getNonce();
-            int diff = this.iv.length - iv.length;
-            Arrays.fill(this.iv, (byte)0);
-            System.arraycopy(iv, 0, this.iv, diff, iv.length);
-
-            initialAssociatedText = param.getAssociatedText();
-
-            int macSizeBits = param.getMacSize();
-            if (macSizeBits < MIN_MAC_BITS || macSizeBits > (blockSize << 3) || (macSizeBits & 7) != 0)
+            int macSizeInBits = aeadParameters.getMacSize();
+            if (macSizeInBits < MIN_MAC_BITS || macSizeInBits > (blockSize << 3) || (macSizeInBits & 7) != 0)
             {
-                throw new IllegalArgumentException("Invalid value for MAC size: " + macSizeBits);
+                throw new IllegalArgumentException("Invalid value for MAC size: " + macSizeInBits);
             }
 
-            macSize = macSizeBits >>> 3;
-            engineParam = param.getKey();
+            newNonce = aeadParameters.getNonce();
+            initialAssociatedText = aeadParameters.getAssociatedText();
+            macSize = macSizeInBits / 8;
+            keyParameter = aeadParameters.getKey();
 
             if (initialAssociatedText != null)
             {
@@ -103,43 +109,65 @@ public class KGCMBlockCipher
         }
         else if (params instanceof ParametersWithIV)
         {
-            ParametersWithIV param = (ParametersWithIV)params;
+            ParametersWithIV withIV = (ParametersWithIV)params;
 
-            byte[] iv = param.getIV();
-            int diff = this.iv.length - iv.length;
-            Arrays.fill(this.iv, (byte)0);
-            System.arraycopy(iv, 0, this.iv, diff, iv.length);
-
+            newNonce = withIV.getIV();
             initialAssociatedText = null;
-
             macSize = blockSize; // Set default mac size
 
-            engineParam = (KeyParameter)param.getParameters();
+            CipherParameters innerParameters = withIV.getParameters();
+            if (innerParameters != null)
+            {
+                if (!(innerParameters instanceof KeyParameter))
+                {
+                    throw new IllegalArgumentException("invalid parameters passed to KGCM");
+                }
+
+                keyParameter = (KeyParameter)innerParameters;
+            }
         }
         else
         {
-            throw new IllegalArgumentException("Invalid parameter passed");
+            throw new IllegalArgumentException("invalid parameters passed to KGCM");
         }
 
-        // TODO Nonce re-use check (sample code from GCMBlockCipher)
-//        if (forEncryption)
-//        {
-//            if (nonce != null && Arrays.areEqual(nonce, newNonce))
-//            {
-//                if (keyParam == null)
-//                {
-//                    throw new IllegalArgumentException("cannot reuse nonce for GCM encryption");
-//                }
-//                if (lastKey != null && Arrays.areEqual(lastKey, keyParam.getKey()))
-//                {
-//                    throw new IllegalArgumentException("cannot reuse nonce for GCM encryption");
-//                }
-//            }
-//        }
+        // TODO Nonce length validation?
+        if (newNonce.length < blockSize)
+        {
+            byte[] tmp = new byte[blockSize];
+            System.arraycopy(newNonce, 0, tmp, blockSize - newNonce.length, newNonce.length);
+            newNonce = tmp;
+        }
+
+        // Encrypting twice with the same key and nonce is catastrophic for any GCM-family mode
+        // (it leaks the authentication key and the XOR of the plaintexts). Reject it on re-init,
+        // mirroring GCMBlockCipher. reset()-based reuse is unaffected (it does not re-init).
+        if (forEncryption)
+        {
+            // NOTE: Nonces compared _after_ zero-extension to blockSize
+            if (nonce != null && Arrays.areEqual(nonce, newNonce))
+            {
+                if (keyParameter == null)
+                {
+                    throw new IllegalArgumentException("cannot reuse nonce for KGCM encryption");
+                }
+                if (lastKey != null && Arrays.constantTimeAreEqual(lastKey, keyParameter.getKey()))
+                {
+                    throw new IllegalArgumentException("cannot reuse nonce for KGCM encryption");
+                }
+            }
+        }
+
+        System.arraycopy(newNonce, 0, nonce, 0, blockSize);
+        if (keyParameter != null)
+        {
+            lastKey = keyParameter.getKey();
+        }
 
         this.macBlock = new byte[blockSize];
-        ctrEngine.init(true, new ParametersWithIV(engineParam, this.iv));
-        engine.init(true, engineParam);
+        ctrEngine.init(true, new ParametersWithIV(keyParameter, this.nonce));
+        // TODO Surely it's redundant to init ctrEngine's inner BlockCipher??
+        engine.init(true, keyParameter);
     }
 
     public String getAlgorithmName()
@@ -165,11 +193,19 @@ public class KGCMBlockCipher
     private void processAAD(byte[] authText, int authOff, int len)
     {
         int pos = authOff, end = authOff + len;
-        while (pos < end)
+        while (end - pos >= blockSize)
         {
             xorWithInput(b, authText, pos);
             multiplier.multiplyH(b);
             pos += blockSize;
+        }
+        if (pos < end)
+        {
+            // trailing partial block: zero-pad to a full block (the message length is bound by the
+            // lambda field in calculateMac, so the padding is unambiguous). See the interop caveat
+            // in the class javadoc (github #287).
+            xorPartialWithInput(b, authText, pos, end - pos);
+            multiplier.multiplyH(b);
         }
     }
 
@@ -235,28 +271,12 @@ public class KGCMBlockCipher
             resultLen += ctrEngine.doFinal(out, outOff + resultLen);
 
             calculateMac(out, outOff, len, lenAAD);
-        }
-        else
-        {
-            int ctLen = len - macSize; 
-            if (out.length - outOff < ctLen)
+
+            if (macBlock == null)
             {
-                throw new OutputLengthException("Output buffer too short");
+                throw new IllegalStateException("mac is not calculated");
             }
 
-            calculateMac(data.getBuffer(), 0, ctLen, lenAAD);
-
-            resultLen = ctrEngine.processBytes(data.getBuffer(), 0, ctLen, out, outOff);
-            resultLen += ctrEngine.doFinal(out, outOff + resultLen);
-        }
-
-        if (macBlock == null)
-        {
-            throw new IllegalStateException("mac is not calculated");
-        }
-
-        if (forEncryption)
-        {
             System.arraycopy(macBlock, 0, out, outOff + resultLen, macSize);
 
             reset();
@@ -265,6 +285,22 @@ public class KGCMBlockCipher
         }
         else
         {
+            int ctLen = len - macSize;
+            if (out.length - outOff < ctLen)
+            {
+                throw new OutputLengthException("Output buffer too short");
+            }
+
+            // KGCM authenticates the ciphertext, so verify the tag BEFORE decrypting: a forged
+            // ciphertext is rejected without ever writing unverified CTR plaintext to the caller's
+            // output buffer (matches CCMBlockCipher / GCMSIVBlockCipher).
+            calculateMac(data.getBuffer(), 0, ctLen, lenAAD);
+
+            if (macBlock == null)
+            {
+                throw new IllegalStateException("mac is not calculated");
+            }
+
             byte[] mac = new byte[macSize];
             System.arraycopy(data.getBuffer(), len - macSize, mac, 0, macSize);
 
@@ -275,6 +311,9 @@ public class KGCMBlockCipher
             {
                 throw new InvalidCipherTextException("mac verification failed");
             }
+
+            resultLen = ctrEngine.processBytes(data.getBuffer(), 0, ctLen, out, outOff);
+            resultLen += ctrEngine.doFinal(out, outOff + resultLen);
 
             reset();
 
@@ -326,11 +365,18 @@ public class KGCMBlockCipher
     private void calculateMac(byte[] input, int inOff, int len, int lenAAD)
     {
         int pos = inOff, end = inOff + len;
-        while (pos < end)
+        while (end - pos >= blockSize)
         {
             xorWithInput(b, input, pos);
             multiplier.multiplyH(b);
             pos += blockSize;
+        }
+        if (pos < end)
+        {
+            // trailing partial block: zero-pad to a full block (length bound by lambda_c below).
+            // See the interop caveat in the class javadoc (github #287).
+            xorPartialWithInput(b, input, pos, end - pos);
+            multiplier.multiplyH(b);
         }
 
         long lambda_o = (lenAAD & 0xFFFFFFFFL) << 3;
@@ -357,14 +403,23 @@ public class KGCMBlockCipher
         }
     }
 
+    private void xorPartialWithInput(long[] z, byte[] buf, int off, int len)
+    {
+        // copy the trailing len (< blockSize) bytes into a zeroed full block so the read never
+        // overruns the supplied buffer (which is not guaranteed zero past its valid length).
+        byte[] block = new byte[blockSize];
+        System.arraycopy(buf, off, block, 0, len);
+        xorWithInput(z, block, 0);
+    }
+
     private static class ExposedByteArrayOutputStream
         extends ByteArrayOutputStream
     {
-        public ExposedByteArrayOutputStream()
+        ExposedByteArrayOutputStream()
         {
         }
 
-        public byte[] getBuffer()
+        byte[] getBuffer()
         {
             return this.buf;
         }

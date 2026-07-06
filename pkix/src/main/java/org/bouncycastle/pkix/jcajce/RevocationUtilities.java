@@ -332,7 +332,19 @@ class RevocationUtilities
 
         if (isIndirect)
         {
-            X500Principal certificateIssuer = crl_entry.getCertificateIssuer();
+            X500Principal certificateIssuer;
+            try
+            {
+                certificateIssuer = crl_entry.getCertificateIssuer();
+            }
+            catch (RuntimeException e)
+            {
+                // getCertificateIssuer() builds a new X500Principal from the entry's certificateIssuer
+                // DN, which can throw an unchecked IllegalArgumentException on a name that decodes
+                // structurally but is semantically invalid. Fail closed with the checked contract type
+                // rather than let it escape (or swallow it to null, which would fail revocation open).
+                throw new AnnotatedException("CRL entry certificate issuer could not be parsed.", e);
+            }
 
             X500Name expectedCertIssuer;
             if (null == certificateIssuer)
@@ -614,7 +626,7 @@ class RevocationUtilities
     {
         try
         {
-            byte[] idp = crl.getExtensionValue(Extension.issuingDistributionPoint.getId());
+            byte[] idp = crl.getExtensionValue(ISSUING_DISTRIBUTION_POINT);
             return idp != null
                 && IssuingDistributionPoint.getInstance(ASN1OctetString.getInstance(idp).getOctets()).isIndirectCRL();
         }

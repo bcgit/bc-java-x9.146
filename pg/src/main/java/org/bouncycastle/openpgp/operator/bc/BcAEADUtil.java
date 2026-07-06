@@ -25,6 +25,7 @@ import org.bouncycastle.crypto.params.HKDFParameters;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPSessionKey;
+import org.bouncycastle.openpgp.operator.PGPAEADUtil;
 import org.bouncycastle.openpgp.operator.PGPDataDecryptor;
 import org.bouncycastle.openpgp.operator.PGPDigestCalculator;
 import org.bouncycastle.util.Arrays;
@@ -33,56 +34,11 @@ import org.bouncycastle.util.Pack;
 import org.bouncycastle.util.io.Streams;
 
 public class BcAEADUtil
+    extends PGPAEADUtil
 {
     final static String RecoverAEADEncryptedSessionDataErrorMessage = "Exception recovering session info";
     private final static String ProcessAeadKeyDataErrorMessage = "Exception recovering AEAD protected private key material";
     final static String GetEskAndTagErrorMessage = "cannot encrypt session info";
-    /**
-     * Generate a nonce by xor-ing the given iv with the chunk index.
-     *
-     * @param iv         initialization vector
-     * @param chunkIndex chunk index
-     * @return nonce
-     */
-    protected static byte[] getNonce(byte[] iv, long chunkIndex)
-    {
-        byte[] nonce = Arrays.clone(iv);
-
-        xorChunkId(nonce, chunkIndex);
-
-        return nonce;
-    }
-
-    /**
-     * XOR the byte array with the chunk index in-place.
-     *
-     * @param nonce      byte array
-     * @param chunkIndex chunk index
-     */
-    protected static void xorChunkId(byte[] nonce, long chunkIndex)
-    {
-        int index = nonce.length - 8;
-
-        nonce[index++] ^= (byte)(chunkIndex >> 56);
-        nonce[index++] ^= (byte)(chunkIndex >> 48);
-        nonce[index++] ^= (byte)(chunkIndex >> 40);
-        nonce[index++] ^= (byte)(chunkIndex >> 32);
-        nonce[index++] ^= (byte)(chunkIndex >> 24);
-        nonce[index++] ^= (byte)(chunkIndex >> 16);
-        nonce[index++] ^= (byte)(chunkIndex >> 8);
-        nonce[index] ^= (byte)(chunkIndex);
-    }
-
-    /**
-     * Calculate an actual chunk length from the encoded chunk size.
-     *
-     * @param chunkSize encoded chunk size
-     * @return decoded length
-     */
-    protected static long getChunkLength(int chunkSize)
-    {
-        return 1L << (chunkSize + 6);
-    }
 
     /**
      * Derive a message key and IV from the given session key.
@@ -333,6 +289,7 @@ public class BcAEADUtil
         private int dataOff;
         private long chunkIndex = 0;
         private long totalBytes = 0;
+        private boolean aeadComplete = false; // set once the trailing message tag has been verified
         private final boolean isV5StyleAEAD;
 
         /**
@@ -453,6 +410,17 @@ public class BcAEADUtil
             int dataLen = Streams.readFully(in, buf, tagLen + tagLen, chunkLength);
             if (dataLen == 0)
             {
+                if (!aeadComplete)
+                {
+                    // A chunk-aligned message (plaintext an exact multiple of chunkLength) ends after a
+                    // full-size final data chunk, so the trailing message tag was pre-read into the
+                    // look-ahead (buf[0..tagLen)) but the full-size-chunk path below never verified it.
+                    // Verify it now, before signalling EOF, so that truncation at a chunk boundary
+                    // (dropping trailing chunks plus the final tag) is rejected rather than accepted as
+                    // authentic - RFC 9580 5.13.2 relies on the final tag to authenticate the total length.
+                    verifyFinalTag();
+                    aeadComplete = true;
+                }
                 return null;
             }
 
@@ -471,7 +439,7 @@ public class BcAEADUtil
             }
             catch (InvalidCipherTextException e)
             {
-                throw new IOException("exception processing chunk " + chunkIndex + ": " + e.getMessage());
+                throw Exceptions.ioException("exception processing chunk " + chunkIndex + ": " + e.getMessage(), e);
             }
 
             totalBytes += decData.length;
@@ -481,25 +449,8 @@ public class BcAEADUtil
 
             if (dataLen != chunkLength)     // it's our last block
             {
-                adata = getAdata(isV5StyleAEAD, aaData, chunkIndex, totalBytes);
-
-                try
-                {
-                    c.init(false, new AEADParameters(secretKey, 128, getNonce(iv, chunkIndex), adata));  // always full tag.
-
-                    if (isV5StyleAEAD)
-                    {
-                        c.processAADBytes(Pack.longToBigEndian(totalBytes), 0, 8);
-                    }
-
-                    c.processBytes(buf, 0, tagLen, buf, 0);
-
-                    c.doFinal(buf, 0); // check final tag
-                }
-                catch (InvalidCipherTextException e)
-                {
-                    throw new IOException("exception processing final tag: " + e.getMessage());
-                }
+                verifyFinalTag();
+                aeadComplete = true;
             }
             else
             {
@@ -507,6 +458,32 @@ public class BcAEADUtil
             }
 
             return decData;
+        }
+
+        // Verify the trailing message tag, which is held in buf[0..tagLen). Called both for a short
+        // final data chunk and for a chunk-aligned message whose final tag would otherwise be skipped.
+        private void verifyFinalTag()
+            throws IOException
+        {
+            byte[] adata = getAdata(isV5StyleAEAD, aaData, chunkIndex, totalBytes);
+
+            try
+            {
+                c.init(false, new AEADParameters(secretKey, 128, getNonce(iv, chunkIndex), adata));  // always full tag.
+
+                if (isV5StyleAEAD)
+                {
+                    c.processAADBytes(Pack.longToBigEndian(totalBytes), 0, 8);
+                }
+
+                c.processBytes(buf, 0, tagLen, buf, 0);
+
+                c.doFinal(buf, 0); // check final tag
+            }
+            catch (InvalidCipherTextException e)
+            {
+                throw Exceptions.ioException("exception processing final tag: " + e.getMessage(), e);
+            }
         }
 
         private static byte[] getAdata(boolean isV5StyleAEAD, byte[] aaData, long chunkIndex, long totalBytes)
@@ -670,7 +647,7 @@ public class BcAEADUtil
             }
             catch (InvalidCipherTextException e)
             {
-                throw new IOException("exception processing chunk " + chunkIndex + ": " + e.getMessage());
+                throw Exceptions.ioException("exception processing chunk " + chunkIndex + ": " + e.getMessage(), e);
             }
 
             totalBytes += dataOff;

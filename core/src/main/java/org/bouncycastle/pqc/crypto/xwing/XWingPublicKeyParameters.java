@@ -1,9 +1,9 @@
 package org.bouncycastle.pqc.crypto.xwing;
 
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.crypto.params.MLKEMParameters;
+import org.bouncycastle.crypto.params.MLKEMPublicKeyParameters;
 import org.bouncycastle.crypto.params.X25519PublicKeyParameters;
-import org.bouncycastle.pqc.crypto.mlkem.MLKEMParameters;
-import org.bouncycastle.pqc.crypto.mlkem.MLKEMPublicKeyParameters;
 import org.bouncycastle.util.Arrays;
 
 public class XWingPublicKeyParameters
@@ -23,6 +23,15 @@ public class XWingPublicKeyParameters
     public XWingPublicKeyParameters(byte[] encoding)
     {
         super(false);
+
+        // Reject a buffer too short to carry the trailing X25519 key before slicing:
+        // a shorter encoding would otherwise produce a negative-length range. The
+        // ML-KEM-768 portion length is then enforced by the MLKEMPublicKeyParameters
+        // constructor below.
+        if (encoding.length <= X25519PublicKeyParameters.KEY_SIZE)
+        {
+            throw new IllegalArgumentException("'encoding' has invalid length");
+        }
 
         this.kybPub = new MLKEMPublicKeyParameters(MLKEMParameters.ml_kem_768, Arrays.copyOfRange(encoding, 0, encoding.length - X25519PublicKeyParameters.KEY_SIZE));
         this.xdhPub = new X25519PublicKeyParameters(encoding, encoding.length - X25519PublicKeyParameters.KEY_SIZE);

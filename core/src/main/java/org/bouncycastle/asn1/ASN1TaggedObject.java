@@ -3,6 +3,8 @@ package org.bouncycastle.asn1;
 import java.io.IOException;
 
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
+import org.bouncycastle.util.Objects;
 
 /**
  * ASN.1 TaggedObject - in ASN.1 notation this is any object preceded by
@@ -72,7 +74,7 @@ public abstract class ASN1TaggedObject
             }
             catch (IOException e)
             {
-                throw new IllegalArgumentException("failed to construct tagged object from byte[]: " + e.getMessage());
+                throw Exceptions.illegalArgumentException("failed to construct tagged object from byte[]", e);
             }
         }
 
@@ -368,7 +370,7 @@ public abstract class ASN1TaggedObject
             throw new IllegalStateException("object implicit - explicit expected.");
         }
 
-        return checkedCast(obj.toASN1Primitive());
+        return fromExplicit(obj.toASN1Primitive());
     }
 
     public ASN1TaggedObject getImplicitBaseTagged(int baseTagClass, int baseTagNo)
@@ -385,7 +387,7 @@ public abstract class ASN1TaggedObject
 
         case DECLARED_IMPLICIT:
         {
-            ASN1TaggedObject declared = checkedCast(obj.toASN1Primitive());
+            ASN1TaggedObject declared = fromExplicit(obj.toASN1Primitive());
             return ASN1Util.checkTag(declared, baseTagClass, baseTagNo);
         }
 
@@ -426,7 +428,7 @@ public abstract class ASN1TaggedObject
                 throw new IllegalStateException("object implicit - explicit expected.");
             }
 
-            return universalType.checkedCast(obj.toASN1Primitive());
+            return universalType.fromExplicit(obj.toASN1Primitive());
         }
 
         if (DECLARED_EXPLICIT == explicitness)
@@ -448,7 +450,7 @@ public abstract class ASN1TaggedObject
             return universalType.fromImplicitPrimitive((DEROctetString)primitive);
         }
         default:
-            return universalType.checkedCast(primitive);
+            return universalType.fromExplicit(primitive);
         }
     }
 
@@ -541,6 +543,16 @@ public abstract class ASN1TaggedObject
             return (ASN1TaggedObject)primitive;
         }
 
-        throw new IllegalStateException("unexpected object: " + primitive.getClass().getName());
+        throw new IllegalArgumentException("unexpected object: " + Objects.getClassName(primitive));
+    }
+
+    private static ASN1TaggedObject fromExplicit(ASN1Primitive primitive)
+    {
+        if (primitive instanceof ASN1TaggedObject)
+        {
+            return (ASN1TaggedObject)primitive;
+        }
+
+        throw new IllegalStateException("unexpected explicit encoding");
     }
 }

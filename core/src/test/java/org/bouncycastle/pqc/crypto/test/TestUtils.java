@@ -32,19 +32,29 @@ class TestUtils
         return "true".equalsIgnoreCase(value);
     }
 
-    public interface SignerOperation
+    public abstract static class SignerOperation
     {
-        SecureRandom getSecureRandom(byte[] seed);
+        public abstract SecureRandom getSecureRandom(byte[] seed);
 
-        AsymmetricCipherKeyPairGenerator getAsymmetricCipherKeyPairGenerator(int fileIndex, SecureRandom random);
+        public abstract AsymmetricCipherKeyPairGenerator getAsymmetricCipherKeyPairGenerator(int fileIndex, SecureRandom random);
 
-        byte[] getPublicKeyEncoded(AsymmetricKeyParameter pubParams);
+        public abstract byte[] getPublicKeyEncoded(CipherParameters pubParams);
 
-        byte[] getPrivateKeyEncoded(CipherParameters privParams);
+        public abstract byte[] getPrivateKeyEncoded(CipherParameters privParams);
 
-        Signer getSigner();
+        public abstract Signer getSigner();
 
-        MessageSigner getMessageSigner();
+        public abstract MessageSigner getMessageSigner();
+
+        public CipherParameters setSignParameters(CipherParameters privParams, SecureRandom random)
+        {
+            return new ParametersWithRandom(privParams, random);
+        }
+
+        public CipherParameters setVerifyParameters(CipherParameters pubParams, CipherParameters privParams)
+        {
+            return pubParams;
+        }
     }
 
     public interface KeyEncapsulationOperation
@@ -62,6 +72,86 @@ class TestUtils
         EncapsulatedSecretExtractor getKEMExtractor(AsymmetricKeyParameter privParams);
 
         int getSessionKeySize();
+    }
+
+    /**
+     * TEMPORARY (SQIsign port): keygen-only variant. Runs the same KAT-parsing
+     * loop as the full {@link #testTestVector(boolean, boolean, boolean, String,
+     * String[], SignerOperation)} but stops after the pk/sk equality check.
+     * Used while the SQIsign sign / verify engine is being ported piece by
+     * piece. Once the engine is complete, callers should switch to the full
+     * variant and this method can be removed.
+     */
+    public static void testTestVectorKeygenOnly(boolean sampleOnly, boolean enableFactory, String homeDir, String[] files, SignerOperation operation)
+        throws Exception
+    {
+        for (int fileIndex = 0; fileIndex != files.length; fileIndex++)
+        {
+            String name = files[fileIndex];
+
+            InputStream src = TestResourceFinder.findTestResource(homeDir, name);
+            BufferedReader bin = new BufferedReader(new InputStreamReader(src));
+
+            String line;
+            HashMap<String, String> buf = new HashMap<String, String>();
+            TestSampler sampler = sampleOnly ? new TestSampler() : null;
+            while ((line = bin.readLine()) != null)
+            {
+                line = line.trim();
+
+                if (line.startsWith("#"))
+                {
+                    continue;
+                }
+                if (line.length() == 0)
+                {
+                    if (buf.size() > 0)
+                    {
+                        String count = (String)buf.get("count");
+                        if (sampler != null && sampler.skipTest(count))
+                        {
+                            continue;
+                        }
+
+                        byte[] seed = Hex.decode((String)buf.get("seed"));
+                        byte[] pk = Hex.decode((String)buf.get("pk"));
+                        byte[] sk = Hex.decode((String)buf.get("sk"));
+
+                        SecureRandom random = operation.getSecureRandom(seed);
+
+                        AsymmetricCipherKeyPairGenerator kpGen = operation.getAsymmetricCipherKeyPairGenerator(fileIndex, random);
+
+                        AsymmetricCipherKeyPair kp = kpGen.generateKeyPair();
+                        AsymmetricKeyParameter pubParams;
+                        CipherParameters privParams;
+                        if (enableFactory)
+                        {
+                            pubParams = PublicKeyFactory.createKey(
+                                SubjectPublicKeyInfoFactory.createSubjectPublicKeyInfo(kp.getPublic()));
+                            privParams = PrivateKeyFactory.createKey(
+                                PrivateKeyInfoFactory.createPrivateKeyInfo(kp.getPrivate()));
+                        }
+                        else
+                        {
+                            pubParams = kp.getPublic();
+                            privParams = kp.getPrivate();
+                        }
+
+                        Assert.assertTrue(name + ": public key", Arrays.areEqual(pk, operation.getPublicKeyEncoded(pubParams)));
+                        Assert.assertTrue(name + ": secret key", Arrays.areEqual(sk, operation.getPrivateKeyEncoded(privParams)));
+                        System.out.println("Count " + count + " keygen pass");
+                    }
+                    buf.clear();
+                    continue;
+                }
+
+                int a = line.indexOf("=");
+                if (a > -1)
+                {
+                    buf.put(line.substring(0, a).trim(), line.substring(a + 1).trim());
+                }
+            }
+        }
     }
 
     public static void testTestVector(boolean sampleOnly, boolean enableFactory, boolean isSigner, String homeDir, String[] files, SignerOperation operation)
@@ -99,7 +189,7 @@ class TestUtils
                         byte[] pk = Hex.decode((String)buf.get("pk"));
                         byte[] sk = Hex.decode((String)buf.get("sk"));
                         byte[] message = Hex.decode((String)buf.get("msg"));
-                        byte[] signature = Hex.decode((String)buf.get("sm"));
+                        byte[] signature = Hex.decode((String)(buf.get("sm") == null ? buf.get("sig") : buf.get("sm")));
 
                         SecureRandom random = operation.getSecureRandom(seed);
 
@@ -109,8 +199,7 @@ class TestUtils
                         // Generate keys and test.
                         //
                         AsymmetricCipherKeyPair kp = kpGen.generateKeyPair();
-                        AsymmetricKeyParameter pubParams;
-                        CipherParameters privParams;
+                        CipherParameters pubParams, privParams;
                         if (enableFactory)
                         {
                             pubParams = PublicKeyFactory.createKey(
@@ -128,7 +217,8 @@ class TestUtils
                         Assert.assertTrue(name + ": secret key", Arrays.areEqual(sk, operation.getPrivateKeyEncoded(privParams)));
 
                         byte[] sigGenerated;
-                        privParams = new ParametersWithRandom(privParams, random);
+                        privParams = operation.setSignParameters(privParams, random);
+                        pubParams = operation.setVerifyParameters(pubParams, privParams);
                         if (isSigner)
                         {
                             Signer signer = operation.getSigner();
@@ -142,7 +232,13 @@ class TestUtils
                             signer.init(true, privParams);
                             sigGenerated = signer.generateSignature(message);
                         }
-
+//                        for (int i = 0; i < sigGenerated.length; i++)
+//                        {
+//                            if (sigGenerated[i] != signature[i])
+//                            {
+//                                System.out.println(i + " " + sigGenerated[i] + " " + signature[i]);
+//                            }
+//                        }
                         Assert.assertTrue(Arrays.areEqual(sigGenerated, signature));
 
                         if (isSigner)
@@ -158,7 +254,7 @@ class TestUtils
                             signer.init(false, pubParams);
                             Assert.assertTrue(signer.verifySignature(message, sigGenerated));
                         }
-                        System.out.println("Count " + count + " pass");
+                        //System.out.println("Count " + count + " pass");
                     }
                     buf.clear();
                     continue;
@@ -173,19 +269,18 @@ class TestUtils
         }
     }
 
-    public static void testTestVector(boolean sampleOnly, boolean enableFactory, String homeDir, String[] files, KeyEncapsulationOperation operation)
+    public static void testTestVector(boolean alwaysFull, boolean enableFactory, String homeDir, String[] files, KeyEncapsulationOperation operation)
         throws Exception
     {
         for (int fileIndex = 0; fileIndex < files.length; fileIndex++)
         {
             String name = files[fileIndex];
-            //System.out.println(files[fileIndex]);
             InputStream src = TestResourceFinder.findTestResource(homeDir, name);
             BufferedReader bin = new BufferedReader(new InputStreamReader(src));
 
             String line = null;
             HashMap<String, String> buf = new HashMap<String, String>();
-            TestSampler sampler = sampleOnly ? new TestSampler() : null;
+            TestSampler sampler = alwaysFull ? null : new TestSampler();
             while ((line = bin.readLine()) != null)
             {
                 line = line.trim();
@@ -194,7 +289,7 @@ class TestUtils
                 {
                     continue;
                 }
-                if (line.isEmpty())
+                if (line.length() == 0)
                 {
                     if (!buf.isEmpty())
                     {
@@ -203,7 +298,7 @@ class TestUtils
                         {
                             continue;
                         }
-                         System.out.println("test case: " + count);
+                        System.out.println("test case: " + count);
 
                         byte[] seed = Hex.decode((String)buf.get("seed")); // seed for bike secure random
                         byte[] pk = Hex.decode((String)buf.get("pk"));     // public key
@@ -219,19 +314,15 @@ class TestUtils
                         // Generate keys and test.
                         //
                         AsymmetricCipherKeyPair kp = kpGen.generateKeyPair();
-                        AsymmetricKeyParameter pubParams;
-                        AsymmetricKeyParameter privParams;
+                        AsymmetricKeyParameter pubParams = kp.getPublic();
+                        ;
+                        AsymmetricKeyParameter privParams = kp.getPrivate();
                         if (enableFactory)
                         {
                             pubParams = PublicKeyFactory.createKey(
-                                SubjectPublicKeyInfoFactory.createSubjectPublicKeyInfo(kp.getPublic()));
+                                SubjectPublicKeyInfoFactory.createSubjectPublicKeyInfo(pubParams));
                             privParams = PrivateKeyFactory.createKey(
-                                PrivateKeyInfoFactory.createPrivateKeyInfo(kp.getPrivate()));
-                        }
-                        else
-                        {
-                            pubParams = kp.getPublic();
-                            privParams = kp.getPrivate();
+                                PrivateKeyInfoFactory.createPrivateKeyInfo(privParams));
                         }
 
                         Assert.assertTrue(name + " " + count + ": public key", Arrays.areEqual(pk, operation.getPublicKeyEncoded(pubParams)));
@@ -240,18 +331,20 @@ class TestUtils
                         // KEM Encapsulation
                         EncapsulatedSecretGenerator kemGenerator = operation.getKEMGenerator(random);
                         SecretWithEncapsulation secretWithEnc = kemGenerator.generateEncapsulated(pubParams);
-                        byte[] secret = secretWithEnc.getSecret();
-                        byte[] c = secretWithEnc.getEncapsulation();
 
-                        Assert.assertTrue(name + " " + count + ": ciphertext", Arrays.areEqual(c, ct));
-                        Assert.assertTrue(name + " " + count + ": kem_dec ss", Arrays.areEqual(secret, 0, secret.length, ss, 0, secret.length));
+                        byte[] cipherText = secretWithEnc.getEncapsulation();
+                        Assert.assertTrue(name + " " + count + ": cipherText", Arrays.areEqual(ct, cipherText));
+
+                        byte[] encapSecret = secretWithEnc.getSecret();
+                        Assert.assertTrue(name + " " + count + ": encapSecret", Arrays.areEqual(ss, encapSecret));
 
                         // KEM Decapsulation
                         EncapsulatedSecretExtractor kemExtractor = operation.getKEMExtractor(privParams);
-                        byte[] dec_key = kemExtractor.extractSecret(c);
+
+                        byte[] decapSecret = kemExtractor.extractSecret(cipherText);
+                        Assert.assertTrue(name + " " + count + ": decapSecret", Arrays.areEqual(ss, decapSecret));
 
                         //Assert.assertTrue(operation.getSessionKeySize() == secret.length * 8);
-                        Assert.assertTrue(name + " " + count + ": kem_dec key", Arrays.areEqual(dec_key, secret));
                     }
                     buf.clear();
                     continue;

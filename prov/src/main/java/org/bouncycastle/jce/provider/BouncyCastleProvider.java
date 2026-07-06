@@ -15,7 +15,6 @@ import java.util.logging.Logger;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
-import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
@@ -23,30 +22,37 @@ import org.bouncycastle.crypto.CryptoServiceConstraintsException;
 import org.bouncycastle.crypto.CryptoServiceProperties;
 import org.bouncycastle.crypto.CryptoServicePurpose;
 import org.bouncycastle.crypto.CryptoServicesRegistrar;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
 import org.bouncycastle.internal.asn1.isara.IsaraObjectIdentifiers;
-import org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyFactorySpi;
 import org.bouncycastle.jcajce.provider.config.ConfigurableProvider;
 import org.bouncycastle.jcajce.provider.config.ProviderConfiguration;
 import org.bouncycastle.jcajce.provider.symmetric.util.ClassUtil;
 import org.bouncycastle.jcajce.provider.util.AlgorithmProvider;
 import org.bouncycastle.jcajce.provider.util.AsymmetricKeyInfoConverter;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
+import org.bouncycastle.pqc.jcajce.provider.aimer.AIMerKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.bike.BIKEKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.cmce.CMCEKeyFactorySpi;
-import org.bouncycastle.pqc.jcajce.provider.dilithium.DilithiumKeyFactorySpi;
+import org.bouncycastle.pqc.jcajce.provider.faest.FaestKeyFactorySpi;
+import org.bouncycastle.pqc.jcajce.provider.qruov.QRUOVKeyFactorySpi;
+import org.bouncycastle.pqc.jcajce.provider.haetae.HaetaeKeyFactorySpi;
+import org.bouncycastle.pqc.jcajce.provider.hawk.HawkKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.falcon.FalconKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.hqc.HQCKeyFactorySpi;
-import org.bouncycastle.pqc.jcajce.provider.kyber.KyberKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.lms.LMSKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.mayo.MayoKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.newhope.NHKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.ntru.NTRUKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.picnic.PicnicKeyFactorySpi;
+import org.bouncycastle.pqc.jcajce.provider.mqom.MQOMKeyFactorySpi;
+import org.bouncycastle.pqc.jcajce.provider.sdith.SDitHKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.snova.SnovaKeyFactorySpi;
+import org.bouncycastle.pqc.jcajce.provider.sqisign.SQIsignKeyFactorySpi;
+import org.bouncycastle.pqc.jcajce.provider.uov.UOVKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.sphincs.Sphincs256KeyFactorySpi;
-import org.bouncycastle.pqc.jcajce.provider.sphincsplus.SPHINCSPlusKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.xmss.XMSSKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.xmss.XMSSMTKeyFactorySpi;
+import org.bouncycastle.util.Exceptions;
 import org.bouncycastle.util.Strings;
 
 /**
@@ -78,7 +84,7 @@ public final class BouncyCastleProvider extends Provider
 {
     private static final Logger LOG = Logger.getLogger(BouncyCastleProvider.class.getName());
 
-    private static String info = "BouncyCastle Security Provider v1.83";
+    private static String info = "BouncyCastle Security Provider v1.85";
 
     public static final String PROVIDER_NAME = "BC";
 
@@ -95,7 +101,7 @@ public final class BouncyCastleProvider extends Provider
 
     private static final String[] SYMMETRIC_GENERIC =
         {
-            "PBEPBKDF1", "PBEPBKDF2", "PBEPKCS12", "TLSKDF", "SCRYPT", "HKDF"
+            "PBEPBKDF1", "PBEPBKDF2", "PBEPKCS12", "TLSKDF", "SCRYPT", "ARGON2", "HKDF"
         };
 
     private static final String[] SYMMETRIC_MACS =
@@ -109,10 +115,10 @@ public final class BouncyCastleProvider extends Provider
             service("AES", 256), service("ARC4", 20), service("ARIA", 256), service("Blowfish", 128), service("Camellia", 256),
             service("CAST5", 128), service("CAST6", 256), service("ChaCha", 128), service("DES", 56),  service("DESede", 112),
             service("GOST28147", 128), service("Grainv1", 128), service("Grain128", 128), service("HC128", 128), service("HC256", 256),
-            service("IDEA", 128), service("Noekeon", 128), service("RC2", 128), service("RC5", 128), service("RC6", 256),
+            service("IDEA", 128), service("LEA", 256), service("Noekeon", 128), service("RC2", 128), service("RC5", 128), service("RC6", 256),
             service("Rijndael", 256), service("Salsa20", 128), service("SEED", 128), service("Serpent", 256), service("Shacal2", 128),
             service("Skipjack", 80), service("SM4", 128), service("TEA", 128), service("Twofish", 256), service("Threefish", 128),
-            service("VMPC", 128), service("VMPCKSA3", 128), service("XTEA", 128), service("XSalsa20", 128), service("OpenSSLPBKDF", 128),
+            service("VMPC", 128), service("VMPCKSA3", 128), service("XTEA", 128), service("XSalsa20", 128), service("XChaCha", 128), service("OpenSSLPBKDF", 128),
             service("DSTU7624", 256), service("GOST3412_2015", 256), service("Zuc", 128)
         };
 
@@ -130,8 +136,8 @@ public final class BouncyCastleProvider extends Provider
 
     private static final String[] ASYMMETRIC_CIPHERS =
         {
-            "DSA", "DH", "EC", "RSA", "GOST", "ECGOST", "ElGamal", "DSTU4145", "GM", "EdEC", "LMS", "SPHINCSPlus",
-            "Dilithium", "Falcon", "NTRU", "CONTEXT", "SLHDSA", "MLDSA", "MLKEM"
+            "DSA", "DH", "EC", "RSA", "GOST", "ECGOST", "ElGamal", "DSTU4145", "GM", "EdEC", "LMS", "NTRU", "Falcon", "CONTEXT", "SLHDSA", "MLDSA", "MLKEM",
+            "CMCE", "FrodoKEM", "CompositeKEMs"
         };
 
     /*
@@ -169,7 +175,7 @@ public final class BouncyCastleProvider extends Provider
     private static final String KDF_PACKAGE = "org.bouncycastle.jcajce.provider.kdf.";
     private static final String[] KDFS =
         {
-            "HKDF", "PBEPBKDF2", "SCRYPT"
+            "HKDF", "PBKDF2", "SCRYPT"
         };
 
 
@@ -183,7 +189,7 @@ public final class BouncyCastleProvider extends Provider
      */
     public BouncyCastleProvider()
     {
-        super(PROVIDER_NAME, 1.8300, info);
+        super(PROVIDER_NAME, 1.85, info);
 
         AccessController.doPrivileged(new PrivilegedAction()
         {
@@ -365,77 +371,25 @@ public final class BouncyCastleProvider extends Provider
 
     private void loadPQCKeys()
     {
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus, new SPHINCSPlusKeyFactorySpi());
 
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_128s_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_128f_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_128s_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_128f_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_128s_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_128f_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_192s_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_192f_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_192s_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_192f_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_192s_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_192f_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_256s_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_256f_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_256s_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_256f_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_256s_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_256f_r3, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_128s_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_128f_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_128s_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_128f_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_128s_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_128f_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_192s_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_192f_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_192s_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_192f_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_192s_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_192f_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_256s_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_256f_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_256s_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_256f_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_256s_r3_simple, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_haraka_256f_r3_simple, new SPHINCSPlusKeyFactorySpi());
 
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_128s, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_192s, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha2_256s, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(new ASN1ObjectIdentifier("1.3.9999.6.4.10"), new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_128f, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_192f, new SPHINCSPlusKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_256f, new SPHINCSPlusKeyFactorySpi());
 
         addKeyInfoConverter(PQCObjectIdentifiers.sphincs256, new Sphincs256KeyFactorySpi());
         addKeyInfoConverter(PQCObjectIdentifiers.newHope, new NHKeyFactorySpi());
         addKeyInfoConverter(PQCObjectIdentifiers.xmss, new XMSSKeyFactorySpi());
         addKeyInfoConverter(IsaraObjectIdentifiers.id_alg_xmss, new XMSSKeyFactorySpi());
+        addKeyInfoConverter(IANAObjectIdentifiers.id_alg_xmss_hashsig, new XMSSKeyFactorySpi());
         addKeyInfoConverter(PQCObjectIdentifiers.xmss_mt, new XMSSMTKeyFactorySpi());
         addKeyInfoConverter(IsaraObjectIdentifiers.id_alg_xmssmt, new XMSSMTKeyFactorySpi());
+        addKeyInfoConverter(IANAObjectIdentifiers.id_alg_xmssmt_hashsig, new XMSSMTKeyFactorySpi());
         addKeyInfoConverter(PKCSObjectIdentifiers.id_alg_hss_lms_hashsig, new LMSKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.picnic_key, new PicnicKeyFactorySpi());
-
-        addKeyInfoConverter(NISTObjectIdentifiers.id_alg_ml_kem_512, new MLKEMKeyFactorySpi());
-        addKeyInfoConverter(NISTObjectIdentifiers.id_alg_ml_kem_768, new MLKEMKeyFactorySpi());
-        addKeyInfoConverter(NISTObjectIdentifiers.id_alg_ml_kem_1024, new MLKEMKeyFactorySpi());
 
         addKeyInfoConverter(BCObjectIdentifiers.old_falcon_512, new FalconKeyFactorySpi(BCObjectIdentifiers.old_falcon_512));
         addKeyInfoConverter(BCObjectIdentifiers.old_falcon_1024, new FalconKeyFactorySpi(BCObjectIdentifiers.old_falcon_1024));
         addKeyInfoConverter(BCObjectIdentifiers.falcon_512, new FalconKeyFactorySpi(BCObjectIdentifiers.falcon_512));
         addKeyInfoConverter(BCObjectIdentifiers.falcon_1024, new FalconKeyFactorySpi(BCObjectIdentifiers.falcon_1024));
 
-        addKeyInfoConverter(BCObjectIdentifiers.dilithium2, new DilithiumKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.dilithium3, new DilithiumKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.dilithium5, new DilithiumKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.dilithium2_aes, new DilithiumKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.dilithium3_aes, new DilithiumKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.dilithium5_aes, new DilithiumKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.mceliece348864_r3, new CMCEKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.mceliece460896_r3, new CMCEKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.mceliece6688128_r3, new CMCEKeyFactorySpi());
@@ -449,9 +403,6 @@ public final class BouncyCastleProvider extends Provider
         addKeyInfoConverter(BCObjectIdentifiers.hqc256, new HQCKeyFactorySpi());
 
 
-        addKeyInfoConverter(BCObjectIdentifiers.kyber512_aes, new KyberKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.kyber768_aes, new KyberKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.kyber1024_aes, new KyberKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.ntruhps2048509, new NTRUKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.ntruhps2048677, new NTRUKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.ntruhps4096821, new NTRUKeyFactorySpi());
@@ -502,6 +453,114 @@ public final class BouncyCastleProvider extends Provider
         addKeyInfoConverter(BCObjectIdentifiers.snova_75_33_2_esk, new SnovaKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.snova_75_33_2_shake_ssk, new SnovaKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.snova_75_33_2_shake_esk, new SnovaKeyFactorySpi());
+
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_hypercube_cat1_gf256, new SDitHKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_hypercube_cat3_gf256, new SDitHKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_hypercube_cat5_gf256, new SDitHKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_hypercube_cat1_p251,  new SDitHKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_hypercube_cat3_p251,  new SDitHKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_hypercube_cat5_p251,  new SDitHKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_threshold_cat1_gf256, new SDitHKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_threshold_cat3_gf256, new SDitHKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_threshold_cat5_gf256, new SDitHKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_threshold_cat1_p251,  new SDitHKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_threshold_cat3_p251,  new SDitHKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sdith_threshold_cat5_p251,  new SDitHKeyFactorySpi());
+
+        addKeyInfoConverter(BCObjectIdentifiers.faest_128s, new FaestKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.faest_128f, new FaestKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.faest_192s, new FaestKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.faest_192f, new FaestKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.faest_256s, new FaestKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.faest_256f, new FaestKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.faest_em_128s, new FaestKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.faest_em_128f, new FaestKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.faest_em_192s, new FaestKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.faest_em_192f, new FaestKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.faest_em_256s, new FaestKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.faest_em_256f, new FaestKeyFactorySpi());
+
+        addKeyInfoConverter(BCObjectIdentifiers.qruov1q127L3v156m54, new QRUOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.qruov1q31L3v165m60, new QRUOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.qruov1q31L10v600m70, new QRUOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.qruov1q7L10v740m100, new QRUOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.qruov3q127L3v228m78, new QRUOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.qruov3q31L3v246m87, new QRUOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.qruov3q31L10v890m100, new QRUOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.qruov3q7L10v1100m140, new QRUOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.qruov5q127L3v306m105, new QRUOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.qruov5q31L3v324m114, new QRUOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.qruov5q31L10v1120m120, new QRUOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.qruov5q7L10v1490m190, new QRUOVKeyFactorySpi());
+
+        addKeyInfoConverter(BCObjectIdentifiers.haetae2, new HaetaeKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.haetae3, new HaetaeKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.haetae5, new HaetaeKeyFactorySpi());
+
+        addKeyInfoConverter(BCObjectIdentifiers.uov_Is_classic,   new UOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.uov_Is_pkc,       new UOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.uov_Is_pkc_skc,   new UOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.uov_Ip_classic,   new UOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.uov_Ip_pkc,       new UOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.uov_Ip_pkc_skc,   new UOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.uov_III_classic,  new UOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.uov_III_pkc,      new UOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.uov_III_pkc_skc,  new UOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.uov_V_classic,    new UOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.uov_V_pkc,        new UOVKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.uov_V_pkc_skc,    new UOVKeyFactorySpi());
+
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf2_fast_r3,     new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf2_fast_r5,     new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf2_short_r3,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf2_short_r5,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf16_fast_r3,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf16_fast_r5,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf16_short_r3,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf16_short_r5,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf256_fast_r3,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf256_fast_r5,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf256_short_r3,  new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat1_gf256_short_r5,  new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf2_fast_r3,     new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf2_fast_r5,     new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf2_short_r3,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf2_short_r5,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf16_fast_r3,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf16_fast_r5,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf16_short_r3,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf16_short_r5,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf256_fast_r3,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf256_fast_r5,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf256_short_r3,  new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat3_gf256_short_r5,  new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf2_fast_r3,     new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf2_fast_r5,     new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf2_short_r3,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf2_short_r5,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf16_fast_r3,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf16_fast_r5,    new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf16_short_r3,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf16_short_r5,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf256_fast_r3,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf256_fast_r5,   new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf256_short_r3,  new MQOMKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.mqom2_cat5_gf256_short_r5,  new MQOMKeyFactorySpi());
+
+        addKeyInfoConverter(BCObjectIdentifiers.sqisign_lvl1, new SQIsignKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sqisign_lvl3, new SQIsignKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sqisign_lvl5, new SQIsignKeyFactorySpi());
+
+        addKeyInfoConverter(BCObjectIdentifiers.hawk256,  new HawkKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.hawk512,  new HawkKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.hawk1024, new HawkKeyFactorySpi());
+
+        addKeyInfoConverter(BCObjectIdentifiers.aimer_128f, new AIMerKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.aimer_128s, new AIMerKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.aimer_192f, new AIMerKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.aimer_192s, new AIMerKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.aimer_256f, new AIMerKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.aimer_256s, new AIMerKeyFactorySpi());
     }
 
     public void setParameter(String parameterName, Object parameter)
@@ -556,7 +615,10 @@ public final class BouncyCastleProvider extends Provider
 
     public AsymmetricKeyInfoConverter getKeyInfoConverter(ASN1ObjectIdentifier oid)
     {
-        return (AsymmetricKeyInfoConverter)keyInfoConverters.get(oid);
+        synchronized (keyInfoConverters)
+        {
+            return (AsymmetricKeyInfoConverter)keyInfoConverters.get(oid);
+        }
     }
 
     public void addAttributes(String key, Map<String, String> attributeMap)
@@ -587,31 +649,57 @@ public final class BouncyCastleProvider extends Provider
     public static PublicKey getPublicKey(SubjectPublicKeyInfo publicKeyInfo)
         throws IOException
     {
-        if (publicKeyInfo.getAlgorithm().getAlgorithm().on(BCObjectIdentifiers.picnic_key))
+        try
         {
-            return new PicnicKeyFactorySpi().generatePublic(publicKeyInfo);
-        }
-        AsymmetricKeyInfoConverter converter = getAsymmetricKeyInfoConverter(publicKeyInfo.getAlgorithm().getAlgorithm());
+            if (publicKeyInfo.getAlgorithm().getAlgorithm().on(BCObjectIdentifiers.picnic_key))
+            {
+                return new PicnicKeyFactorySpi().generatePublic(publicKeyInfo);
+            }
+            AsymmetricKeyInfoConverter converter = getAsymmetricKeyInfoConverter(publicKeyInfo.getAlgorithm().getAlgorithm());
 
-        if (converter == null)
+            if (converter == null)
+            {
+                return null;
+            }
+
+            return converter.generatePublic(publicKeyInfo);
+        }
+        catch (IOException e)
         {
-            return null;
+            throw e;
         }
-
-        return converter.generatePublic(publicKeyInfo);
+        catch (RuntimeException e)
+        {
+            // a converter must not leak a RuntimeException out of the declared IOException contract
+            // when handed a malformed SubjectPublicKeyInfo decoded from untrusted input
+            throw Exceptions.ioException("malformed public key", e);
+        }
     }
 
     public static PrivateKey getPrivateKey(PrivateKeyInfo privateKeyInfo)
         throws IOException
     {
-        AsymmetricKeyInfoConverter converter = getAsymmetricKeyInfoConverter(privateKeyInfo.getPrivateKeyAlgorithm().getAlgorithm());
-
-        if (converter == null)
+        try
         {
-            return null;
-        }
+            AsymmetricKeyInfoConverter converter = getAsymmetricKeyInfoConverter(privateKeyInfo.getPrivateKeyAlgorithm().getAlgorithm());
 
-        return converter.generatePrivate(privateKeyInfo);
+            if (converter == null)
+            {
+                return null;
+            }
+
+            return converter.generatePrivate(privateKeyInfo);
+        }
+        catch (IOException e)
+        {
+            throw e;
+        }
+        catch (RuntimeException e)
+        {
+            // a converter must not leak a RuntimeException out of the declared IOException contract
+            // when handed a malformed PrivateKeyInfo decoded from untrusted input
+            throw Exceptions.ioException("malformed private key", e);
+        }
     }
 
     private static CryptoServiceProperties service(String name, int bitsOfSecurity)

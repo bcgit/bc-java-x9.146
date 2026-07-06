@@ -1,6 +1,7 @@
 package org.bouncycastle.asn1.test;
 
 import java.io.IOException;
+import java.util.Locale;
 
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
@@ -23,6 +24,7 @@ import org.bouncycastle.asn1.x500.X500NameBuilder;
 import org.bouncycastle.asn1.x500.style.BCStrictStyle;
 import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.bouncycastle.asn1.x500.style.IETFUtils;
+import org.bouncycastle.asn1.x500.style.RFC4519Style;
 import org.bouncycastle.asn1.x509.X509DefaultEntryConverter;
 import org.bouncycastle.util.encoders.Hex;
 import org.bouncycastle.util.test.SimpleTest;
@@ -42,7 +44,7 @@ public class X500NameTest
        "CN=*.canal-plus.com,OU=Provided by TBS INTERNET https://www.tbs-certificats.com/,OU=\\ CANAL \\+,O=CANAL\\+DISTRIBUTION,L=issy les moulineaux,ST=Hauts de Seine,C=FR",
        "O=Bouncy Castle,CN=www.bouncycastle.org\\ ",
        "O=Bouncy Castle,CN=c:\\\\fred\\\\bob",
-       "C=0,O=1,OU=2,T=3,CN=4,SERIALNUMBER=5,STREET=6,SERIALNUMBER=7,L=8,ST=9,SURNAME=10,GIVENNAME=11,INITIALS=12," +
+       "C=AU,O=1,OU=2,T=3,CN=4,SERIALNUMBER=5,STREET=6,SERIALNUMBER=7,L=8,ST=9,SURNAME=10,GIVENNAME=11,INITIALS=12," +
            "GENERATION=13,UniqueIdentifier=14,BusinessCategory=15,PostalCode=16,DN=17,Pseudonym=18,PlaceOfBirth=19," +
            "Gender=20,CountryOfCitizenship=21,CountryOfResidence=22,NameAtBirth=23,PostalAddress=24,2.5.4.54=25," +
            "TelephoneNumber=26,Name=27,E=28,unstructuredName=29,unstructuredAddress=30,E=31,DC=32,UID=33",
@@ -148,8 +150,12 @@ public class X500NameTest
     public void performTest()
         throws Exception
     {
-        ietfUtilsTest();
         bogusEqualsTest();
+        dnQualifierAliasParseTest();
+        stateOrProvinceAliasParseTest();
+        hexEscapedUTF8ParseTest();
+        escapeRoundTripTest();
+        turkishLocaleCanonicalizeTest();
 
         testEncodingPrintableString(BCStyle.C, "AU");
         testEncodingPrintableString(BCStyle.SERIALNUMBER, "123456");
@@ -676,23 +682,300 @@ public class X500NameTest
         return ((ASN1String)vl.getFirst().getValue()).getString();
     }
 
-    private void ietfUtilsTest()
+    /**
+     * BCStyle / RFC4519Style now accept "DN", "DNQ" and "dnQualifier"
+     * as parser aliases for the dnQualifier attribute (OID 2.5.4.46).
+     * The motivating case was that {@code java.security.cert.X509Certificate.getSubjectX500Principal().toString()}
+     * emits "DNQ=" on some JDKs (Amazon Corretto 17 observed) and
+     * "DNQUALIFIER=" on others, neither of which round-tripped through
+     * {@code new X500Name(principal.toString())} under BCStyle's
+     * historical "DN" form (issue #1622).
+     */
+    private void dnQualifierAliasParseTest()
         throws Exception
     {
-        IETFUtils.valueToString(new DERUTF8String(" "));
+        String[] aliases = new String[]{ "DN", "DNQ", "dnQualifier", "dn", "dnq", "dnqualifier" };
+        for (int i = 0; i != aliases.length; ++i)
+        {
+            String alias = aliases[i];
+
+            X500Name viaBcStyle = new X500Name(BCStyle.INSTANCE,
+                "CN=Foo," + alias + "=ABC123");
+            RDN[] rdnsBc = viaBcStyle.getRDNs(BCStyle.DN_QUALIFIER);
+            if (rdnsBc.length != 1)
+            {
+                fail("BCStyle: alias '" + alias
+                    + "' did not parse to a single dnQualifier RDN");
+            }
+
+            X500Name viaRfc = new X500Name(RFC4519Style.INSTANCE,
+                "CN=Foo," + alias + "=ABC123");
+            RDN[] rdnsRfc = viaRfc.getRDNs(RFC4519Style.dnQualifier);
+            if (rdnsRfc.length != 1)
+            {
+                fail("RFC4519Style: alias '" + alias
+                    + "' did not parse to a single dnQualifier RDN");
+            }
+        }
+    }
+
+    /**
+     * BCStyle / RFC4519Style now accept "S" as a parser alias for the
+     * stateOrProvinceName attribute (OID 2.5.4.8), in addition to the
+     * RFC 2253/4514 short form "ST". Microsoft's CertNameToStr emits "S="
+     * for 2.5.4.8 ("This value is different from the RFC 1779 X.500 key
+     * name ('ST')."), so DN strings produced by Windows tooling did not
+     * round-trip through {@code new X500Name(...)}. Output still uses the
+     * canonical "ST" symbol (issue #1301).
+     */
+    private void stateOrProvinceAliasParseTest()
+        throws Exception
+    {
+        String[] aliases = new String[]{"ST", "st", "S", "s"};
+        for (int i = 0; i != aliases.length; ++i)
+        {
+            String alias = aliases[i];
+
+            X500Name viaBcStyle = new X500Name(BCStyle.INSTANCE,
+                "CN=Foo," + alias + "=California");
+            RDN[] rdnsBc = viaBcStyle.getRDNs(BCStyle.ST);
+            if (rdnsBc.length != 1)
+            {
+                fail("BCStyle: alias '" + alias
+                    + "' did not parse to a single stateOrProvinceName RDN");
+            }
+
+            X500Name viaRfc = new X500Name(RFC4519Style.INSTANCE,
+                "CN=Foo," + alias + "=California");
+            RDN[] rdnsRfc = viaRfc.getRDNs(RFC4519Style.st);
+            if (rdnsRfc.length != 1)
+            {
+                fail("RFC4519Style: alias '" + alias
+                    + "' did not parse to a single stateOrProvinceName RDN");
+            }
+        }
+
+        // output uses the canonical "ST" symbol regardless of the input alias
+        X500Name fromS = new X500Name(BCStyle.INSTANCE, "CN=Foo,S=California");
+        if (!fromS.toString().equals("CN=Foo,ST=California"))
+        {
+            fail("BCStyle: 'S' alias did not normalise to ST on output, got: " + fromS);
+        }
+    }
+
+    /**
+     * IETFUtils.canonicalize — and hence X500Name equality / hashCode — folds
+     * case through the locale-independent Strings.toLowerCase, not
+     * String.toLowerCase(). Under the Turkish locale String.toLowerCase("IT")
+     * yields "ıt" (dotless i), which would make c=IT and c=it canonicalize
+     * differently and compare unequal. This pins the behaviour to ASCII
+     * case-folding regardless of the default locale (issue #1103).
+     */
+    private void turkishLocaleCanonicalizeTest()
+        throws Exception
+    {
+        Locale turkish = new Locale("tr", "TR");
+
+        // Precondition: confirm the JVM's Turkish locale really does the
+        // dotless-i fold (String.toLowerCase("IT") -> "ıt", not "it"),
+        // otherwise the test would pass vacuously.
+        isTrue("Turkish locale dotless-i fold not active", !"IT".toLowerCase(turkish).equals("it"));
+
+        Locale defaultLocale = Locale.getDefault();
+        try
+        {
+            Locale.setDefault(turkish);
+
+            isTrue("canonicalize must ASCII-fold under Turkish locale", "it".equals(IETFUtils.canonicalize("IT")));
+
+            X500Name upper = new X500Name("CN=ITALY,C=IT");
+            X500Name lower = new X500Name("CN=italy,C=it");
+            if (!upper.equals(lower))
+            {
+                fail("X500Name equality is locale-sensitive under Turkish locale");
+            }
+            if (upper.hashCode() != lower.hashCode())
+            {
+                fail("X500Name hashCode is locale-sensitive under Turkish locale");
+            }
+        }
+        finally
+        {
+            Locale.setDefault(defaultLocale);
+        }
     }
 
     private void bogusEqualsTest()
         throws Exception
     {
+        // RFC 4514 sec. 3 allows '=' (0x3D) in stringchar without escaping;
+        // only the FIRST '=' separates attributeType from attributeValue.
+        // (issue #2226 - matches javax.security.auth.x500.X500Principal)
+        String[] subjects = new String[]
+            {
+                "CN=foo=bar",
+            "CN==^_^=",
+            "CN=a=b=c",
+            "CN=\\=^_^\\=",
+        };
+        String[] expectedValues = new String[]
+        {
+            "foo=bar",
+            "=^_^=",
+            "a=b=c",
+            "=^_^=",
+        };
+
+        for (int i = 0; i != subjects.length; i++)
+        {
+            X500Name name = new X500Name(subjects[i]);
+            String value = ((ASN1String)name.getRDNs()[0].getFirst().getValue()).getString();
+            isEquals("unexpected value for " + subjects[i], expectedValues[i], value);
+        }
+
+        // a token with no '=' at all is still a malformed RDN
         try
         {
-            new X500Name("CN=foo=bar");
+            new X500Name("CN");
             fail("no exception");
         }
         catch (IllegalArgumentException e)
         {
             isEquals("badly formatted directory string", e.getMessage());
+        }
+    }
+
+    /**
+     * RFC 4514 sec. 2.4 lets any byte be escaped as \HH, and the underlying
+     * directoryString is UTF-8 (RFC 5280 sec. 4.1.2.4). A run of consecutive
+     * \HH escapes is therefore a UTF-8 byte sequence, never one Java char per
+     * pair (issue #1061).
+     */
+    private void hexEscapedUTF8ParseTest()
+        throws Exception
+    {
+        String[] subjects = new String[]
+        {
+            "CN=Lu\\C4\\8Di\\C4\\87",        // Lučić
+            "CN=M\\C3\\B6rsky",              // Mörsky
+            "CN=\\E6\\97\\A5\\E6\\9C\\AC",   // 日本 (three-byte UTF-8)
+            "CN=Lu\\C4\\8Di\\C4\\87,O=Acme", // RDN separator flushes the run
+        };
+        String[] expectedValues = new String[]
+        {
+            "Lučić",
+            "Mörsky",
+            "日本",
+            "Lučić",
+        };
+
+        for (int i = 0; i != subjects.length; i++)
+        {
+            X500Name name = new X500Name(subjects[i]);
+            String value = ((ASN1String)name.getRDNs()[0].getFirst().getValue()).getString();
+            isEquals("unexpected value for " + subjects[i], expectedValues[i], value);
+
+            X500Name reparsed = fromBytes(name.getEncoded());
+            String reValue = ((ASN1String)reparsed.getRDNs()[0].getFirst().getValue()).getString();
+            isEquals("round-trip lost data for " + subjects[i], expectedValues[i], reValue);
+        }
+
+        // A lone leading byte without its continuation byte is malformed UTF-8.
+        try
+        {
+            new X500Name("CN=Lu\\C4");
+            fail("malformed UTF-8 escape sequence not rejected");
+        }
+        catch (IllegalArgumentException e)
+        {
+            // expected
+        }
+    }
+
+    /**
+     * Exercise every branch of {@link IETFUtils} unescape / {@code valueToString}
+     * escaping. RFC 4514 sec. 2.4 makes each of {@code , + " \ < > ;} (and a space
+     * at either end) an escapable {@code special}; sec. 3 (legacy RFC 2253 quoting)
+     * lets a double-quoted value carry those same separators unescaped. For each
+     * input we assert both the unescaped attributeValue and that {@code toString()}
+     * re-emits the canonical backslash-escaped form (and round-trips).
+     */
+    private void escapeRoundTripTest()
+        throws Exception
+    {
+        String[][] cases = new String[][]
+        {
+            // input                value (after unescape)   canonical toString
+            { "CN=a\\,b",           "a,b",                   "CN=a\\,b" },          // escaped comma (RDN separator)
+            { "CN=a\\;b",           "a;b",                   "CN=a\\;b" },          // escaped semicolon (legacy separator)
+            { "CN=a\\<b",           "a<b",                   "CN=a\\<b" },          // escaped less-than
+            { "CN=a\\>b",           "a>b",                   "CN=a\\>b" },          // escaped greater-than
+            { "CN=a\\\\b",          "a\\b",                  "CN=a\\\\b" },         // escaped backslash
+            { "CN=a\\+b",           "a+b",                   "CN=a\\+b" },          // escaped plus (multi-value separator)
+            { "CN=a\\=b",           "a=b",                   "CN=a\\=b" },          // escaped equals
+            { "CN=a\\\"b",          "a\"b",                  "CN=a\\\"b" },         // escaped quote mid-value
+            { "CN=a\\ b",           "a b",                   "CN=a b" },            // escaped interior space (kept, not trimmed)
+            { "CN=\"a,b\"",         "a,b",                   "CN=a\\,b" },          // quoting protects the comma separator
+            { "CN=\"a;b\"",         "a;b",                   "CN=a\\;b" },          // quoting protects the semicolon
+            { "CN=\"a+b\"",         "a+b",                   "CN=a\\+b" },          // quoting protects the plus
+            { "CN=\"a\\b\"",        "a\\b",                  "CN=a\\\\b" },         // backslash is literal inside quotes
+            { "CN=   a\\+b",        "a+b",                   "CN=a\\+b" },          // leading unescaped spaces are skipped
+            { "CN=\\C3\\A9\\+",     "é+",               "CN=é\\+" },      // hex UTF-8 run flushed before escaped special
+        };
+
+        for (int i = 0; i != cases.length; i++)
+        {
+            String input = cases[i][0];
+
+            X500Name name = new X500Name(input);
+            String value = getValue(name.getRDNs()[0]);
+            isEquals("unescape value for [" + input + "]", cases[i][1], value);
+
+            String str = name.toString();
+            isEquals("toString for [" + input + "]", cases[i][2], str);
+
+            // re-parsing the canonical form must yield the same attributeValue
+            String reValue = getValue(new X500Name(str).getRDNs()[0]);
+            isEquals("round-trip value for [" + input + "]", cases[i][1], reValue);
+        }
+
+        // An empty value still parses to an empty string.
+        isEquals("empty value", "", getValue(new X500Name("CN=").getRDNs()[0]));
+
+        // Running out of input while still escaping or quoting is malformed. The
+        // unterminated-quote and dangling-bare-backslash cases are caught by
+        // X500NameTokenizer.nextToken() (escaped/quoted unbalanced at token end);
+        // the incomplete-hexpair cases are invisible to the tokenizer (\C looks
+        // like a balanced escape) and are caught by IETFUtils.unescape itself.
+        // A '\' beginning a hexpair (RFC 4514 sec. 2.4) that isn't completed by a
+        // second hex digit used to silently drop the partial digit (and leak state
+        // into a later escape); it must throw.
+        String[] malformed = new String[]
+        {
+            "CN=a\\Cz",     // single hex digit then a letter
+            "CN=a\\C,O=x",  // single hex digit then the RDN separator
+            "CN=a\\C b",    // single hex digit then a space
+            "CN=ab\\C",     // single hex digit at end of input
+            "CN=a\\C\"b\"", // single hex digit then a quote
+            "CN=\\Cz\\AB",  // partial digit must not corrupt a following valid escape
+            "CN=abc\\",     // dangling bare backslash at end of input (tokenizer)
+            "O=x,CN=abc\\", // dangling bare backslash after a prior RDN (tokenizer)
+            "CN=\"abc",     // unterminated quote at end of input (tokenizer)
+            "CN=\"abc,O=x", // unterminated quote spanning the RDN separator (tokenizer)
+            "CN=\"",        // lone opening quote (tokenizer)
+
+        };
+        for (int i = 0; i != malformed.length; i++)
+        {
+            try
+            {
+                new X500Name(malformed[i]);
+                fail("malformed hex escape not rejected: " + malformed[i]);
+            }
+            catch (IllegalArgumentException e)
+            {
+                // expected
+            }
         }
     }
 

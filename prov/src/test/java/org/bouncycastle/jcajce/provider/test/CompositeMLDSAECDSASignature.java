@@ -20,8 +20,12 @@ import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.bouncycastle.crypto.params.ECPublicKeyParameters;
+import org.bouncycastle.crypto.params.MLDSAParameters;
+import org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters;
+import org.bouncycastle.crypto.params.MLDSAPublicKeyParameters;
 import org.bouncycastle.crypto.signers.ECDSASigner;
 import org.bouncycastle.crypto.signers.HMacDSAKCalculator;
+import org.bouncycastle.crypto.signers.MLDSASigner;
 import org.bouncycastle.jcajce.CompositePrivateKey;
 import org.bouncycastle.jcajce.CompositePublicKey;
 import org.bouncycastle.jcajce.interfaces.MLDSAPrivateKey;
@@ -30,11 +34,8 @@ import org.bouncycastle.jcajce.spec.MLDSAParameterSpec;
 import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSASigner;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Strings;
 import org.bouncycastle.util.encoders.Hex;
 
 public class CompositeMLDSAECDSASignature
@@ -42,7 +43,7 @@ public class CompositeMLDSAECDSASignature
 
     // Constants
     private static final String PREFIX_STRING = "CompositeAlgorithmSignatures2025";
-    private static final byte[] PREFIX = PREFIX_STRING.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+    private static final byte[] PREFIX = Strings.toByteArray(PREFIX_STRING);
     private static final byte[] DOMAIN_SEPARATOR = Hex.decode("060B6086480186FA6B50080167");//060B6086480186FA6B50080153
     private static final byte[] HASH_OID_SHA256 = Hex.decode("0609608648016503040201");
     private static final int ML_DSA_SIG_SIZE = 2420; // For ML-DSA-44

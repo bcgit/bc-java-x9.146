@@ -6,12 +6,11 @@ import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.CryptoServicesRegistrar;
 import org.bouncycastle.crypto.digests.SHAKEDigest;
 import org.bouncycastle.crypto.params.ParametersWithRandom;
+import org.bouncycastle.math.raw.GF16;
+import org.bouncycastle.math.raw.Nat;
 import org.bouncycastle.pqc.crypto.MessageSigner;
-
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Bytes;
-import org.bouncycastle.util.GF16;
-import org.bouncycastle.util.Longs;
 import org.bouncycastle.util.Pack;
 
 /**
@@ -235,6 +234,12 @@ public class MayoSigner
                 {
                     Arrays.fill(Mtmp, 0L);
                     Arrays.fill(vPv, 0L);
+                    // Pv is accumulated into (mulAdd) with a freshly-derived V each
+                    // iteration; the reference re-zeroes it per attempt (Pv is declared
+                    // inside compute_M_and_VPV as = {0}). Hoisting the allocation out of
+                    // the loop means it must be cleared here too, otherwise a retry leaves
+                    // stale P1*V^T data and produces a corrupted signature.
+                    Arrays.fill(Pv, 0L);
                 }
             }
 
@@ -282,6 +287,15 @@ public class MayoSigner
     @Override
     public boolean verifySignature(byte[] message, byte[] signature)
     {
+        // Reject a buffer too short to contain a signature before indexing it:
+        // generateSignature returns the signature optionally followed by the
+        // message (the signed-message envelope), and verify reads only the
+        // leading getSigBytes() bytes (the encoded solution and the salt); a
+        // shorter buffer would throw ArrayIndexOutOfBoundsException.
+        if (signature.length < params.getSigBytes())
+        {
+            return false;
+        }
         final int m = params.getM();
         final int n = params.getN();
         final int k = params.getK();
@@ -785,11 +799,10 @@ public class MayoSigner
                 vecMulAddU64(rowLen, pivotRow2, (byte)(belowPivot & eltToElim), packedA, rowRowLen);
             }
 
-            // If pivot is nonzero, increment pivotRowIndex.
-            if (pivot != 0)
-            {
-                pivotRowIndex++;
-            }
+            // If pivot is nonzero, increment pivotRowIndex. Done branchlessly so the
+            // secret pivot's zero-ness is not leaked via timing; mirrors the reference
+            // EF (MAYO-C echelon_form.h: pivot_row += -(int64_t)(~pivot_is_zero)).
+            pivotRowIndex += (int)(~pivotIsZero) & 1;
         }
 
         int outIndex = 0;
@@ -887,7 +900,7 @@ public class MayoSigner
             {
                 for (int col = 0, ncol = 0; col < k; col++, ncol += n)
                 {
-                    Longs.xorTo(mVecLimbs, P1, pUsed, accumulator, (((krow + col) << 4) + (S[ncol + j] & 0xFF)) * mVecLimbs);
+                    Nat.xorTo64(mVecLimbs, P1, pUsed, accumulator, (((krow + col) << 4) + (S[ncol + j] & 0xFF)) * mVecLimbs);
                 }
                 pUsed += mVecLimbs;
             }
@@ -896,7 +909,7 @@ public class MayoSigner
             {
                 for (int col = 0, ncol = 0; col < k; col++, ncol += n)
                 {
-                    Longs.xorTo(mVecLimbs, P1, p2 + orow_j_mVecLimbs, accumulator, (((krow + col) << 4) + (S[ncol + j + v] & 0xFF)) * mVecLimbs);
+                    Nat.xorTo64(mVecLimbs, P1, p2 + orow_j_mVecLimbs, accumulator, (((krow + col) << 4) + (S[ncol + j + v] & 0xFF)) * mVecLimbs);
                 }
             }
         }
@@ -908,7 +921,7 @@ public class MayoSigner
             {
                 for (int col = 0, ncol = 0; col < k; col++, ncol += n)
                 {
-                    Longs.xorTo(mVecLimbs, P1, p3 + pUsed, accumulator, (((krow + col) << 4) + (S[ncol + j] & 0xFF)) * mVecLimbs);
+                    Nat.xorTo64(mVecLimbs, P1, p3 + pUsed, accumulator, (((krow + col) << 4) + (S[ncol + j] & 0xFF)) * mVecLimbs);
                 }
                 pUsed += mVecLimbs;
             }
@@ -932,7 +945,7 @@ public class MayoSigner
                 final int sValmVecLimbs = (S[nrow + j] & 0xFF) * mVecLimbs + krowmVecLimbs16; // Unsigned byte value
                 for (int col = 0, colmVecLimbs = 0; col < k; col++, colmVecLimbs += mVecLimbs)
                 {
-                    Longs.xorTo(mVecLimbs, PS, jkmVecLimbs + colmVecLimbs, accumulator, sValmVecLimbs + (colmVecLimbs << 4));
+                    Nat.xorTo64(mVecLimbs, PS, jkmVecLimbs + colmVecLimbs, accumulator, sValmVecLimbs + (colmVecLimbs << 4));
                 }
             }
         }

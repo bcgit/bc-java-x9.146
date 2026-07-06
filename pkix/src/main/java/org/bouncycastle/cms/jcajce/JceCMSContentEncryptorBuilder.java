@@ -19,11 +19,9 @@ import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
-import org.bouncycastle.asn1.cms.GCMParameters;
 import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
-import org.bouncycastle.cms.CMSAlgorithm;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.crypto.CryptoServicesRegistrar;
 import org.bouncycastle.crypto.digests.SHA256Digest;
@@ -40,7 +38,19 @@ import org.bouncycastle.operator.jcajce.JceGenericKey;
 import org.bouncycastle.util.Strings;
 
 /**
- * Builder for the content encryptor in EnvelopedData - used to encrypt the actual transmitted content.
+ * Builder for the content encryptor used in CMS {@code EnvelopedData},
+ * {@code AuthEnvelopedData} and {@code EncryptedData} structures &mdash; i.e. it
+ * encrypts the actual transmitted (or stored) content.
+ * <p>
+ * The no-arg {@link #build()} call generates a fresh content-encryption key
+ * internally, which is the right behaviour for {@code EnvelopedData} where the
+ * CEK is freshly drawn per message and wrapped per recipient. Callers that
+ * already have a key &mdash; e.g. building an {@code EncryptedData} blob over
+ * a long-lived locally-stored key (no recipients, no intermediate key wrap),
+ * or feeding in a CEK supplied by an external key-management service such as
+ * AWS KMS / Nitro Enclaves &mdash; should use {@link #build(byte[])} or
+ * {@link #build(SecretKey)} instead.
+ * </p>
  */
 public class JceCMSContentEncryptorBuilder
 {
@@ -415,16 +425,10 @@ public class JceCMSContentEncryptorBuilder
                 algId = algorithmIdentifier;
             }
 
-            if (CMSAlgorithm.ChaCha20Poly1305.equals(algorithmIdentifier.getAlgorithm()))
-            {
-                macOut = new MacCaptureStream(dOut, 16);
-            }
-            else
-            {
-                // TODO: works for CCM too, but others will follow.
-                GCMParameters p = GCMParameters.getInstance(algId.getParameters());
-                macOut = new MacCaptureStream(dOut, p.getIcvLen());
-            }
+            // Use algId (the unwrapped algorithm), not algorithmIdentifier: when a KDF is in use
+            // algorithmIdentifier wraps the encryption algId, so algorithmIdentifier.getAlgorithm()
+            // would be the KDF OID and ChaCha20Poly1305 would never be matched.
+            macOut = new MacCaptureStream(dOut, CMSUtils.getAEADMacLength(algId));
             return new CipherOutputStream(macOut, cipher);
         }
 

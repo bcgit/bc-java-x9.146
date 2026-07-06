@@ -15,6 +15,7 @@ import org.bouncycastle.pqc.crypto.util.PrivateKeyFactory;
 import org.bouncycastle.pqc.crypto.util.PrivateKeyInfoFactory;
 import org.bouncycastle.pqc.jcajce.interfaces.LMSPrivateKey;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
 
 public class BCLMSPrivateKey
     implements PrivateKey, LMSPrivateKey
@@ -112,11 +113,11 @@ public class BCLMSPrivateKey
 
             try
             {
-                return Arrays.areEqual(keyParams.getEncoded(), otherKey.keyParams.getEncoded());
+                return Arrays.constantTimeAreEqual(keyParams.getEncoded(), otherKey.keyParams.getEncoded());
             }
             catch (IOException e)
             {
-                throw new IllegalStateException("unable to perform equals");     // should never happen.
+                throw Exceptions.illegalStateException("unable to perform equals", e);     // should never happen.
             }
         }
 
@@ -125,14 +126,7 @@ public class BCLMSPrivateKey
 
     public int hashCode()
     {
-        try
-        {
-            return Arrays.hashCode(keyParams.getEncoded());
-        }
-        catch (IOException e)
-        {
-            throw new IllegalStateException("unable to calculate hashCode");     // should never happen.
-        }
+        return new BCLMSPublicKey(((HSSPrivateKeyParameters)keyParams).getPublicKey()).hashCode();
     }
 
     CipherParameters getKeyParams()

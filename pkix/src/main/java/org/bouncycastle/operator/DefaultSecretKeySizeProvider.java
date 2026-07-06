@@ -6,6 +6,7 @@ import java.util.Map;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
+import org.bouncycastle.asn1.gm.GMObjectIdentifiers;
 import org.bouncycastle.asn1.kisa.KISAObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.ntt.NTTObjectIdentifiers;
@@ -42,6 +43,9 @@ public class DefaultSecretKeySizeProvider
         keySizes.put(NISTObjectIdentifiers.id_aes128_CCM, Integers.valueOf(128));
         keySizes.put(NISTObjectIdentifiers.id_aes192_CCM, Integers.valueOf(192));
         keySizes.put(NISTObjectIdentifiers.id_aes256_CCM, Integers.valueOf(256));
+        keySizes.put(NISTObjectIdentifiers.id_aes128_GMAC, Integers.valueOf(128));
+        keySizes.put(NISTObjectIdentifiers.id_aes192_GMAC, Integers.valueOf(192));
+        keySizes.put(NISTObjectIdentifiers.id_aes256_GMAC, Integers.valueOf(256));
         keySizes.put(NISTObjectIdentifiers.id_aes128_wrap, Integers.valueOf(128));
         keySizes.put(NISTObjectIdentifiers.id_aes192_wrap, Integers.valueOf(192));
         keySizes.put(NISTObjectIdentifiers.id_aes256_wrap, Integers.valueOf(256));
@@ -61,6 +65,8 @@ public class DefaultSecretKeySizeProvider
         keySizes.put(OIWObjectIdentifiers.desCBC, Integers.valueOf(64));
 
         keySizes.put(CryptoProObjectIdentifiers.gostR28147_gcfb, Integers.valueOf(256));
+
+        keySizes.put(GMObjectIdentifiers.sms4_cbc, Integers.valueOf(128));
 
         KEY_SIZES = Collections.unmodifiableMap(keySizes);
     }

@@ -1,5 +1,8 @@
 package org.bouncycastle.crypto.generators;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.digests.Blake2bDigest;
 import org.bouncycastle.crypto.params.Argon2Parameters;
@@ -37,6 +40,8 @@ public class Argon2BytesGenerator
     private static final byte[] ZERO_BYTES = new byte[4];
 
     private Argon2Parameters parameters;
+    private BlockPool pool;
+    private int memoryBlocks;
     private Block[] memory;
     private int segmentLength;
     private int laneLength;
@@ -88,13 +93,11 @@ public class Argon2BytesGenerator
 
         // Ensure that all segments have equal length
         memoryBlocks = parameters.getLanes() * laneLength;
+        this.memoryBlocks = memoryBlocks;
 
-        this.memory = new Block[memoryBlocks];
-
-        for (int i = 0; i < memory.length; i++)
-        {
-            memory[i] = new Block();
-        }
+        BlockPool configured = parameters.getBlockPool();
+        // if no pool is provided hold on to enough blocks for the primary memory
+        this.pool = (configured != null) ? configured : new FixedBlockPool(memoryBlocks);
     }
 
     public int generateBytes(char[] password, byte[] out)
@@ -121,6 +124,7 @@ public class Argon2BytesGenerator
 
         byte[] tmpBlockBytes = new byte[ARGON2_BLOCK_SIZE];
 
+        allocateMemory();
         initialize(tmpBlockBytes, password, outLen);
         fillMemoryBlocks();
         digest(tmpBlockBytes, out, outOff, outLen);
@@ -130,10 +134,20 @@ public class Argon2BytesGenerator
         return outLen;
     }
 
-    // Clear memory.
+    // Allocate primary memory from the configured BlockPool.
+    private void allocateMemory()
+    {
+        this.memory = new Block[memoryBlocks];
+
+        for (int i = 0; i < memory.length; i++)
+        {
+            memory[i] = pool.allocate();
+        }
+    }
+
+    // Return primary memory to the BlockPool.
     private void reset()
     {
-        // Reset memory.
         if (null != memory)
         {
             for (int i = 0; i < memory.length; i++)
@@ -141,15 +155,16 @@ public class Argon2BytesGenerator
                 Block b = memory[i];
                 if (null != b)
                 {
-                    b.clear();
+                    pool.deallocate(b);
                 }
             }
         }
+        memory = null;
     }
 
     private void fillMemoryBlocks()
     {
-        FillBlock filler = new FillBlock();
+        FillBlock filler = new FillBlock(pool);
         Position position = new Position();
         for (int pass = 0; pass < parameters.getIterations(); ++pass)
         {
@@ -167,6 +182,7 @@ public class Argon2BytesGenerator
                 }
             }
         }
+        filler.deallocate(pool);
     }
 
     private void fillSegment(FillBlock filler, Position position)
@@ -418,6 +434,19 @@ public class Argon2BytesGenerator
         }
     }
 
+    /*
+     * One BLAKE2 round over the 16 working words at the given (distinct) block
+     * positions. The words are loaded into locals once, mixed entirely in
+     * registers through the 8 G applications, and stored back once - the
+     * arithmetic and ordering are identical to the previous array-indexed
+     * roundFunction/F/quarterRound triple, only the per-step v[] loads/stores
+     * are removed. This is the data-independent Argon2 compression, so holding
+     * the words in registers introduces no data-dependent index or branch.
+     *
+     * Each G(a,b,c,d) is the BLAKE2b mixing with the Lyra PHC fBlaMka step
+     * (a <- a + b + 2*aL*bL, aL = least 32 bits, + modulo 2^64); the (a & M32L)
+     * masks are load-bearing and must stay.
+     */
     private static void roundFunction(Block block,
                                       int v0, int v1, int v2, int v3,
                                       int v4, int v5, int v6, int v7,
@@ -426,55 +455,34 @@ public class Argon2BytesGenerator
     {
         final long[] v = block.v;
 
-        F(v, v0, v4, v8, v12);
-        F(v, v1, v5, v9, v13);
-        F(v, v2, v6, v10, v14);
-        F(v, v3, v7, v11, v15);
+        /* column step */
+        G(v, v0, v4, v8, v12);
+        G(v, v1, v5, v9, v13);
+        G(v, v2, v6, v10, v14);
+        G(v, v3, v7, v11, v15);
 
-        F(v, v0, v5, v10, v15);
-        F(v, v1, v6, v11, v12);
-        F(v, v2, v7, v8, v13);
-        F(v, v3, v4, v9, v14);
+        /* diagonal step */
+        G(v, v0, v5, v10, v15);
+        G(v, v1, v6, v11, v12);
+        G(v, v2, v7, v8, v13);
+        G(v, v3, v4, v9, v14);
     }
 
-    private static void F(long[] v, int a, int b, int c, int d)
+    private static void G(long[] v, int pa, int pb, int pc, int pd)
     {
-        quarterRound(v, a, b, d, 32);
-        quarterRound(v, c, d, b, 24);
-        quarterRound(v, a, b, d, 16);
-        quarterRound(v, c, d, b, 63);
-    }
-
-    private static void quarterRound(long[] v, int x, int y, int z, int s)
-    {
-//        fBlaMka(v, x, y);
-//        rotr64(v, z, x, s);
-
-        long a = v[x], b = v[y], c = v[z];
+        long a = v[pa], b = v[pb], c = v[pc], d = v[pd];
 
         a += b + 2 * (a & M32L) * (b & M32L);
-        c = Longs.rotateRight(c ^ a, s);
+        d = Longs.rotateRight(d ^ a, 32);
+        c += d + 2 * (c & M32L) * (d & M32L);
+        b = Longs.rotateRight(b ^ c, 24);
+        a += b + 2 * (a & M32L) * (b & M32L);
+        d = Longs.rotateRight(d ^ a, 16);
+        c += d + 2 * (c & M32L) * (d & M32L);
+        b = Longs.rotateRight(b ^ c, 63);
 
-        v[x] = a;
-        v[z] = c;
+        v[pa] = a; v[pb] = b; v[pc] = c; v[pd] = d;
     }
-
-    /*designed by the Lyra PHC team */
-    /* a <- a + b + 2*aL*bL
-     * + == addition modulo 2^64
-     * aL = least 32 bit */
-//    private static void fBlaMka(long[] v, int x, int y)
-//    {
-//        final long a = v[x], b = v[y];
-//        final long ab = (a & M32L) * (b & M32L);
-//
-//        v[x] = a + b + 2 * ab;
-//    }
-//
-//    private static void rotr64(long[] v, int x, int y, int s)
-//    {
-//        v[x] = Longs.rotateRight(v[x] ^ v[y], s);
-//    }
 
     private void initialize(byte[] tmpBlockBytes, byte[] password, int outputLength)
     {
@@ -546,11 +554,27 @@ public class Argon2BytesGenerator
 
     private static class FillBlock
     {
-        Block R = new Block();
-        Block Z = new Block();
+        final Block R;
+        final Block Z;
 
-        Block addressBlock = new Block();
-        Block inputBlock = new Block();
+        final Block addressBlock;
+        final Block inputBlock;
+
+        FillBlock(BlockPool pool)
+        {
+            R = pool.allocate();
+            Z = pool.allocate();
+            addressBlock = pool.allocate();
+            inputBlock = pool.allocate();
+        }
+
+        void deallocate(BlockPool pool)
+        {
+            pool.deallocate(addressBlock);
+            pool.deallocate(inputBlock);
+            pool.deallocate(R);
+            pool.deallocate(Z);
+        }
 
         private void applyBlake()
         {
@@ -611,14 +635,19 @@ public class Argon2BytesGenerator
         }
     }
 
-    private static class Block
+    /**
+     * A single 1024-byte memory block used by the Argon2 mixing function.
+     * Made public so callers can supply their own {@link BlockPool}
+     * implementations - see {@link Argon2Parameters.Builder#withBlockPool}.
+     */
+    public static class Block
     {
         private static final int SIZE = ARGON2_QWORDS_IN_BLOCK;
 
         /* 128 * 8 Byte QWords */
         private final long[] v;
 
-        private Block()
+        public Block()
         {
             v = new long[SIZE];
         }
@@ -675,7 +704,7 @@ public class Argon2BytesGenerator
             }
         }
 
-        public Block clear()
+        private Block clear()
         {
             Arrays.fill(v, 0);
             return this;
@@ -690,6 +719,77 @@ public class Argon2BytesGenerator
 
         Position()
         {
+        }
+    }
+
+    /**
+     * Strategy for allocating and recycling Argon2 {@link Block} objects.
+     * <p>
+     * An implementation may simply return fresh blocks from
+     * {@link #allocate()} (the default behaviour) or pool them so the
+     * underlying {@code long[]} buffers can be reused across successive
+     * {@code generateBytes} calls. Implementations must accept matching
+     * allocate/deallocate pairs - the generator does not guard against
+     * double-deallocation of the same block.
+     */
+    public static interface BlockPool
+    {
+        Block allocate();
+
+        void deallocate(Block block);
+    }
+
+    /**
+     * Bounded pool that recycles up to {@code maxBlocks} {@link Block} objects.
+     * Excess blocks returned via {@link #deallocate(Block)} are dropped and
+     * left for the garbage collector. Returned blocks are zeroised both on
+     * deallocation and again on allocation, so a recycled block is never
+     * observed with stale data.
+     */
+    public static class FixedBlockPool
+        implements BlockPool
+    {
+        // a synchronized list rather than java.util.concurrent (Java 5+), so the
+        // class still compiles/runs on the legacy pre-1.5 distributions.
+        private final int maxBlocks;
+        private final List<Block> blocks;
+
+        public FixedBlockPool(int maxBlocks)
+        {
+            this.maxBlocks = maxBlocks;
+            this.blocks = new ArrayList<Block>(maxBlocks);
+        }
+
+        public Block allocate()
+        {
+            Block block = null;
+            synchronized (blocks)
+            {
+                if (!blocks.isEmpty())
+                {
+                    block = (Block)blocks.remove(blocks.size() - 1);
+                }
+            }
+            if (block == null)
+            {
+                return new Block();
+            }
+            // a deallocate() in another thread may not have published its clear()
+            // - re-clear here so callers see a zeroised block.
+            block.clear();
+            return block;
+        }
+
+        public void deallocate(Block block)
+        {
+            block.clear();
+            synchronized (blocks)
+            {
+                if (blocks.size() < maxBlocks)
+                {
+                    blocks.add(block);
+                }
+            }
         }
     }
 }

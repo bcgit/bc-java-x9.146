@@ -2,6 +2,7 @@
 .gradle
 .project
 
+junit*.properties
 *.class
 *.gen
 */*.gen
@@ -14,6 +15,7 @@
 bin/
 build/
 */build/
+dist/
 libs/*.jar
 out/
 */out/
@@ -26,8 +28,33 @@ pg/*.txt
 
 .idea/
 
+.DS_Store
+
+mail/*.message
+mail/id.p12
+
 codesigning.jks
 
 /prov/src/main/core/
 
 bc-build.user.properties
+
+# macOS Finder metadata
+.DS_Store
+
+# Claude Code: ignore personal/local state, but share team tooling
+# (skills, slash commands, subagents, and project settings.json).
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+!.claude/commands/
+!.claude/agents/
+.claude/settings.local.json
+.claude 2/
+
+# Stray test-run output left at the top of modules
+/example.p12
+/mail/*.p12
+/mail/*.message
+/prov/ells
+/tls/ells

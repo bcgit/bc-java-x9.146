@@ -25,6 +25,32 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.X509ObjectIdentifiers;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 
+/**
+ * Default implementation of {@link DigestAlgorithmIdentifierFinder}, returning
+ * the {@code AlgorithmIdentifier} that names a digest in the contexts where
+ * this finder is used by CMS / S/MIME / PKIX operator builders.
+ *
+ * <p><b>Parameter-field convention:</b> SHA-2 and SHA-3 digest identifiers are
+ * produced with the {@code parameters} field <em>absent</em>, per
+ * <a href="https://www.rfc-editor.org/rfc/rfc5754#section-2">RFC 5754 §2</a>:
+ * <em>"Implementations MUST generate SHA2 AlgorithmIdentifiers with absent
+ * parameters."</em> SHA-1 keeps {@code NULL} parameters (RFC 3370). Old
+ * algorithms with historic NULL-parameter conventions (MD2 / MD4 / MD5,
+ * GOST R 34.11-94) follow their own RFCs.</p>
+ *
+ * <p>This is a different convention from
+ * {@link DefaultSignatureAlgorithmIdentifierFinder}, which when building
+ * {@code RSASSA-PSS-params} emits the SHA-2 / SHA-3 hash sub-identifier with
+ * {@code NULL} parameters per <a href="https://www.rfc-editor.org/rfc/rfc4055#section-2.1">
+ * RFC 4055 §2.1</a> ({@code sha256Identifier ::= { id-sha256, NULL }} etc.).
+ * Both forms are standards-compliant in their respective slots; a single CMS
+ * SignedData carrying an RSA-PSS SignerInfo will validly contain the same
+ * SHA-2 OID twice, once with absent parameters (in {@code digestAlgorithm})
+ * and once with NULL parameters (inside the PSS parameter structure).
+ * Receiver-side {@code AlgorithmIdentifier.equals()} on the two encodings
+ * returns {@code false} but both are accepted by RFC 5754 §2 and by other
+ * mainstream verifiers (OpenSSL, the JDK providers, GnuTLS).</p>
+ */
 public class DefaultDigestAlgorithmIdentifierFinder
     implements DigestAlgorithmIdentifierFinder
 {
@@ -169,10 +195,13 @@ public class DefaultDigestAlgorithmIdentifierFinder
         digestOids.put(NISTObjectIdentifiers.id_hash_ml_dsa_65_with_sha512, NISTObjectIdentifiers.id_sha512);
         digestOids.put(NISTObjectIdentifiers.id_hash_ml_dsa_87_with_sha512, NISTObjectIdentifiers.id_sha512);
 
-        digestOids.put(IANAObjectIdentifiers.id_MLDSA44_RSA2048_PSS_SHA256, NISTObjectIdentifiers.id_sha512);
-        digestOids.put(IANAObjectIdentifiers.id_MLDSA44_RSA2048_PKCS15_SHA256, NISTObjectIdentifiers.id_sha512);
+        // IANA composite ML-DSA + classical sig OIDs: each scheme's prehash is fixed by
+        // the OID name suffix and matches what the composite SignatureSpi feeds the
+        // inner signers (github #1767).
+        digestOids.put(IANAObjectIdentifiers.id_MLDSA44_RSA2048_PSS_SHA256, NISTObjectIdentifiers.id_sha256);
+        digestOids.put(IANAObjectIdentifiers.id_MLDSA44_RSA2048_PKCS15_SHA256, NISTObjectIdentifiers.id_sha256);
         digestOids.put(IANAObjectIdentifiers.id_MLDSA44_Ed25519_SHA512, NISTObjectIdentifiers.id_sha512);
-        digestOids.put(IANAObjectIdentifiers.id_MLDSA44_ECDSA_P256_SHA256, NISTObjectIdentifiers.id_sha512);
+        digestOids.put(IANAObjectIdentifiers.id_MLDSA44_ECDSA_P256_SHA256, NISTObjectIdentifiers.id_sha256);
         digestOids.put(IANAObjectIdentifiers.id_MLDSA65_RSA3072_PSS_SHA512, NISTObjectIdentifiers.id_sha512);
         digestOids.put(IANAObjectIdentifiers.id_MLDSA65_RSA3072_PKCS15_SHA512, NISTObjectIdentifiers.id_sha512);
         digestOids.put(IANAObjectIdentifiers.id_MLDSA65_RSA4096_PSS_SHA512, NISTObjectIdentifiers.id_sha512);
@@ -183,7 +212,7 @@ public class DefaultDigestAlgorithmIdentifierFinder
         digestOids.put(IANAObjectIdentifiers.id_MLDSA65_Ed25519_SHA512, NISTObjectIdentifiers.id_sha512);
         digestOids.put(IANAObjectIdentifiers.id_MLDSA87_ECDSA_P384_SHA512, NISTObjectIdentifiers.id_sha512);
         digestOids.put(IANAObjectIdentifiers.id_MLDSA87_ECDSA_brainpoolP384r1_SHA512, NISTObjectIdentifiers.id_sha512);
-        digestOids.put(IANAObjectIdentifiers.id_MLDSA87_Ed448_SHAKE256, NISTObjectIdentifiers.id_sha512);
+        digestOids.put(IANAObjectIdentifiers.id_MLDSA87_Ed448_SHAKE256, NISTObjectIdentifiers.id_shake256);
         digestOids.put(IANAObjectIdentifiers.id_MLDSA87_RSA4096_PSS_SHA512, NISTObjectIdentifiers.id_sha512);
         digestOids.put(IANAObjectIdentifiers.id_MLDSA87_ECDSA_P521_SHA512, NISTObjectIdentifiers.id_sha512);
         digestOids.put(IANAObjectIdentifiers.id_MLDSA87_RSA3072_PSS_SHA512, NISTObjectIdentifiers.id_sha512);
@@ -295,9 +324,6 @@ public class DefaultDigestAlgorithmIdentifierFinder
         shake256oids.add(BCObjectIdentifiers.dilithium2);
         shake256oids.add(BCObjectIdentifiers.dilithium3);
         shake256oids.add(BCObjectIdentifiers.dilithium5);
-        shake256oids.add(BCObjectIdentifiers.dilithium2_aes);
-        shake256oids.add(BCObjectIdentifiers.dilithium3_aes);
-        shake256oids.add(BCObjectIdentifiers.dilithium5_aes);
 
         shake256oids.add(BCObjectIdentifiers.falcon_512);
         shake256oids.add(BCObjectIdentifiers.falcon_1024);

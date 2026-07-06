@@ -11,22 +11,28 @@ import org.bouncycastle.test.PrintTestResult;
 import org.bouncycastle.util.test.SimpleTestResult;
 
 public class AllTests
-        extends TestCase
+    extends TestCase
 {
-
     public void testPacketParsing()
     {
         Security.addProvider(new BouncyCastleProvider());
 
-        org.bouncycastle.util.test.Test[] tests = new org.bouncycastle.util.test.Test[]
-                {
-                        new SignaturePacketTest(),
-                        new OnePassSignaturePacketTest(),
-                        new OpenPgpMessageTest(),
-                        new FingerprintUtilTest(),
-                        new EncryptedMessagePacketTest(),
-                        new TimeEncodingTest()
-                };
+        AbstractPacketTest[] tests = new AbstractPacketTest[]
+        {
+            new BCPGOutputStreamTest(),
+            new EncryptedMessagePacketTest(),
+            new FingerprintUtilTest(),
+            new OCBEncryptedDataPacketTest(),
+            new OnePassSignaturePacketTest(),
+            new OpenPgpMessageTest(),
+            new SignaturePacketTest(),
+            new SignatureSubpacketsTest(),
+            new TimeEncodingTest(),
+            new ArmoredOutputStreamHeaderInjectionTest(),
+            new UserAttributeSubpacketInputStreamTest(),
+            new UnknownPublicKeyPacketTest(),
+            new UnknownSecretKeyPacketTest(),
+        };
 
         for (int i = 0; i != tests.length; i++)
         {

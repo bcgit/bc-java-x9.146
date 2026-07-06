@@ -32,18 +32,20 @@ import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
+import org.bouncycastle.cms.AbstractKeyAgreeRecipient;
+import org.bouncycastle.cms.CMSAlgorithmNotAllowedException;
 import org.bouncycastle.cms.CMSException;
-import org.bouncycastle.cms.KeyAgreeRecipient;
 import org.bouncycastle.jcajce.spec.GOST28147WrapParameterSpec;
 import org.bouncycastle.jcajce.spec.MQVParameterSpec;
 import org.bouncycastle.jcajce.spec.UserKeyingMaterialSpec;
 import org.bouncycastle.operator.DefaultSecretKeySizeProvider;
 import org.bouncycastle.operator.SecretKeySizeProvider;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
 import org.bouncycastle.util.Pack;
 
 public abstract class JceKeyAgreeRecipient
-    implements KeyAgreeRecipient
+    extends AbstractKeyAgreeRecipient
 {
     private static final Set possibleOldMessages = new HashSet();
 
@@ -163,13 +165,43 @@ public abstract class JceKeyAgreeRecipient
         return this;
     }
 
+    /**
+     * Set the content-encryption algorithms this recipient is willing to unwrap a key for. When set, an
+     * attempt to recover content protected under any other algorithm is rejected, mitigating an attacker
+     * substituting a weaker content-encryption algorithm into the recipient info.
+     *
+     * @param allowedContentAlgorithms the set of permitted content-encryption algorithm OIDs.
+     * @return this recipient.
+     */
+    public JceKeyAgreeRecipient setAllowedContentAlgorithms(Set<ASN1ObjectIdentifier> allowedContentAlgorithms)
+    {
+        setAllowedContentAlgorithmSet(allowedContentAlgorithms);
+
+        return this;
+    }
+
+    /**
+     * Set the minimum AEAD authentication tag size (in bits) this recipient will accept. When set, an
+     * attempt to recover AuthEnvelopedData whose content algorithm carries a shorter tag is rejected,
+     * mitigating an attacker downgrading the tag to a weaker length.
+     *
+     * @param tagSizeInBits the minimum acceptable AEAD tag size, in bits.
+     * @return this recipient.
+     */
+    public JceKeyAgreeRecipient setMinimumTagSize(int tagSizeInBits)
+    {
+        setMinimumTagSizeInBits(tagSizeInBits);
+
+        return this;
+    }
+
     private SecretKey calculateAgreedWrapKey(AlgorithmIdentifier keyEncAlg, AlgorithmIdentifier wrapAlg,
                                              PublicKey senderPublicKey, ASN1OctetString userKeyingMaterial, PrivateKey receiverPrivateKey, KeyMaterialGenerator kmGen)
         throws CMSException, GeneralSecurityException, IOException
     {
         receiverPrivateKey = CMSUtils.cleanPrivateKey(receiverPrivateKey);
 
-        if (CMSUtils.isMQV(keyEncAlg.getAlgorithm()))
+        if (isMQV(keyEncAlg.getAlgorithm()))
         {
             MQVuserKeyingMaterial ukm = MQVuserKeyingMaterial.getInstance(userKeyingMaterial.getOctets());
 
@@ -200,7 +232,7 @@ public abstract class JceKeyAgreeRecipient
 
             UserKeyingMaterialSpec userKeyingMaterialSpec = null;
 
-            if (CMSUtils.isEC(keyEncAlg.getAlgorithm()))
+            if (isEC(keyEncAlg.getAlgorithm()))
             {
                 byte[] ukmKeyingMaterial;
                 if (userKeyingMaterial != null)
@@ -213,14 +245,14 @@ public abstract class JceKeyAgreeRecipient
                 }
                 userKeyingMaterialSpec = new UserKeyingMaterialSpec(ukmKeyingMaterial);
             }
-            else if (CMSUtils.isRFC2631(keyEncAlg.getAlgorithm()))
+            else if (isRFC2631(keyEncAlg.getAlgorithm()))
             {
                 if (userKeyingMaterial != null)
                 {
                     userKeyingMaterialSpec = new UserKeyingMaterialSpec(userKeyingMaterial.getOctets());
                 }
             }
-            else if (CMSUtils.isGOST(keyEncAlg.getAlgorithm()))
+            else if (isGOST(keyEncAlg.getAlgorithm()))
             {
                 if (userKeyingMaterial != null)
                 {
@@ -251,6 +283,13 @@ public abstract class JceKeyAgreeRecipient
     protected Key extractSecretKey(AlgorithmIdentifier keyEncryptionAlgorithm, AlgorithmIdentifier contentEncryptionAlgorithm, SubjectPublicKeyInfo senderKey, ASN1OctetString userKeyingMaterial, byte[] encryptedContentEncryptionKey)
         throws CMSException
     {
+        if (!isContentAlgorithmAllowed(contentEncryptionAlgorithm.getAlgorithm()))
+        {
+            throw new CMSAlgorithmNotAllowedException("content-encryption algorithm not in recipient's allowed set: " + contentEncryptionAlgorithm.getAlgorithm());
+        }
+
+        checkTagSize(contentEncryptionAlgorithm);
+
         try
         {
             AlgorithmIdentifier wrapAlgID = AlgorithmIdentifier.getInstance(keyEncryptionAlgorithm.getParameters());
@@ -362,7 +401,7 @@ public abstract class JceKeyAgreeRecipient
             }
             catch (IOException e)
             {
-                throw new IllegalStateException("Unable to create KDF material: " + e);
+                throw Exceptions.illegalStateException("Unable to create KDF material", e);
             }
         }
     };

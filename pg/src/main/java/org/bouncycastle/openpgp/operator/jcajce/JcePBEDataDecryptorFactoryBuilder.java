@@ -22,7 +22,7 @@ import org.bouncycastle.openpgp.PGPUtil;
 import org.bouncycastle.openpgp.operator.PBEDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.PGPDataDecryptor;
 import org.bouncycastle.openpgp.operator.PGPDigestCalculatorProvider;
-
+import org.bouncycastle.util.Exceptions;
 /**
  * Builder for {@link PBEDataDecryptorFactory} instances that obtain cryptographic primitives using
  * the JCE API.
@@ -96,10 +96,10 @@ public class JcePBEDataDecryptorFactoryBuilder
             }
             catch (PGPException e)
             {
-                throw new IllegalStateException("digest calculator provider cannot be built with current helper: " + e.getMessage());
+                throw Exceptions.illegalStateException("digest calculator provider cannot be built with current helper", e);
             }
         }
-        return new PBEDataDecryptorFactory(passPhrase, calculatorProvider)
+        return new PBEDataDecryptorFactory(passPhrase, calculatorProvider, new JcePGPS2KCalculator(helper))
         {
             @Override
             public byte[] recoverSessionData(int keyAlgorithm, byte[] key, byte[] secKeyData)
@@ -152,7 +152,7 @@ public class JcePBEDataDecryptorFactoryBuilder
                     // HKDF
                     // secretKey := HKDF_sha256(ikm, hkdfInfo).generate()
                     int kekLen = SymmetricKeyUtils.getKeyLengthInOctets(keyData.getEncAlgorithm());
-                    byte[] kek = JceAEADUtil.generateHKDFBytes(ikm, null, hkdfInfo, kekLen);
+                    byte[] kek = aeadHelper.generateHKDFBytes(ikm, null, hkdfInfo, kekLen);
                     secretKey = new SecretKeySpec(kek, PGPUtil.getSymmetricCipherName(keyData.getEncAlgorithm()));
                 }
                 else

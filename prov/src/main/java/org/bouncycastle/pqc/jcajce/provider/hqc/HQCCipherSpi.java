@@ -19,17 +19,17 @@ import javax.crypto.ShortBufferException;
 import javax.crypto.spec.SecretKeySpec;
 import javax.security.auth.DestroyFailedException;
 
-import org.bouncycastle.crypto.CryptoServicesRegistrar;
 import org.bouncycastle.crypto.InvalidCipherTextException;
 import org.bouncycastle.crypto.SecretWithEncapsulation;
 import org.bouncycastle.crypto.Wrapper;
 import org.bouncycastle.crypto.params.KeyParameter;
+import org.bouncycastle.jcajce.provider.asymmetric.util.WrapUtil;
+import org.bouncycastle.jcajce.provider.util.SecurityExceptions;
 import org.bouncycastle.jcajce.spec.KEMParameterSpec;
 import org.bouncycastle.jcajce.spec.KTSParameterSpec;
 import org.bouncycastle.pqc.crypto.hqc.HQCKEMExtractor;
 import org.bouncycastle.pqc.crypto.hqc.HQCKEMGenerator;
 import org.bouncycastle.pqc.crypto.hqc.HQCParameters;
-import org.bouncycastle.pqc.jcajce.provider.util.WrapUtil;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Exceptions;
 import org.bouncycastle.util.Strings;
@@ -154,7 +154,7 @@ class HQCCipherSpi
             if (key instanceof BCHQCPublicKey)
             {
                 wrapKey = (BCHQCPublicKey)key;
-                kemGen = new HQCKEMGenerator(CryptoServicesRegistrar.getSecureRandom(random));
+                kemGen = new HQCKEMGenerator(random);
             }
             else
             {
@@ -269,11 +269,11 @@ class HQCCipherSpi
         }
         catch (IllegalArgumentException e)
         {
-            throw new IllegalBlockSizeException("unable to generate KTS secret: " + e.getMessage());
+            throw SecurityExceptions.illegalBlockSizeException("unable to generate KTS secret: " + e.getMessage(), e);
         }
         catch (DestroyFailedException e)
         {
-            throw new IllegalBlockSizeException("unable to destroy interim values: " + e.getMessage());
+            throw SecurityExceptions.illegalBlockSizeException("unable to destroy interim values: " + e.getMessage(), e);
         }
     }
 

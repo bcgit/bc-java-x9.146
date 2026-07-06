@@ -6,10 +6,25 @@ import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.CryptoServicesRegistrar;
 import org.bouncycastle.crypto.digests.SHAKEDigest;
 import org.bouncycastle.crypto.params.ParametersWithRandom;
+import org.bouncycastle.math.raw.GF16;
 import org.bouncycastle.pqc.crypto.MessageSigner;
 import org.bouncycastle.util.Arrays;
-import org.bouncycastle.util.GF16;
 
+/**
+ * Implementation of the Snova digital signature scheme as specified in the Snova documentation.
+ * This class provides functionality for both signature generation and verification.
+ *
+ * <p>Snova is a candidate in the <b>NIST Post-Quantum Cryptography: Additional Digital Signature Schemes</b> project,
+ * currently in Round 2 of evaluations. For more details about the NIST standardization process, see:
+ * <a href="https://csrc.nist.gov/Projects/pqc-dig-sig">NIST PQC Additional Digital Signatures</a>.</p>
+ *
+ * <p>References:</p>
+ * <ul>
+ *   <li><a href="https://snova.pqclab.org/">Snova Official Website</a></li>
+ *   <li><a href="https://csrc.nist.gov/csrc/media/Projects/pqc-dig-sig/documents/round-2/spec-files/snova-spec-round2-web.pdf">Snova Specification Document</a></li>
+ *   <li><a href="https://csrc.nist.gov/csrc/media/Projects/pqc-dig-sig/documents/round-2/submission-pkg/snova-submission-round2.zip">Snova Reference Implementation</a></li>
+ * </ul>
+ */
 public class SnovaSigner
     implements MessageSigner
 {
@@ -92,6 +107,15 @@ public class SnovaSigner
     @Override
     public boolean verifySignature(byte[] message, byte[] signature)
     {
+        // Reject a buffer too short to contain a signature before indexing it:
+        // generateSignature returns the signature optionally followed by the
+        // message (the signed-message envelope), and verifySignatureCore reads
+        // only the leading signature bytes; a shorter buffer would throw
+        // ArrayIndexOutOfBoundsException.
+        if (signature.length < ((params.getN() * params.getLsq() + 1) >>> 1) + params.getSaltLength())
+        {
+            return false;
+        }
         byte[] hash = getMessageHash(message);
         MapGroup1 map1 = new MapGroup1(params);
         byte[] pk = pubKey.getEncoded();

@@ -439,6 +439,51 @@ public interface BCObjectIdentifiers
     ASN1ObjectIdentifier external_value = bc_ext.branch("2");
 
     /**
+     * Placeholder for the id-ad-certDiscovery access method defined by
+     * draft-ietf-lamps-certdiscovery-03 (registered as TBD2 against the SMI
+     * Security for PKIX Access Descriptor registry). Used as the
+     * AccessDescription.accessMethod inside a SubjectInfoAccess extension to
+     * advertise that the accessLocation points at a related certificate.
+     * <p>
+     * 1.3.6.1.4.1.22554.4.3 (BC private placeholder; replace with the
+     * IANA-assigned id-ad.N once the draft progresses to RFC)
+     */
+    ASN1ObjectIdentifier id_ad_certDiscovery = bc_ext.branch("3");
+
+    /**
+     * Placeholder for the id-on-relatedCertificateDescriptor otherName type
+     * defined by draft-ietf-lamps-certdiscovery-03 (registered as TBD3
+     * against the SMI Security for PKIX Other Name Forms registry). Used as
+     * the OtherName.type-id wrapping the RelatedCertificateDescriptor
+     * carried inside the SIA extension's accessLocation GeneralName.
+     * <p>
+     * 1.3.6.1.4.1.22554.4.4 (BC private placeholder; replace with the
+     * IANA-assigned id-on.N once the draft progresses to RFC)
+     */
+    ASN1ObjectIdentifier id_on_relatedCertificateDescriptor = bc_ext.branch("4");
+
+    /**
+     * Placeholder for the id-rcd discovery-intent arc defined by
+     * draft-ietf-lamps-certdiscovery-03 (registered as TBD4). Parent of the
+     * five DiscoveryIntentId values below.
+     * <p>
+     * 1.3.6.1.4.1.22554.4.5 (BC private placeholder; replace with the
+     * IANA-assigned id-rcd once the draft progresses to RFC)
+     */
+    ASN1ObjectIdentifier id_rcd = bc_ext.branch("5");
+
+    /** id-rcd-agility: secondary certificate provides cryptographic agility. */
+    ASN1ObjectIdentifier id_rcd_agility       = id_rcd.branch("1");
+    /** id-rcd-redundancy: secondary certificate is a backup (different CA / validity). */
+    ASN1ObjectIdentifier id_rcd_redundancy    = id_rcd.branch("2");
+    /** id-rcd-dual: secondary certificate provides the complementary key usage (sign/encrypt split). */
+    ASN1ObjectIdentifier id_rcd_dual          = id_rcd.branch("3");
+    /** id-rcd-priv-key-stmt: secondary certificate carries a proof-of-possession statement signed for the primary. */
+    ASN1ObjectIdentifier id_rcd_priv_key_stmt = id_rcd.branch("4");
+    /** id-rcd-self: descriptor points at the location of the current certificate itself. */
+    ASN1ObjectIdentifier id_rcd_self          = id_rcd.branch("5");
+
+    /**
      * KEM(5) algorithms
      */
     ASN1ObjectIdentifier bc_kem = bc.branch("5");
@@ -576,10 +621,7 @@ public interface BCObjectIdentifiers
      * Mayo
      */
     ASN1ObjectIdentifier mayo = bc_sig.branch("10");
-    ASN1ObjectIdentifier mayo1 = mayo.branch("1");
-    ASN1ObjectIdentifier mayo2 = mayo.branch("2");
-    ASN1ObjectIdentifier mayo3 = mayo.branch("3");
-    ASN1ObjectIdentifier mayo5 = mayo.branch("4");
+
     /** 1.3.9999.8.1.3 OQS_OID_MAYO1 */
     ASN1ObjectIdentifier mayo_1 = new ASN1ObjectIdentifier("1.3.9999.8.1.3");
     /** 1.3.9999.8.1.4 OQS_OID_P256_MAYO1 */
@@ -596,6 +638,11 @@ public interface BCObjectIdentifiers
     ASN1ObjectIdentifier mayo_5 = new ASN1ObjectIdentifier("1.3.9999.8.5.3");
     /** 1.3.9999.8.5.4 OQS_OID_P521_MAYO5 */
     ASN1ObjectIdentifier p521_mayo5 = new ASN1ObjectIdentifier("1.3.9999.8.5.4");
+
+    ASN1ObjectIdentifier mayo1 = mayo_1;
+    ASN1ObjectIdentifier mayo2 = mayo_2;
+    ASN1ObjectIdentifier mayo3 = mayo_3;
+    ASN1ObjectIdentifier mayo5 = mayo_5;
 
     /**
      * cross
@@ -735,10 +782,209 @@ public interface BCObjectIdentifiers
     ASN1ObjectIdentifier snova_75_33_2_shake_esk = snova.branch("44");
 
     /**
+     * FAEST &mdash; symmetric-primitive signature scheme based on AES and the
+     * VOLE-in-the-Head proof system. See
+     * <a href="https://csrc.nist.gov/projects/pqc-dig-sig/round-3-additional-signatures">
+     * NIST PQC additional signatures Round 3</a> and the FAEST team's specification
+     * (<a href="https://faest.info/faest-spec-v2.0.pdf">FAEST v2.0</a>).
+     * <p>
+     * Twelve parameter sets per the v2.0 spec: six base FAEST variants ({128,192,256}-bit
+     * security in "small signature" (s) and "fast signing" (f) trade-offs) and six
+     * FAEST-EM (Even-Mansour) variants over the same security/trade-off matrix.
+     * <p>
+     * No OQS-tracked OIDs are defined here because the upstream
+     * <a href="https://github.com/open-quantum-safe/liboqs">liboqs</a> /
+     * <a href="https://github.com/open-quantum-safe/oqs-provider">oqs-provider</a> did
+     * not have FAEST integrated as of the bcjava 1.85 cycle. If OQS publishes
+     * 1.3.9999.* identifiers for FAEST, add them as additional commented constants
+     * alongside the BC-arc identifiers below (cf. the {@link #mayo_1} / {@link #mayo1}
+     * dual-arc precedent in the Mayo block).
+     */
+    ASN1ObjectIdentifier faest = bc_sig.branch("12");
+
+    ASN1ObjectIdentifier faest_128s = faest.branch("1");
+    ASN1ObjectIdentifier faest_128f = faest.branch("2");
+    ASN1ObjectIdentifier faest_192s = faest.branch("3");
+    ASN1ObjectIdentifier faest_192f = faest.branch("4");
+    ASN1ObjectIdentifier faest_256s = faest.branch("5");
+    ASN1ObjectIdentifier faest_256f = faest.branch("6");
+
+    ASN1ObjectIdentifier faest_em_128s = faest.branch("7");
+    ASN1ObjectIdentifier faest_em_128f = faest.branch("8");
+    ASN1ObjectIdentifier faest_em_192s = faest.branch("9");
+    ASN1ObjectIdentifier faest_em_192f = faest.branch("10");
+    ASN1ObjectIdentifier faest_em_256s = faest.branch("11");
+    ASN1ObjectIdentifier faest_em_256f = faest.branch("12");
+
+
+    /**
+     * MQOM v2.1 ("MQ on my Mind"). BC-allocated arc pending NIST OID assignment.
+     * 36 child OIDs follow the canonical naming
+     * {@code mqom2_<category>_<base-field>_<trade-off>_<variant>}
+     * with category in {cat1, cat3, cat5}, base-field in {gf2, gf16, gf256},
+     * trade-off in {fast, short}, variant in {r3, r5}.
+     */
+    ASN1ObjectIdentifier mqom = bc_sig.branch("13");
+    ASN1ObjectIdentifier mqom2_cat1_gf2_fast_r3      = mqom.branch("1");
+    ASN1ObjectIdentifier mqom2_cat1_gf2_fast_r5      = mqom.branch("2");
+    ASN1ObjectIdentifier mqom2_cat1_gf2_short_r3     = mqom.branch("3");
+    ASN1ObjectIdentifier mqom2_cat1_gf2_short_r5     = mqom.branch("4");
+    ASN1ObjectIdentifier mqom2_cat1_gf16_fast_r3     = mqom.branch("5");
+    ASN1ObjectIdentifier mqom2_cat1_gf16_fast_r5     = mqom.branch("6");
+    ASN1ObjectIdentifier mqom2_cat1_gf16_short_r3    = mqom.branch("7");
+    ASN1ObjectIdentifier mqom2_cat1_gf16_short_r5    = mqom.branch("8");
+    ASN1ObjectIdentifier mqom2_cat1_gf256_fast_r3    = mqom.branch("9");
+    ASN1ObjectIdentifier mqom2_cat1_gf256_fast_r5    = mqom.branch("10");
+    ASN1ObjectIdentifier mqom2_cat1_gf256_short_r3   = mqom.branch("11");
+    ASN1ObjectIdentifier mqom2_cat1_gf256_short_r5   = mqom.branch("12");
+    ASN1ObjectIdentifier mqom2_cat3_gf2_fast_r3      = mqom.branch("13");
+    ASN1ObjectIdentifier mqom2_cat3_gf2_fast_r5      = mqom.branch("14");
+    ASN1ObjectIdentifier mqom2_cat3_gf2_short_r3     = mqom.branch("15");
+    ASN1ObjectIdentifier mqom2_cat3_gf2_short_r5     = mqom.branch("16");
+    ASN1ObjectIdentifier mqom2_cat3_gf16_fast_r3     = mqom.branch("17");
+    ASN1ObjectIdentifier mqom2_cat3_gf16_fast_r5     = mqom.branch("18");
+    ASN1ObjectIdentifier mqom2_cat3_gf16_short_r3    = mqom.branch("19");
+    ASN1ObjectIdentifier mqom2_cat3_gf16_short_r5    = mqom.branch("20");
+    ASN1ObjectIdentifier mqom2_cat3_gf256_fast_r3    = mqom.branch("21");
+    ASN1ObjectIdentifier mqom2_cat3_gf256_fast_r5    = mqom.branch("22");
+    ASN1ObjectIdentifier mqom2_cat3_gf256_short_r3   = mqom.branch("23");
+    ASN1ObjectIdentifier mqom2_cat3_gf256_short_r5   = mqom.branch("24");
+    ASN1ObjectIdentifier mqom2_cat5_gf2_fast_r3      = mqom.branch("25");
+    ASN1ObjectIdentifier mqom2_cat5_gf2_fast_r5      = mqom.branch("26");
+    ASN1ObjectIdentifier mqom2_cat5_gf2_short_r3     = mqom.branch("27");
+    ASN1ObjectIdentifier mqom2_cat5_gf2_short_r5     = mqom.branch("28");
+    ASN1ObjectIdentifier mqom2_cat5_gf16_fast_r3     = mqom.branch("29");
+    ASN1ObjectIdentifier mqom2_cat5_gf16_fast_r5     = mqom.branch("30");
+    ASN1ObjectIdentifier mqom2_cat5_gf16_short_r3    = mqom.branch("31");
+    ASN1ObjectIdentifier mqom2_cat5_gf16_short_r5    = mqom.branch("32");
+    ASN1ObjectIdentifier mqom2_cat5_gf256_fast_r3    = mqom.branch("33");
+    ASN1ObjectIdentifier mqom2_cat5_gf256_fast_r5    = mqom.branch("34");
+    ASN1ObjectIdentifier mqom2_cat5_gf256_short_r3   = mqom.branch("35");
+    ASN1ObjectIdentifier mqom2_cat5_gf256_short_r5   = mqom.branch("36");
+
+    /**
+     * UOV (Unbalanced Oil and Vinegar). BC-allocated arc pending NIST OID
+     * assignment from the additional-signatures round of NIST's PQC
+     * standardisation. Twelve child OIDs follow the canonical naming
+     * {@code uov_<security-level>_<encoding-variant>} where
+     * security-level is in {Is, Ip, III, V} and encoding-variant is in
+     * {classic, pkc, pkc_skc}. See pqov reference implementation
+     * (https://github.com/pqov/pqov) for the algorithm definitions.
+     */
+    ASN1ObjectIdentifier uov = bc_sig.branch("14");
+    ASN1ObjectIdentifier uov_Is_classic   = uov.branch("1");
+    ASN1ObjectIdentifier uov_Is_pkc       = uov.branch("2");
+    ASN1ObjectIdentifier uov_Is_pkc_skc   = uov.branch("3");
+    ASN1ObjectIdentifier uov_Ip_classic   = uov.branch("4");
+    ASN1ObjectIdentifier uov_Ip_pkc       = uov.branch("5");
+    ASN1ObjectIdentifier uov_Ip_pkc_skc   = uov.branch("6");
+    ASN1ObjectIdentifier uov_III_classic  = uov.branch("7");
+    ASN1ObjectIdentifier uov_III_pkc      = uov.branch("8");
+    ASN1ObjectIdentifier uov_III_pkc_skc  = uov.branch("9");
+    ASN1ObjectIdentifier uov_V_classic    = uov.branch("10");
+    ASN1ObjectIdentifier uov_V_pkc        = uov.branch("11");
+    ASN1ObjectIdentifier uov_V_pkc_skc    = uov.branch("12");
+
+    /**
+     * SQIsign (Short Quaternion and Isogeny Signature). BC-allocated arc
+     * pending NIST OID assignment from the additional-signatures round of
+     * NIST's PQC standardisation. Three child OIDs follow the canonical
+     * NIST-API parameter-set naming {@code sqisign_lvl<n>} with
+     * n in {1, 3, 5}.
+     */
+    ASN1ObjectIdentifier sqisign       = bc_sig.branch("19");
+    ASN1ObjectIdentifier sqisign_lvl1  = sqisign.branch("1");
+    ASN1ObjectIdentifier sqisign_lvl3  = sqisign.branch("2");
+    ASN1ObjectIdentifier sqisign_lvl5  = sqisign.branch("3");
+
+    /**
+     * HAETAE &mdash; lattice-based signature scheme submitted to the
+     * KpqC (Korean Post-Quantum Cryptography) standardisation effort. See
+     * <a href="https://kpqc.or.kr">KpqC</a> and the HAETAE team's
+     * specification document.
+     * <p>
+     * Three parameter sets are provided: HAETAE-2 (NIST level 2), HAETAE-3
+     * (NIST level 3) and HAETAE-5 (NIST level 5).
+     */
+    ASN1ObjectIdentifier haetae = bc_sig.branch("18");
+
+    ASN1ObjectIdentifier haetae2 = haetae.branch("1");
+    ASN1ObjectIdentifier haetae3 = haetae.branch("2");
+    ASN1ObjectIdentifier haetae5 = haetae.branch("3");
+
+    /**
      * NTRU+
      * */
-    ASN1ObjectIdentifier ntruPlus = bc_sig.branch("15");
-    ASN1ObjectIdentifier ntruPlus768 = ntruPlus.branch("1");
-    ASN1ObjectIdentifier ntruPlus864 = ntruPlus.branch("2");
-    ASN1ObjectIdentifier ntruPlus1152 = ntruPlus.branch("3");
+    ASN1ObjectIdentifier pqc_kem_ntruplus = bc_kem.branch("10");
+    ASN1ObjectIdentifier ntruplus768 = pqc_kem_ntruplus.branch("1");
+    ASN1ObjectIdentifier ntruplus864 = pqc_kem_ntruplus.branch("2");
+    ASN1ObjectIdentifier ntruplus1152 = pqc_kem_ntruplus.branch("3");
+
+    /**
+     * Hawk PQC signature scheme — parent arc and the three parameter-set OIDs
+     * (hawk-256, hawk-512, hawk-1024).
+     */
+    ASN1ObjectIdentifier hawk = bc_sig.branch("15");
+    ASN1ObjectIdentifier hawk256 = hawk.branch("1");
+    ASN1ObjectIdentifier hawk512 = hawk.branch("2");
+    ASN1ObjectIdentifier hawk1024 = hawk.branch("3");
+
+    /**
+     * SDitH (Syndrome-Decoding-in-the-Head). BC-allocated arc pending NIST OID
+     * assignment. The Round-2 submission defines 12 variants formed from the
+     * cross of {hypercube, threshold} × {cat1, cat3, cat5} × {gf256, p251};
+     * all 12 are wired in. Branches are assigned in canonical order:
+     * hypercube cat1/3/5 gf256 = .1/.2/.3, hypercube cat1/3/5 p251 = .4/.5/.6,
+     * threshold cat1/3/5 gf256 = .7/.8/.9, threshold cat1/3/5 p251 = .10/.11/.12.
+     */
+    ASN1ObjectIdentifier sdith = bc_sig.branch("16");
+    ASN1ObjectIdentifier sdith_hypercube_cat1_gf256 = sdith.branch("1");
+    ASN1ObjectIdentifier sdith_hypercube_cat3_gf256 = sdith.branch("2");
+    ASN1ObjectIdentifier sdith_hypercube_cat5_gf256 = sdith.branch("3");
+    ASN1ObjectIdentifier sdith_hypercube_cat1_p251  = sdith.branch("4");
+    ASN1ObjectIdentifier sdith_hypercube_cat3_p251  = sdith.branch("5");
+    ASN1ObjectIdentifier sdith_hypercube_cat5_p251  = sdith.branch("6");
+    ASN1ObjectIdentifier sdith_threshold_cat1_gf256 = sdith.branch("7");
+    ASN1ObjectIdentifier sdith_threshold_cat3_gf256 = sdith.branch("8");
+    ASN1ObjectIdentifier sdith_threshold_cat5_gf256 = sdith.branch("9");
+    ASN1ObjectIdentifier sdith_threshold_cat1_p251  = sdith.branch("10");
+    ASN1ObjectIdentifier sdith_threshold_cat3_p251  = sdith.branch("11");
+    ASN1ObjectIdentifier sdith_threshold_cat5_p251  = sdith.branch("12");
+
+    /**
+     * QR-UOV &mdash; multivariate signature scheme based on quotient-ring UOV.
+     * Round 2 submission to the NIST PQC additional signatures process.
+     * <p>
+     * Twelve parameter sets covering NIST security categories 1/3/5 with various
+     * (q, L, v, m) combinations.
+     */
+    ASN1ObjectIdentifier qruov = bc_sig.branch("17");
+
+    ASN1ObjectIdentifier qruov1q127L3v156m54 = qruov.branch("1");
+    ASN1ObjectIdentifier qruov1q31L3v165m60 = qruov.branch("2");
+    ASN1ObjectIdentifier qruov1q31L10v600m70 = qruov.branch("3");
+    ASN1ObjectIdentifier qruov1q7L10v740m100 = qruov.branch("4");
+    ASN1ObjectIdentifier qruov3q127L3v228m78 = qruov.branch("5");
+    ASN1ObjectIdentifier qruov3q31L3v246m87 = qruov.branch("6");
+    ASN1ObjectIdentifier qruov3q31L10v890m100 = qruov.branch("7");
+    ASN1ObjectIdentifier qruov3q7L10v1100m140 = qruov.branch("8");
+    ASN1ObjectIdentifier qruov5q127L3v306m105 = qruov.branch("9");
+    ASN1ObjectIdentifier qruov5q31L3v324m114 = qruov.branch("10");
+    ASN1ObjectIdentifier qruov5q31L10v1120m120 = qruov.branch("11");
+    ASN1ObjectIdentifier qruov5q7L10v1490m190 = qruov.branch("12");
+
+    /**
+     * AIMer post-quantum digital signature scheme (KpqC Round 2 submission).
+     * Parent arc and the six parameter-set OIDs
+     * (aimer-128f/s, aimer-192f/s, aimer-256f/s).
+     * <p>
+     * bc-sig.16/17/18/19 are taken by SDitH/QR-UOV/Haetae/SQIsign; AIMer takes bc-sig.20.
+     */
+    ASN1ObjectIdentifier aimer = bc_sig.branch("20");
+    ASN1ObjectIdentifier aimer_128f = aimer.branch("1");
+    ASN1ObjectIdentifier aimer_128s = aimer.branch("2");
+    ASN1ObjectIdentifier aimer_192f = aimer.branch("3");
+    ASN1ObjectIdentifier aimer_192s = aimer.branch("4");
+    ASN1ObjectIdentifier aimer_256f = aimer.branch("5");
+    ASN1ObjectIdentifier aimer_256s = aimer.branch("6");
 }

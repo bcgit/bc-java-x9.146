@@ -31,7 +31,7 @@ import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.digests.SHA512Digest;
 import org.bouncycastle.crypto.digests.SHAKEDigest;
-import org.bouncycastle.internal.asn1.iana.IANAObjectIdentifiers;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
 import org.bouncycastle.jcajce.CompositePrivateKey;
 import org.bouncycastle.jcajce.CompositePublicKey;
 import org.bouncycastle.jcajce.interfaces.BCKey;
@@ -293,7 +293,7 @@ public class SignatureSpi
         }
         catch (InvalidAlgorithmParameterException e)
         {
-            throw new IllegalStateException("unable to set context on ML-DSA");
+            throw Exceptions.illegalStateException("unable to set context on ML-DSA", e);
         }
 
         this.unprimed = false;
@@ -450,6 +450,10 @@ public class SignatureSpi
         else if (algs[0].indexOf("87") > 0)
         {
             mldsaSigLen = 4627;
+        }
+        if (mldsaSigLen == 0 || signature.length < mldsaSigLen)
+        {
+            throw new SignatureException("malformed composite signature");
         }
         byte[][] signatures = splitCompositeSignature(signature, mldsaSigLen);
 

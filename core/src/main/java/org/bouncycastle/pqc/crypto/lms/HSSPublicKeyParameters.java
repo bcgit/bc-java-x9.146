@@ -5,6 +5,7 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
+import org.bouncycastle.util.Exceptions;
 import org.bouncycastle.util.io.Streams;
 
 public class HSSPublicKeyParameters
@@ -37,6 +38,10 @@ public class HSSPublicKeyParameters
         else if (src instanceof DataInputStream)
         {
             int L = ((DataInputStream)src).readInt();
+            if (L < 1 || L > 8)    // RFC 8554, Section 6.
+            {
+                throw new IOException("L value of HSS public key out of range: " + L);
+            }
             LMSPublicKeyParameters lmsPublicKey = LMSPublicKeyParameters.getInstance(src);
             return new HSSPublicKeyParameters(L, lmsPublicKey);
         }
@@ -46,7 +51,13 @@ public class HSSPublicKeyParameters
             try // 1.5 / 1.6 compatibility
             {
                 in = new DataInputStream(new ByteArrayInputStream((byte[])src));
-                return getInstance(in);
+                HSSPublicKeyParameters pKey = getInstance(in);
+                // RFC 8554, Section 5.3 / 6.1: nothing may follow the public key.
+                if (in.available() != 0)
+                {
+                    throw new IOException("unexpected data found after HSS public key");
+                }
+                return pKey;
             }
             finally
             {
@@ -117,7 +128,7 @@ public class HSSPublicKeyParameters
         }
         catch (IOException e)
         {
-            throw new IllegalStateException("cannot parse signature: " + e.getMessage());
+            throw Exceptions.illegalStateException("cannot parse signature", e);
         }
      
         LMSSignedPubKey[] signedPubKeys = signature.getSignedPubKey();

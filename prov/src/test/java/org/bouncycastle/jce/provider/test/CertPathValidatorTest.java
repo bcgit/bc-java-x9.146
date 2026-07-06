@@ -389,8 +389,19 @@ public class CertPathValidatorTest
         PKIXParameters param = new PKIXParameters(trust);
         param.setRevocationEnabled(false);
 
-        cpv.validate(certPath, param);
-
+        // These are GSMA SGP.22 RSP certificates: the EUM intermediate carries a directoryName name
+        // constraint permitting serialNumber=89049032, which only matches the longer eUICC subject
+        // serialNumber via the SGP.22 startsWith concession. That concession is gated off by default
+        // (RFC 5280 sec. 7.1 equality otherwise), so enable it for this chain. See github #2327.
+        System.setProperty(Properties.X509_SGP22_NAME_CONSTRAINTS, "true");
+        try
+        {
+            cpv.validate(certPath, param);
+        }
+        finally
+        {
+            System.getProperties().remove(Properties.X509_SGP22_NAME_CONSTRAINTS);
+        }
     }
 
     private static byte[] crlFake = Base64.decode(
@@ -533,10 +544,64 @@ public class CertPathValidatorTest
         }
         catch (CertPathValidatorException e)
         {                   
-            isTrue("No CRLs found for issuer \"o=Certs 'r Us,c=XX\"".equals(e.getMessage()));
+            isTrue(e.getMessage().startsWith("No CRLs found for issuer \"o=Certs 'r Us,c=XX\""));
         }
 
         System.setProperty("org.bouncycastle.x509.allow_ca_without_crl_sign", "true");
+    }
+
+    private void testNameOnlyTrustAnchor()
+        throws Exception
+    {
+        // github #1420: a TrustAnchor built with (caName, caPublicKey, nameConstraints)
+        // and no certificate must validate without throwing NullPointerException.
+        CertificateFactory cf = CertificateFactory.getInstance("X.509", "BC");
+        X509Certificate rootCert = (X509Certificate)cf.generateCertificate(new ByteArrayInputStream(CertPathTest.rootCertBin));
+        X509Certificate interCert = (X509Certificate)cf.generateCertificate(new ByteArrayInputStream(CertPathTest.interCertBin));
+        X509Certificate finalCert = (X509Certificate)cf.generateCertificate(new ByteArrayInputStream(CertPathTest.finalCertBin));
+        X509CRL rootCrl = (X509CRL)cf.generateCRL(new ByteArrayInputStream(CertPathTest.rootCrlBin));
+        X509CRL interCrl = (X509CRL)cf.generateCRL(new ByteArrayInputStream(CertPathTest.interCrlBin));
+
+        List list = new ArrayList();
+        list.add(rootCert);
+        list.add(interCert);
+        list.add(finalCert);
+        list.add(rootCrl);
+        list.add(interCrl);
+        CertStore store = CertStore.getInstance("Collection", new CollectionCertStoreParameters(list), "BC");
+
+        Date validDate = new Date(rootCrl.getThisUpdate().getTime() + 60 * 60 * 1000);
+
+        List certchain = new ArrayList();
+        certchain.add(finalCert);
+        certchain.add(interCert);
+        CertPath cp = cf.generateCertPath(certchain);
+
+        Set trust = new HashSet();
+        trust.add(new TrustAnchor(
+            rootCert.getSubjectX500Principal().getName(), rootCert.getPublicKey(), null));
+
+        CertPathValidator cpv = CertPathValidator.getInstance("PKIX", "BC");
+        PKIXParameters params = new PKIXParameters(trust);
+        params.addCertStore(store);
+        params.setDate(validDate);
+        params.setRevocationEnabled(false);
+
+        System.setProperty("org.bouncycastle.x509.allow_ca_without_crl_sign", "true");
+
+        PKIXCertPathValidatorResult result = (PKIXCertPathValidatorResult)cpv.validate(cp, params);
+
+        if (!result.getPublicKey().equals(finalCert.getPublicKey()))
+        {
+            fail("wrong public key returned for name-only trust anchor");
+        }
+
+        if (result.getTrustAnchor().getTrustedCert() != null)
+        {
+            fail("trust anchor should not have a certificate");
+        }
+
+        System.setProperty("org.bouncycastle.x509.allow_ca_without_crl_sign", "false");
     }
 
     public void performTest()
@@ -544,6 +609,7 @@ public class CertPathValidatorTest
     {
         constraintTest();
         testNoKeyUsageCRLSigner();
+        testNameOnlyTrustAnchor();
         CertificateFactory cf = CertificateFactory.getInstance("X.509", "BC");
 
         // initialise CertStore

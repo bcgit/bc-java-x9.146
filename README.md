@@ -10,6 +10,49 @@ Except where otherwise stated, this software is distributed under a license base
 
 **Note**: this source tree is not the FIPS version of the APIs - if you are interested in our FIPS version please contact us directly at  [office@bouncycastle.org](mailto:office@bouncycastle.org).
 
+## Using Bouncy Castle in your project
+
+The Bouncy Castle artifacts are published to [Maven Central](https://central.sonatype.com/search?q=g%3Aorg.bouncycastle) under the `org.bouncycastle` group. Pick the artifacts you need, then add them to your build using the latest released version.
+
+For the lightweight crypto API plus the JCA/JCE provider — the most common starting point — add `bcprov-jdk18on`:
+
+**Maven**:
+
+```xml
+<dependency>
+    <groupId>org.bouncycastle</groupId>
+    <artifactId>bcprov-jdk18on</artifactId>
+    <version>1.84</version>
+</dependency>
+```
+
+**Gradle**:
+
+```groovy
+implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
+```
+
+If you need functionality beyond what `bcprov` provides, add the appropriate companion artifacts. They all share the same `org.bouncycastle` group, the same `-jdk18on` suffix, and the same version — pull each one in the same way as the snippets above:
+
+| Artifact | What it covers |
+| -------- | -------------- |
+| `bcprov-jdk18on`   | Lightweight crypto API plus the `BC` / `BCPQC` JCA/JCE providers. Required by every other module. |
+| `bcpkix-jdk18on`   | X.509 / PKCS#10 / PKCS#12, CMS, S/MIME helpers (top-level only), TSP, OCSP, CMP / CRMF, certificate path validation. |
+| `bcpg-jdk18on`     | OpenPGP (RFC 4880 / RFC 9580). |
+| `bctls-jdk18on`    | Standalone TLS 1.0 – 1.3 implementation plus the BCJSSE provider. |
+| `bcmail-jdk18on`   | S/MIME built on top of `bcpkix`, targeting the legacy `javax.mail` / `javax.activation` 1.x runtimes. |
+| `bcjmail-jdk18on`  | S/MIME for the Jakarta runtimes (`jakarta.mail` / `jakarta.activation` 2.x). Pick this for modern Spring Boot / Quarkus / Jakarta EE apps, and use `bcmail-jdk18on` for the older `javax.*` stack. |
+| `bcmls-jdk18on`    | Messaging Layer Security (RFC 9420). |
+| `bcutil-jdk18on`   | Shared ASN.1 utility classes used by `bcpkix`. Pulled in transitively. |
+
+### Suffix history
+
+The `-jdk18on` suffix means "JDK 1.8 and newer." Pre-1.71 releases shipped under a `-jdk15on` suffix (JDK 1.5 and newer); those artifacts are end-of-life and should not be used for new development. The `15to18` suffix you may see in this repository's local Gradle outputs reflects a transitional build flavour and is **not** what is published to Maven Central.
+
+### FIPS distribution
+
+The FIPS-certified BC distribution lives in a separate source tree with separate Maven coordinates and a separate licence — it is not what this repository builds. See [the BC FIPS page](https://www.bouncycastle.org/fips-java/) or contact [office@bouncycastle.org](mailto:office@bouncycastle.org) for additional details.
+
 ## Maven Public Key
 
 The file [bc_maven_public_key.asc](bc_maven_public_key.asc) contains the public key used to sign our artifacts on Maven Central. You will need to use 
@@ -28,10 +71,18 @@ Note: the ./ is required in front of the key file name to tell gpg to look local
 
 ## Building overview
 
-This project can now be built and tested with JDK21. 
+Building the project requires JDK 25 or later to drive Gradle — make sure JAVA_HOME (or whatever JVM ```gradlew``` picks up) points at a JDK 25+ installation.
 
-If the build script detects BC_JDK8, BC_JDK11, BC_JDK17 it will add to the usual test task a dependency on test tasks 
-that specifically use the JVMs addressed by those environmental variables. The script relies on JAVA_HOME for picking up Java 21 if it is use.
+If the build script detects BC_JDK8, BC_JDK11, BC_JDK17, BC_JDK21, BC_JDK25 it will add to the usual test task a dependency on test tasks
+that specifically use the JVMs addressed by those environmental variables.
+
+To run the tests of the project as part of the build test data is needed. Our test data can be found at the [bc-test-data](https://github.com/bcgit/bc-test-data) repository. The tests locate the bc-test-data tree using, in order:
+
+1. The system property ```bc.test.data.home```, if set.
+2. The environment variable ```BC_TEST_DATA_HOME```, if set.
+3. Otherwise the tests walk up from the working directory looking for a directory literally named ```bc-test-data```. The simplest configuration is therefore to check ```bc-test-data``` out as a sibling of ```bc-java``` and no further setup is required.
+
+When the property or environment variable is supplied, the named path is required to exist; a mistyped value fails fast with a ```FileNotFoundException``` naming whichever source supplied it, rather than silently falling through to the walk-up.
 
 We support testing on specific JVMs as it is the only way to be certain the library is compatible.
 
@@ -43,6 +94,14 @@ The following environmental variables can optionally point to the JAVA_HOME for 
 export BC_JDK8=/path/to/java8
 export BC_JDK11=/path/to/java11
 export BC_JDK17=/path/to/java17
+export BC_JDK21=/path/to/java21
+export BC_JDK25=/path/to/java25
+```
+
+If your ```bc-test-data``` checkout is not a sibling of ```bc-java```, set ```BC_TEST_DATA_HOME``` (or pass ```-Dbc.test.data.home=...``` on the command line) so the tests can find it:
+
+```
+export BC_TEST_DATA_HOME=/path/to/bc-test-data
 ```
 
 ## Building
@@ -52,16 +111,42 @@ The project now uses ```gradlew``` which can be invoked for example:
 ```
 # from the root of the project
 
-# Ensure JAVA_HOME points to JDK 21 or higher JAVA_HOME or that
-# gradlew can find a java 21 installation to use.
+# Ensure JAVA_HOME points to JDK 25 or higher JAVA_HOME or that
+# gradlew can find a java 25 installation to use.
 
 
 ./gradlew clean build
 
 ```
 
-The gradle script will endeavour to verify their existence but not the correctness of their value.
+At startup the gradle script prints which of the BC_JDK environmental variables it found; it does not verify that their values point at working JDK installations.
 
+Each module's built jars are written to its own ```<module>/build/libs``` directory (e.g. ```prov/build/libs/bcprov-jdk18on-<version>.jar```). For convenience, a top-level ```copyJars``` task gathers the produced jars (main, sources and javadoc) for all published modules (```bccore```, ```bcutil```, ```bcprov```, ```bcpkix```, ```bcpg```, ```bctls```, ```bcmls```, ```bcmail```, ```bcjmail```) into a single ```dist``` directory at the project root:
+
+```
+./gradlew copyJars
+```
+
+A sibling ```copyMavenJars``` task produces the same set minus ```bccore``` (whose classes are already bundled into ```bcprov```), matching the artifacts published to Maven Central:
+
+```
+./gradlew copyMavenJars
+```
+
+## SBOM and CBOM generation
+
+The build can produce CycloneDX 1.6 bills of materials describing the release artifacts:
+
+```
+./gradlew generateSbom     # -> build/reports/sbom/
+./gradlew generateCbom     # -> build/reports/cbom/
+```
+
+```generateSbom``` writes a Software Bill of Materials ([CycloneDX SBOM](https://cyclonedx.org/capabilities/sbom/)) mirroring the published ```bc-jdk18on-bom``` Maven BOM: one library component per published module jar, with MD5 / SHA-1 / SHA-256 hashes matching the Maven repository checksum files, the declared external dependencies, and the inter-module dependency graph as it appears in the published poms. Alongside the SBOM itself (```bc-jdk18on-bom-<version>-cyclonedx.json```) the task copies in the BOM's ```.pom``` and Gradle Module Metadata ```.module``` files, so the output directory holds the complete publishable set for the BOM artifact. The component set is read from the ```bom``` project's platform constraints, so the SBOM and the published Maven BOM stay in lockstep automatically.
+
+```generateCbom``` writes a Cryptographic Bill of Materials ([CycloneDX CBOM](https://cyclonedx.org/capabilities/cbom/)) for the freshly built ```bcprov``` jar by introspecting the JCA service tables of the ```BC``` (```BouncyCastleProvider```) and ```BCPQC``` (```BouncyCastlePQCProvider```) providers: one ```cryptographic-asset``` component per algorithm, carrying its primitive classification (block cipher, signature, KEM, hash, MAC, KDF, DRBG, ...), the crypto functions it provides, and its OID(s), plus a ```provides``` dependency edge from the ```bcprov``` library component to every asset. The output is ```build/reports/cbom/bcprov-jdk18on-<version>-cyclonedx.json```.
+
+Both BOMs are reproducible: the serial number is a name-based UUID derived from the artifact coordinates, and the timestamp is taken from the ```SOURCE_DATE_EPOCH``` environment variable when set, falling back to the git commit time recorded in the ```bccore``` sources jar manifest — so the same version yields byte-identical output.
 
 ## Multi-release jars and testing
 Some subprojects produce multi-release jars and these jars are can be tested on different jvm versions specifically.
@@ -71,9 +156,11 @@ If the env vars are defined:
 export BC_JDK8=/path/to/java8
 export BC_JDK11=/path/to/java11
 export BC_JDK17=/path/to/java17
+export BC_JDK21=/path/to/java21
+export BC_JDK25=/path/to/java25
 ```
 
-If only a Java 21 JDK is present then the normal test task and test21 are run only.
+The version-specific test tasks (```test11```, ```test15```, ```test17```, ```test25```, ...) only run when the BC_JDK variable for the JVM they run on is set (```test15``` runs on the BC_JDK17 JVM); if none of the variables are defined only the normal test task is run, on the JVM driving Gradle.
 
 
 ## Code Organisation

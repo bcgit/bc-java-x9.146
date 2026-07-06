@@ -4,6 +4,7 @@ import java.security.KeyPair;
 import java.security.KeyStore;
 import java.security.KeyStore.Builder;
 import java.security.Principal;
+import java.security.Security;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 
@@ -16,19 +17,45 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
 import javax.security.auth.x500.X500Principal;
 
-import junit.framework.TestCase;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.jsse.BCX509ExtendedKeyManager;
 import org.bouncycastle.jsse.BCX509Key;
+
+import junit.framework.TestCase;
 
 public class KeyManagerFactoryTest
     extends TestCase
 {
     private static final char[] PASSWORD = "fred".toCharArray();
 
+    private boolean rsaEncryptionAvailable = true;
+
     protected void setUp()
     {
         ProviderUtils.setupLowPriority(false);
+
+        /*
+         * TODO This is a quick fix to spot the presence of the entry "TLS_RSA_*" in the security property
+         * "jdk.tls.disabledAlgorithms" (usually configured in java.security). BCJSSE currently doesn't
+         * support that wild-card style, but some of the tests in this class try to test against a JDK (i.e.
+         * SunJSSE) server configured only with RSA encryption credentials. The current preference is that
+         * the "jdk.tls.disabledAlgorithms" property be suitably modified in JDKs used for testing, so that
+         * all TLS features may be tested.
+         */
+        boolean rsaEncryptionAvailable = true;
+        String disabledAlgsProp = Security.getProperty("jdk.tls.disabledAlgorithms");
+        if (disabledAlgsProp != null)
+        {
+            for (String entry : disabledAlgsProp.split(","))
+            {
+                if ("TLS_RSA_*".equals(entry.trim()))
+                {
+                    rsaEncryptionAvailable = false;
+                    break;
+                }
+            }
+        }
+        this.rsaEncryptionAvailable = rsaEncryptionAvailable;
     }
 
     public void testBasicEC()
@@ -57,11 +84,11 @@ public class KeyManagerFactoryTest
     public void testRSAServer()
         throws Exception
     {
-        // TLS_RSA is disabled in Java 25.
-        if (System.getProperty("java.version").startsWith("25"))
+        if (!rsaEncryptionAvailable)
         {
             return;
         }
+
         KeyStore ks = getRsaKeyStore(true);
 
         KeyStore trustStore = KeyStore.getInstance("JKS");
@@ -70,7 +97,7 @@ public class KeyManagerFactoryTest
 
         trustStore.setCertificateEntry("server", ks.getCertificate("root"));
 
-        SSLUtils.startServer(ks, PASSWORD, trustStore, false, 8886);
+        int port = SSLUtils.startServer(ks, PASSWORD, trustStore, false, 0);
 
         TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance("PKIX",
             ProviderUtils.PROVIDER_NAME_BCJSSE);
@@ -83,7 +110,7 @@ public class KeyManagerFactoryTest
 
         SSLSocketFactory f = context.getSocketFactory();
 
-        SSLSocket c = (SSLSocket)f.createSocket("localhost", 8886);
+        SSLSocket c = (SSLSocket)f.createSocket("localhost", port);
         c.setUseClientMode(true);
 
         SSLUtils.restrictKeyExchange(c, "RSA");
@@ -97,18 +124,18 @@ public class KeyManagerFactoryTest
     public void testRSAServerTrustEE()
         throws Exception
     {
-        // TLS_RSA is disabled in Java 25.
-        if (System.getProperty("java.version").startsWith("25"))
+        if (!rsaEncryptionAvailable)
         {
             return;
         }
+
         KeyStore ks = getRsaKeyStore(true);
 
         KeyStore trustStore = KeyStore.getInstance("JKS");
         trustStore.load(null, PASSWORD);
         trustStore.setCertificateEntry("server", ks.getCertificate("root"));
 
-        SSLUtils.startServer(ks, PASSWORD, trustStore, false, 8886);
+        int port = SSLUtils.startServer(ks, PASSWORD, trustStore, false, 0);
 
         /*
          * For this variation we add the server's certificate to the client's trust store directly,
@@ -134,7 +161,7 @@ public class KeyManagerFactoryTest
 
         SSLSocketFactory f = context.getSocketFactory();
 
-        SSLSocket c = (SSLSocket)f.createSocket("localhost", 8886);
+        SSLSocket c = (SSLSocket)f.createSocket("localhost", port);
         c.setUseClientMode(true);
 
         SSLUtils.restrictKeyExchange(c, "RSA");
@@ -147,11 +174,11 @@ public class KeyManagerFactoryTest
     public void testRSAServerWithClientAuth()
         throws Exception
     {
-        // TLS_RSA is disabled in Java 25.
-        if (System.getProperty("java.version").startsWith("25"))
+        if (!rsaEncryptionAvailable)
         {
             return;
         }
+
         KeyStore clientKS = getRsaKeyStore(false);
         KeyStore serverKS = getRsaKeyStore(true);
 
@@ -159,7 +186,7 @@ public class KeyManagerFactoryTest
         serverTS.load(null, PASSWORD);
         serverTS.setCertificateEntry("clientRoot", clientKS.getCertificate("root"));
 
-        SSLUtils.startServer(serverKS, PASSWORD, serverTS, true, 8887);
+        int port = SSLUtils.startServer(serverKS, PASSWORD, serverTS, true, 0);
 
         KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance("PKIX", ProviderUtils.PROVIDER_NAME_BCJSSE);
         keyManagerFactory.init(clientKS, PASSWORD);
@@ -178,7 +205,7 @@ public class KeyManagerFactoryTest
 
         SSLSocketFactory f = context.getSocketFactory();
 
-        SSLSocket c = (SSLSocket)f.createSocket("localhost", 8887);
+        SSLSocket c = (SSLSocket)f.createSocket("localhost", port);
         c.setUseClientMode(true);
 
         SSLUtils.restrictKeyExchange(c, "RSA");

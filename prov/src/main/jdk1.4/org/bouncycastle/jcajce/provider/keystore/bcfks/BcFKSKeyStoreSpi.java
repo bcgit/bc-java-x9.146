@@ -37,6 +37,7 @@ import javax.crypto.Mac;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
+import javax.crypto.interfaces.PBEKey;
 import javax.crypto.spec.SecretKeySpec;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
@@ -55,13 +56,10 @@ import org.bouncycastle.asn1.bc.ObjectDataSequence;
 import org.bouncycastle.asn1.bc.ObjectStore;
 import org.bouncycastle.asn1.bc.ObjectStoreData;
 import org.bouncycastle.asn1.bc.ObjectStoreIntegrityCheck;
+import org.bouncycastle.asn1.bc.PbkdKeyData;
 import org.bouncycastle.asn1.bc.PbkdMacIntegrityCheck;
 import org.bouncycastle.asn1.bc.SecretKeyData;
-import org.bouncycastle.internal.asn1.cms.CCMParameters;
-import org.bouncycastle.internal.asn1.misc.MiscObjectIdentifiers;
-import org.bouncycastle.internal.asn1.misc.ScryptParams;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
-import org.bouncycastle.internal.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.EncryptedPrivateKeyInfo;
 import org.bouncycastle.asn1.pkcs.EncryptionScheme;
 import org.bouncycastle.asn1.pkcs.KeyDerivationFunc;
@@ -81,8 +79,16 @@ import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.crypto.util.PBKDF2Config;
 import org.bouncycastle.crypto.util.PBKDFConfig;
 import org.bouncycastle.crypto.util.ScryptConfig;
+import org.bouncycastle.internal.asn1.cms.CCMParameters;
+import org.bouncycastle.internal.asn1.kisa.KISAObjectIdentifiers;
+import org.bouncycastle.internal.asn1.misc.MiscObjectIdentifiers;
+import org.bouncycastle.internal.asn1.misc.ScryptParams;
+import org.bouncycastle.internal.asn1.nsri.NSRIObjectIdentifiers;
+import org.bouncycastle.internal.asn1.ntt.NTTObjectIdentifiers;
+import org.bouncycastle.internal.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Properties;
 import org.bouncycastle.util.Strings;
 
 class BcFKSKeyStoreSpi
@@ -102,6 +108,25 @@ class BcFKSKeyStoreSpi
         oidMap.put("HMACSHA256", PKCSObjectIdentifiers.id_hmacWithSHA256);
         oidMap.put("HMACSHA384", PKCSObjectIdentifiers.id_hmacWithSHA384);
         oidMap.put("HMACSHA512", PKCSObjectIdentifiers.id_hmacWithSHA512);
+        oidMap.put("HMACSHA512/224", PKCSObjectIdentifiers.id_hmacWithSHA512_224);
+        oidMap.put("HMACSHA512/256", PKCSObjectIdentifiers.id_hmacWithSHA512_256);
+        oidMap.put("HMACSHA512(224)", PKCSObjectIdentifiers.id_hmacWithSHA512_224);
+        oidMap.put("HMACSHA512(256)", PKCSObjectIdentifiers.id_hmacWithSHA512_256);
+        oidMap.put("HMACSHA3-224", NISTObjectIdentifiers.id_hmacWithSHA3_224);
+        oidMap.put("HMACSHA3-256", NISTObjectIdentifiers.id_hmacWithSHA3_256);
+        oidMap.put("HMACSHA3-384", NISTObjectIdentifiers.id_hmacWithSHA3_384);
+        oidMap.put("HMACSHA3-512", NISTObjectIdentifiers.id_hmacWithSHA3_512);
+        oidMap.put("KMAC128", NISTObjectIdentifiers.id_Kmac128);
+        oidMap.put("KMAC256", NISTObjectIdentifiers.id_Kmac256);
+        oidMap.put("SEED", KISAObjectIdentifiers.id_seedCBC);
+
+        oidMap.put("CAMELLIA.128", NTTObjectIdentifiers.id_camellia128_cbc);
+        oidMap.put("CAMELLIA.192", NTTObjectIdentifiers.id_camellia192_cbc);
+        oidMap.put("CAMELLIA.256", NTTObjectIdentifiers.id_camellia256_cbc);
+
+        oidMap.put("ARIA.128", NSRIObjectIdentifiers.id_aria128_cbc);
+        oidMap.put("ARIA.192", NSRIObjectIdentifiers.id_aria192_cbc);
+        oidMap.put("ARIA.256", NSRIObjectIdentifiers.id_aria256_cbc);
 
         publicAlgMap.put(PKCSObjectIdentifiers.rsaEncryption, "RSA");
         publicAlgMap.put(X9ObjectIdentifiers.id_ecPublicKey, "EC");
@@ -127,6 +152,7 @@ class BcFKSKeyStoreSpi
     private final static BigInteger SECRET_KEY = BigInteger.valueOf(2);
     private final static BigInteger PROTECTED_PRIVATE_KEY = BigInteger.valueOf(3);
     private final static BigInteger PROTECTED_SECRET_KEY = BigInteger.valueOf(4);
+    private final static BigInteger PBKDF_KEY = BigInteger.valueOf(5);
 
     private final BouncyCastleProvider provider;
     private final Map<String, ObjectData> entries = new HashMap<String, ObjectData>();
@@ -210,6 +236,26 @@ class BcFKSKeyStoreSpi
                 catch (Exception e)
                 {
                     throw new UnrecoverableKeyException("BCFKS KeyStore unable to recover secret key (" + alias + "): " + e.getMessage());
+                }
+            }
+            else if (ent.getType().equals(PBKDF_KEY))
+            {
+                EncryptedSecretKeyData encKeyData = EncryptedSecretKeyData.getInstance(ent.getData());
+
+                try
+                {
+                    PbkdKeyData keyData = PbkdKeyData.getInstance(decryptData("SECRET_KEY_ENCRYPTION", encKeyData.getKeyEncryptionAlgorithm(), password, encKeyData.getEncryptedKeyData()));
+
+                    return new RecoveredPBEKey(
+                        keyData.getKeyAlgorithm(),
+                        bytesToChars(keyData.getPassword()),
+                        keyData.getSalt(),
+                        keyData.getIterationCount(),
+                        keyData.getKeyEncoding());
+                }
+                catch (Exception e)
+                {
+                    throw new UnrecoverableKeyException("BCFKS KeyStore unable to recover PBE key (" + alias + "): " + e.getMessage());
                 }
             }
             else
@@ -375,6 +421,53 @@ class BcFKSKeyStoreSpi
             catch (Exception e)
             {
                 throw new ExtKeyStoreException("BCFKS KeyStore exception storing private key: " + e.toString(), e);
+            }
+        }
+        else if (key instanceof PBEKey)
+        {
+            if (chain != null)
+            {
+                throw new KeyStoreException("BCFKS KeyStore cannot store certificate chain with PBE key.");
+            }
+
+            try
+            {
+                PBEKey pbeKey = (PBEKey)key;
+                PbkdKeyData pbeData = new PbkdKeyData(
+                    pbeKey.getAlgorithm(),
+                    charsToBytes(pbeKey.getPassword()),
+                    pbeKey.getSalt(),
+                    pbeKey.getIterationCount(),
+                    pbeKey.getEncoded());
+
+                KeyDerivationFunc pbkdAlgId = generatePkbdAlgorithmIdentifier(PKCSObjectIdentifiers.id_PBKDF2, 256 / 8);
+                byte[] keyBytes = generateKey(pbkdAlgId, "SECRET_KEY_ENCRYPTION", ((password != null) ? password : new char[0]));
+
+                Cipher c;
+                if (provider == null)
+                {
+                    c = Cipher.getInstance("AES/CCM/NoPadding");
+                }
+                else
+                {
+                    c = Cipher.getInstance("AES/CCM/NoPadding", provider);
+                }
+
+                c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(keyBytes, "AES"));
+
+                byte[] encryptedKey = c.doFinal(pbeData.getEncoded());
+
+                AlgorithmParameters algParams = c.getParameters();
+
+                PBES2Parameters pbeParams = new PBES2Parameters(pbkdAlgId, new EncryptionScheme(NISTObjectIdentifiers.id_aes256_CCM, CCMParameters.getInstance(algParams.getEncoded())));
+
+                EncryptedSecretKeyData keyData = new EncryptedSecretKeyData(new AlgorithmIdentifier(PKCSObjectIdentifiers.id_PBES2, pbeParams), encryptedKey);
+
+                entries.put(alias, new ObjectData(PBKDF_KEY, alias, creationDate, lastEditDate, keyData.getEncoded(), null));
+            }
+            catch (Exception e)
+            {
+                throw new ExtKeyStoreException("BCFKS KeyStore exception storing PBE key: " + e.toString(), e);
             }
         }
         else if (key instanceof SecretKey)
@@ -691,6 +784,10 @@ class BcFKSKeyStoreSpi
         {
             ScryptParams params = ScryptParams.getInstance(pbkdAlgorithm.getParameters());
 
+            // The KDF cost parameters arrive in the not-yet-integrity-checked keystore, so bound
+            // them before the (memory/CPU intensive) derivation to avoid a pre-verification DoS.
+            validateScryptParams(params);
+
             return SCrypt.generate(Arrays.concatenate(encPassword, differentiator), params.getSalt(),
                 params.getCostParameter().intValue(), params.getBlockSize().intValue(),
                 params.getBlockSize().intValue(), params.getKeyLength().intValue());
@@ -699,11 +796,14 @@ class BcFKSKeyStoreSpi
         {
             PBKDF2Params pbkdf2Params = PBKDF2Params.getInstance(pbkdAlgorithm.getParameters());
 
+            // As above: bound the attacker-supplied iteration count before the derivation.
+            int iterationCount = validateIterationCount(pbkdf2Params.getIterationCount());
+
             if (pbkdf2Params.getPrf().getAlgorithm().equals(PKCSObjectIdentifiers.id_hmacWithSHA512))
             {
                 PKCS5S2ParametersGenerator pGen = new PKCS5S2ParametersGenerator(new SHA512Digest());
 
-                pGen.init(Arrays.concatenate(encPassword, differentiator), pbkdf2Params.getSalt(), pbkdf2Params.getIterationCount().intValue());
+                pGen.init(Arrays.concatenate(encPassword, differentiator), pbkdf2Params.getSalt(), iterationCount);
 
                 keySizeInBytes = pbkdf2Params.getKeyLength().intValue();
 
@@ -713,7 +813,7 @@ class BcFKSKeyStoreSpi
             {
                 PKCS5S2ParametersGenerator pGen = new PKCS5S2ParametersGenerator(new SHA3Digest(512));
 
-                pGen.init(Arrays.concatenate(encPassword, differentiator), pbkdf2Params.getSalt(), pbkdf2Params.getIterationCount().intValue());
+                pGen.init(Arrays.concatenate(encPassword, differentiator), pbkdf2Params.getSalt(), iterationCount);
 
                 keySizeInBytes = pbkdf2Params.getKeyLength().intValue();
 
@@ -728,6 +828,57 @@ class BcFKSKeyStoreSpi
         {
             throw new IOException("BCFKS KeyStore: unrecognized MAC PBKD.");
         }
+    }
+
+    // Hard sanity bound on the scrypt block size r. r is also passed as the parallelization
+    // parameter p here, so an oversized r is a CPU-exhaustion vector independent of total memory.
+    // The standard value is 8; anything beyond this is rejected as abusive.
+    private static final int MAX_SCRYPT_BLOCK_SIZE = 1024;
+
+    private static void validateScryptParams(ScryptParams params)
+        throws IOException
+    {
+        BigInteger n = params.getCostParameter();
+        BigInteger r = params.getBlockSize();
+
+        if (n == null || r == null
+            || n.signum() <= 0 || r.signum() <= 0
+            || n.bitLength() > 31 || r.bitLength() > 31)
+        {
+            throw new IOException("BCFKS KeyStore: invalid scrypt parameters");
+        }
+
+        long blockSize = r.longValue();
+        if (blockSize > MAX_SCRYPT_BLOCK_SIZE)
+        {
+            throw new IOException("BCFKS KeyStore: scrypt block size (" + blockSize + ") greater than " + MAX_SCRYPT_BLOCK_SIZE);
+        }
+
+        long maxMemory = Properties.asInteger(Properties.BCFKS_MAX_SCRYPT_MEMORY, 1 << 30);
+        long cost = n.longValue();
+        // Reject if the working memory ~128 * N * r would exceed the bound, computed so as not to
+        // overflow (128 * blockSize is small because blockSize is capped above).
+        if (cost > maxMemory / (128L * blockSize))
+        {
+            throw new IOException("BCFKS KeyStore: scrypt cost parameters require more than " + maxMemory + " bytes");
+        }
+    }
+
+    private static int validateIterationCount(BigInteger ic)
+        throws IOException
+    {
+        if (ic == null || ic.signum() < 0 || ic.bitLength() > 31)
+        {
+            throw new IOException("BCFKS KeyStore: invalid iteration count");
+        }
+
+        long max = Properties.asInteger(Properties.BCFKS_MAX_IT_COUNT, 5000000);
+        if (ic.longValue() > max)
+        {
+            throw new IOException("BCFKS KeyStore: iteration count (" + ic + ") greater than " + max);
+        }
+
+        return ic.intValue();
     }
 
     private void verifyMac(byte[] content, PbkdMacIntegrityCheck integrityCheck, char[] password)
@@ -1076,6 +1227,84 @@ class BcFKSKeyStoreSpi
         public Throwable getCause()
         {
             return cause;
+        }
+    }
+
+    private static byte[] charsToBytes(char[] chars)
+    {
+        if (chars == null)
+        {
+            return new byte[0];
+        }
+        byte[] bytes = new byte[chars.length * 2];
+        for (int i = 0; i != chars.length; i++)
+        {
+            bytes[2 * i] = (byte)(chars[i] >>> 8);
+            bytes[2 * i + 1] = (byte)chars[i];
+        }
+        return bytes;
+    }
+
+    private static char[] bytesToChars(byte[] bytes)
+    {
+        if (bytes == null || bytes.length == 0)
+        {
+            return new char[0];
+        }
+        char[] chars = new char[bytes.length / 2];
+        for (int i = 0; i != chars.length; i++)
+        {
+            chars[i] = (char)(((bytes[2 * i] & 0xff) << 8) | (bytes[2 * i + 1] & 0xff));
+        }
+        return chars;
+    }
+
+    private static class RecoveredPBEKey
+        implements PBEKey
+    {
+        private final String algorithm;
+        private final char[] password;
+        private final byte[] salt;
+        private final int iterationCount;
+        private final byte[] encoded;
+
+        RecoveredPBEKey(String algorithm, char[] password, byte[] salt, int iterationCount, byte[] encoded)
+        {
+            this.algorithm = algorithm;
+            this.password = password;
+            this.salt = (salt != null) ? (byte[])salt.clone() : null;
+            this.iterationCount = iterationCount;
+            this.encoded = (encoded != null) ? (byte[])encoded.clone() : null;
+        }
+
+        public String getAlgorithm()
+        {
+            return algorithm;
+        }
+
+        public String getFormat()
+        {
+            return (encoded != null) ? "RAW" : null;
+        }
+
+        public byte[] getEncoded()
+        {
+            return (encoded != null) ? (byte[])encoded.clone() : null;
+        }
+
+        public char[] getPassword()
+        {
+            return (char[])password.clone();
+        }
+
+        public byte[] getSalt()
+        {
+            return (salt != null) ? (byte[])salt.clone() : null;
+        }
+
+        public int getIterationCount()
+        {
+            return iterationCount;
         }
     }
 }

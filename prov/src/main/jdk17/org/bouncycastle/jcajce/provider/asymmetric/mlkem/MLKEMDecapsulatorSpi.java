@@ -8,8 +8,8 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.bouncycastle.jcajce.spec.KTSParameterSpec;
-import org.bouncycastle.pqc.crypto.mlkem.MLKEMExtractor;
-import org.bouncycastle.pqc.jcajce.provider.util.KdfUtil;
+import org.bouncycastle.crypto.kems.MLKEMExtractor;
+import org.bouncycastle.jcajce.provider.asymmetric.util.KdfUtil;
 import org.bouncycastle.util.Arrays;
 
 /*
@@ -32,7 +32,8 @@ class MLKEMDecapsulatorSpi
     }
 
     @Override
-    public SecretKey engineDecapsulate(byte[] encapsulation, int from, int to, String algorithm) throws DecapsulateException
+    public SecretKey engineDecapsulate(byte[] encapsulation, int from, int to, String algorithm)
+        throws DecapsulateException
     {
         Objects.checkFromToIndex(from, to, engineSecretSize());
         Objects.requireNonNull(algorithm, "null algorithm");

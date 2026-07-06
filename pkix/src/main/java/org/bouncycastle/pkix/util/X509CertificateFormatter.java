@@ -103,6 +103,12 @@ public class X509CertificateFormatter
         extUsageMap.put(KeyPurposeId.id_kp_cmcCA, "id_kp_cmcCA");
         extUsageMap.put(KeyPurposeId.id_kp_cmcRA, "id_kp_cmcRA");
         extUsageMap.put(KeyPurposeId.id_kp_cmKGA, "id_kp_cmKGA");
+        extUsageMap.put(KeyPurposeId.id_kp_documentSigning, "id_kp_documentSigning");
+        extUsageMap.put(KeyPurposeId.id_kp_imUri, "id_kp_imUri");
+        extUsageMap.put(KeyPurposeId.id_kp_configSigning, "id_kp_configSigning");
+        extUsageMap.put(KeyPurposeId.id_kp_trustAnchorConfigSigning, "id_kp_trustAnchorConfigSigning");
+        extUsageMap.put(KeyPurposeId.id_kp_updatePackageSigning, "id_kp_updatePackageSigning");
+        extUsageMap.put(KeyPurposeId.id_kp_safetyCommunication, "id_kp_safetyCommunication");
         extUsageMap.put(KeyPurposeId.id_kp_smartcardlogon, "id_kp_smartcardlogon");
         extUsageMap.put(KeyPurposeId.id_kp_macAddress, "id_kp_macAddress");
         extUsageMap.put(KeyPurposeId.id_kp_msSGC, "id_kp_msSGC");
@@ -258,7 +264,7 @@ public class X509CertificateFormatter
                             buf.append(pad).append("isCA : " + bc.isCA()).append(nl);
                             if (bc.isCA())
                             {
-                                buf.append(spaces(2 + label.length()));
+                                buf.append(pad);
                                 buf.append("pathLenConstraint : " + bc.getPathLenConstraint()).append(nl);
                             }
                         }

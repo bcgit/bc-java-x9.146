@@ -9,10 +9,10 @@ import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.crypto.CipherParameters;
-import org.bouncycastle.pqc.asn1.XMSSKeyParams;
 import org.bouncycastle.pqc.crypto.util.PrivateKeyFactory;
 import org.bouncycastle.pqc.crypto.util.PrivateKeyInfoFactory;
 import org.bouncycastle.pqc.crypto.xmss.XMSSPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.xmss.XMSSPublicKeyParameters;
 import org.bouncycastle.pqc.jcajce.interfaces.XMSSPrivateKey;
 import org.bouncycastle.util.Arrays;
 
@@ -43,9 +43,11 @@ public class BCXMSSPrivateKey
         throws IOException
     {
         this.attributes = keyInfo.getAttributes();
-        XMSSKeyParams keyParams = XMSSKeyParams.getInstance(keyInfo.getPrivateKeyAlgorithm().getParameters());
-        this.treeDigest = keyParams.getTreeDigest().getAlgorithm();
+        // Derive the tree digest from the recovered key rather than the AlgorithmIdentifier
+        // parameters: the RFC 9802 form (id-alg-xmss-hashsig) carries no XMSSKeyParams, so reading
+        // them would NPE. Mirrors BCXMSSPublicKey.init.
         this.keyParams = (XMSSPrivateKeyParameters)PrivateKeyFactory.createKey(keyInfo);
+        this.treeDigest = DigestUtil.getDigestOID(keyParams.getTreeDigest());
     }
 
     public long getIndex()
@@ -102,7 +104,7 @@ public class BCXMSSPrivateKey
         {
             BCXMSSPrivateKey otherKey = (BCXMSSPrivateKey)o;
 
-            return treeDigest.equals(otherKey.treeDigest) && Arrays.areEqual(keyParams.toByteArray(), otherKey.keyParams.toByteArray());
+            return treeDigest.equals(otherKey.treeDigest) & Arrays.constantTimeAreEqual(keyParams.toByteArray(), otherKey.keyParams.toByteArray());
         }
 
         return false;
@@ -110,7 +112,16 @@ public class BCXMSSPrivateKey
 
     public int hashCode()
     {
-        return treeDigest.hashCode() + 37 * Arrays.hashCode(keyParams.toByteArray());
+        return getPublicKey().hashCode();
+    }
+
+    private BCXMSSPublicKey getPublicKey()
+    {
+        XMSSPublicKeyParameters pubParams = new XMSSPublicKeyParameters.Builder(keyParams.getParameters())
+            .withRoot(keyParams.getRoot())
+            .withPublicSeed(keyParams.getPublicSeed())
+            .build();
+        return new BCXMSSPublicKey(treeDigest, pubParams);
     }
 
     CipherParameters getKeyParams()
@@ -130,7 +141,7 @@ public class BCXMSSPrivateKey
 
     public String getTreeDigest()
     {
-        return DigestUtil.getXMSSDigestName(treeDigest);
+        return DigestUtil.getXMSSDigestName(treeDigest, keyParams.getParameters().getTreeDigestSize());
     }
 
     private void readObject(

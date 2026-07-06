@@ -26,18 +26,23 @@ import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1StreamParser;
 import org.bouncycastle.asn1.DERBMPString;
 import org.bouncycastle.asn1.DERNull;
+import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DLSequenceParser;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.AuthenticatedSafe;
 import org.bouncycastle.asn1.pkcs.ContentInfo;
 import org.bouncycastle.asn1.pkcs.EncryptedData;
 import org.bouncycastle.asn1.pkcs.EncryptedPrivateKeyInfo;
 import org.bouncycastle.asn1.pkcs.MacData;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.Pfx;
+import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.pkcs.SafeBag;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.X500NameBuilder;
@@ -52,9 +57,10 @@ import org.bouncycastle.jce.interfaces.PKCS12BagAttributeCarrier;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.jce.provider.JDKPKCS12StoreParameter;
 import org.bouncycastle.jce.provider.X509CertificateObject;
+import org.bouncycastle.pqc.jcajce.provider.BouncyCastlePQCProvider;
 import org.bouncycastle.pqc.jcajce.spec.FalconParameterSpec;
 import org.bouncycastle.pqc.jcajce.spec.NTRUParameterSpec;
-import org.bouncycastle.pqc.jcajce.spec.SPHINCSPlusParameterSpec;
+import org.bouncycastle.util.Properties;
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.Hex;
 import org.bouncycastle.util.test.SimpleTest;
@@ -1368,7 +1374,7 @@ public class PKCS12StoreTest
 
         pkcs12.load(new ByteArrayInputStream(certsOnly), "1".toCharArray());
 
-        System.setProperty("org.bouncycastle.pkcs12.ignore_useless_passwd", "false");
+        System.setProperty(Properties.PKCS12_IGNORE_USELESS_PASSWD, "false");
     }
 
     private void testGOSTStore()
@@ -1491,16 +1497,68 @@ public class PKCS12StoreTest
         isTrue(store.isKeyEntry("ONVIF_Test_Alias"));
     }
 
+    // Wrap a single SafeBag in a minimal, MAC-less, unencrypted PKCS#12 PFX.
+    private byte[] keyBagPfx(SafeBag bag)
+        throws IOException
+    {
+        ContentInfo dataInfo = new ContentInfo(PKCSObjectIdentifiers.data,
+            new DEROctetString(new DERSequence(bag).getEncoded()));
+        AuthenticatedSafe authSafe = new AuthenticatedSafe(new ContentInfo[]{dataInfo});
+        ContentInfo mainInfo = new ContentInfo(PKCSObjectIdentifiers.data,
+            new DEROctetString(authSafe.getEncoded()));
+
+        return new Pfx(mainInfo, null).getEncoded();
+    }
+
+    private void testRawKeyBagNoAttributes()
+        throws Exception
+    {
+        // Regression: an RFC 7292 sec. 4.2.1 keyBag (unencrypted PrivateKeyInfo)
+        // may carry no bagAttributes, and the localKeyId attribute is optional
+        // even when bagAttributes are present. processKeyBag used to dereference
+        // getBagAttributes() and localId unconditionally, throwing NPE on load -
+        // unlike processShroudedKeyBag which guards both. Mirror that handling.
+        KeyPairGenerator kpGen = KeyPairGenerator.getInstance("RSA", BC);
+        kpGen.initialize(2048);
+        KeyPair kp = kpGen.generateKeyPair();
+        PrivateKeyInfo kInfo = PrivateKeyInfo.getInstance(kp.getPrivate().getEncoded());
+
+        // Case A: keyBag with no bagAttributes at all.
+        SafeBag noAttrBag = new SafeBag(PKCSObjectIdentifiers.keyBag, kInfo.toASN1Primitive());
+
+        KeyStore store = KeyStore.getInstance("PKCS12", BC);
+        store.load(new ByteArrayInputStream(keyBagPfx(noAttrBag)), null);
+
+        Enumeration aliases = store.aliases();
+        isTrue("no-attributes keyBag produced no entry", aliases.hasMoreElements());
+        String alias = (String)aliases.nextElement();
+        isTrue("no-attributes keyBag entry not a key", store.isKeyEntry(alias));
+        isTrue("no-attributes keyBag key not recoverable", store.getKey(alias, null) != null);
+
+        // Case B: keyBag carrying a friendlyName but no localKeyId attribute.
+        ASN1Encodable friendlyName = new DERSequence(new ASN1Encodable[]{
+            PKCSObjectIdentifiers.pkcs_9_at_friendlyName,
+            new DERSet(new DERBMPString("rawKeyBag"))});
+        SafeBag friendlyBag = new SafeBag(PKCSObjectIdentifiers.keyBag, kInfo.toASN1Primitive(),
+            new DERSet(friendlyName));
+
+        store = KeyStore.getInstance("PKCS12", BC);
+        store.load(new ByteArrayInputStream(keyBagPfx(friendlyBag)), null);
+
+        isTrue("friendlyName keyBag not stored under its alias", store.isKeyEntry("rawKeyBag"));
+        isTrue("friendlyName keyBag key not recoverable", store.getKey("rawKeyBag", null) != null);
+    }
+
     private void testNTRUStore()
         throws Exception
     {
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("Falcon", "BC");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("Falcon", "BCPQC");
 
         kpg.initialize(FalconParameterSpec.falcon_512);
 
         KeyPair skp = kpg.generateKeyPair();
 
-        kpg = KeyPairGenerator.getInstance("NTRU", "BC");
+        kpg = KeyPairGenerator.getInstance("NTRU", "BCPQC");
 
         kpg.initialize(NTRUParameterSpec.ntruhrss701);
 
@@ -1543,40 +1601,6 @@ public class PKCS12StoreTest
         KeyPair kp = kpg.generateKeyPair();
 
         Certificate cert = TestUtils.createSelfSignedCert("CN=Falcon Test", "Falcon-512", kp);
-
-        KeyStore pkcs12 = KeyStore.getInstance("PKCS12", BC);
-
-        pkcs12.load(null, null);
-
-        pkcs12.setKeyEntry("test", kp.getPrivate(), new char[0], new Certificate[]{cert});
-
-        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-
-        pkcs12.store(bOut, "hello".toCharArray());
-
-        pkcs12 = KeyStore.getInstance("PKCS12", BC);
-
-        pkcs12.load(new ByteArrayInputStream(bOut.toByteArray()), "hello".toCharArray());
-
-        Key key = pkcs12.getKey("test", new char[0]);
-
-        isEquals(key, kp.getPrivate());
-
-        Certificate[] certs = pkcs12.getCertificateChain("test");
-
-        certs[0].verify(certs[0].getPublicKey());
-    }
-
-    private void testSphincsPlusStore()
-        throws Exception
-    {
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("SPHINCS+", "BC");
-
-        kpg.initialize(SPHINCSPlusParameterSpec.sha2_128f_robust);
-
-        KeyPair kp = kpg.generateKeyPair();
-
-        Certificate cert = TestUtils.createSelfSignedCert("CN=SphincsPlus Test", "SPHINCS+", kp);
 
         KeyStore pkcs12 = KeyStore.getInstance("PKCS12", BC);
 
@@ -2503,7 +2527,7 @@ public class PKCS12StoreTest
     private void testIterationCount()
         throws Exception
     {
-        System.setProperty("org.bouncycastle.pkcs12.max_it_count", "10");
+        System.setProperty(Properties.PKCS12_MAX_IT_COUNT, "10");
 
         ByteArrayInputStream stream = new ByteArrayInputStream(pkcs12StorageIssue);
         KeyStore store = KeyStore.getInstance("PKCS12", BC);
@@ -2518,7 +2542,7 @@ public class PKCS12StoreTest
             isTrue(e.getMessage().endsWith("iteration count 2000 greater than 10"));
         }
 
-        System.clearProperty("org.bouncycastle.pkcs12.max_it_count");
+        System.clearProperty(Properties.PKCS12_MAX_IT_COUNT);
     }
 
     private void testPBMac1PBKdf2()
@@ -2781,8 +2805,8 @@ public class PKCS12StoreTest
         testDilithiumStore();
         testFalconStore();
         testNTRUStore();
-        testSphincsPlusStore();
         testRawKeyBagStore();
+        testRawKeyBagNoAttributes();
         testAES256_AES128();
         testAES256GCM_AES128_GCM();
         testPKCS12StoreWrongPassword();
@@ -2825,6 +2849,7 @@ public class PKCS12StoreTest
         String[] args)
     {
         Security.addProvider(new BouncyCastleProvider());
+        Security.addProvider(new BouncyCastlePQCProvider());
 
         runTest(new PKCS12StoreTest());
     }

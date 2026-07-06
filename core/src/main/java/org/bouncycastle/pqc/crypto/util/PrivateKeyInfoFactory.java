@@ -11,7 +11,11 @@ import org.bouncycastle.asn1.DERTaggedObject;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.pqc.crypto.mqom.MQOMPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.sdith.SDitHPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.uov.UOVPrivateKeyParameters;
 import org.bouncycastle.pqc.asn1.CMCEPrivateKey;
 import org.bouncycastle.pqc.asn1.CMCEPublicKey;
 import org.bouncycastle.pqc.asn1.FalconPrivateKey;
@@ -22,12 +26,17 @@ import org.bouncycastle.pqc.asn1.XMSSKeyParams;
 import org.bouncycastle.pqc.asn1.XMSSMTKeyParams;
 import org.bouncycastle.pqc.asn1.XMSSMTPrivateKey;
 import org.bouncycastle.pqc.asn1.XMSSPrivateKey;
-import org.bouncycastle.pqc.crypto.bike.BIKEPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.aimer.AIMerPrivateKeyParameters;
+import org.bouncycastle.pqc.legacy.bike.BIKEPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.cmce.CMCEPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.faest.FaestPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.qruov.QRUOVPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.frodo.FrodoPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.haetae.HAETAEPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.hawk.HawkPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.lms.Composer;
 import org.bouncycastle.pqc.crypto.lms.HSSPrivateKeyParameters;
@@ -40,18 +49,24 @@ import org.bouncycastle.pqc.crypto.ntru.NTRUPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.ntruplus.NTRUPlusPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.NTRULPRimePrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.SNTRUPrimePrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.picnic.PicnicPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.rainbow.RainbowPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.saber.SABERPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.snova.SnovaPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.sqisign.SQIsignPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.sphincs.SPHINCSPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.BDS;
 import org.bouncycastle.pqc.crypto.xmss.BDSStateMap;
+import org.bouncycastle.pqc.crypto.xmss.XMSSMTParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSMTPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.xmss.XMSSParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSUtil;
+import org.bouncycastle.pqc.legacy.bike.BIKEPrivateKeyParameters;
+import org.bouncycastle.pqc.legacy.picnic.PicnicPrivateKeyParameters;
+import org.bouncycastle.pqc.legacy.rainbow.RainbowPrivateKeyParameters;
+import org.bouncycastle.pqc.legacy.sphincsplus.SPHINCSPlusPrivateKeyParameters;
+import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
 import org.bouncycastle.util.Pack;
 
 /**
@@ -170,8 +185,25 @@ public class PrivateKeyInfoFactory
         else if (privateKey instanceof XMSSPrivateKeyParameters)
         {
             XMSSPrivateKeyParameters keyParams = (XMSSPrivateKeyParameters)privateKey;
+            XMSSParameters params = keyParams.getParameters();
+
+            if (params.getParameterSetOID() != 0)
+            {
+                // Encode any standard (RFC 8391 / SP 800-208) parameter set in the RFC 9802 form
+                // (id-alg-xmss-hashsig), matching the SubjectPublicKeyInfo the public half produces,
+                // so the private and public keys of a keypair share one algorithm OID. The 4-octet
+                // parameter-set OID is carried ahead of the raw key so PrivateKeyFactory can recover
+                // the full parameter set (including n) - the legacy XMSSKeyParams (height + tree-digest
+                // OID only) cannot represent the SP 800-208 sets. A non-standard tree height has no
+                // parameter-set OID (0) and falls through to the legacy PQCObjectIdentifiers.xmss form.
+                byte[] keyEnc = Arrays.concatenate(Pack.intToBigEndian(params.getParameterSetOID()), keyParams.getEncoded());
+                AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(IANAObjectIdentifiers.id_alg_xmss_hashsig);
+
+                return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(keyEnc), attributes);
+            }
+
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(PQCObjectIdentifiers.xmss,
-                new XMSSKeyParams(keyParams.getParameters().getHeight(),
+                new XMSSKeyParams(params.getHeight(),
                     Utils.xmssLookupTreeAlgID(keyParams.getTreeDigest())));
 
             return new PrivateKeyInfo(algorithmIdentifier, xmssCreateKeyStructure(keyParams), attributes);
@@ -179,8 +211,21 @@ public class PrivateKeyInfoFactory
         else if (privateKey instanceof XMSSMTPrivateKeyParameters)
         {
             XMSSMTPrivateKeyParameters keyParams = (XMSSMTPrivateKeyParameters)privateKey;
+            XMSSMTParameters params = keyParams.getParameters();
+
+            if (params.getParameterSetOID() != 0)
+            {
+                // See the XMSS branch above: any standard parameter set is encoded in the RFC 9802
+                // form (id-alg-xmssmt-hashsig) with the 4-octet parameter-set OID ahead of the raw
+                // key; a non-standard tree height falls through to PQCObjectIdentifiers.xmss_mt.
+                byte[] keyEnc = Arrays.concatenate(Pack.intToBigEndian(params.getParameterSetOID()), keyParams.getEncoded());
+                AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(IANAObjectIdentifiers.id_alg_xmssmt_hashsig);
+
+                return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(keyEnc), attributes);
+            }
+
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(PQCObjectIdentifiers.xmss_mt,
-                new XMSSMTKeyParams(keyParams.getParameters().getHeight(), keyParams.getParameters().getLayers(),
+                new XMSSMTKeyParams(params.getHeight(), params.getLayers(),
                     Utils.xmssLookupTreeAlgID(keyParams.getTreeDigest())));
 
             return new PrivateKeyInfo(algorithmIdentifier, xmssmtCreateKeyStructure(keyParams), attributes);
@@ -341,6 +386,72 @@ public class PrivateKeyInfoFactory
             byte[] encoding = params.getEncoded();
             return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes);
         }
+        else if (privateKey instanceof AIMerPrivateKeyParameters)
+        {
+            AIMerPrivateKeyParameters params = (AIMerPrivateKeyParameters)privateKey;
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.aimerOidLookup(params.getParameters()));
+            byte[] encoding = params.getEncoded();
+            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes);
+        }
+        else if (privateKey instanceof FaestPrivateKeyParameters)
+        {
+            FaestPrivateKeyParameters params = (FaestPrivateKeyParameters)privateKey;
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.faestOidLookup(params.getParameters()));
+            byte[] encoding = params.getEncoded();
+            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes);
+        }
+        else if (privateKey instanceof QRUOVPrivateKeyParameters)
+        {
+            QRUOVPrivateKeyParameters params = (QRUOVPrivateKeyParameters)privateKey;
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.qruovOidLookup(params.getParameters()));
+            byte[] encoding = params.getEncoded();
+            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes);
+        }
+        else if (privateKey instanceof SQIsignPrivateKeyParameters)
+        {
+            SQIsignPrivateKeyParameters params = (SQIsignPrivateKeyParameters)privateKey;
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.sqisignOidLookup(params.getParameters()));
+            byte[] encoding = params.getEncoded();
+            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes);
+        }
+        else if (privateKey instanceof HAETAEPrivateKeyParameters)
+        {
+            HAETAEPrivateKeyParameters params = (HAETAEPrivateKeyParameters)privateKey;
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.haetaeOidLookup(params.getParameters()));
+            byte[] encoding = params.getEncoded();
+            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes);
+        }
+        else if (privateKey instanceof HawkPrivateKeyParameters)
+        {
+            HawkPrivateKeyParameters params = (HawkPrivateKeyParameters)privateKey;
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.hawkOidLookup(params.getParameters()));
+            byte[] encoding = params.getEncoded();
+            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes);
+        }
+        else if (privateKey instanceof MQOMPrivateKeyParameters)
+        {
+            MQOMPrivateKeyParameters params = (MQOMPrivateKeyParameters)privateKey;
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.mqomOidLookup(params.getParameters()));
+
+            return new PrivateKeyInfo(algorithmIdentifier, params.getEncoded(), attributes);
+        }
+        else if (privateKey instanceof UOVPrivateKeyParameters)
+        {
+            UOVPrivateKeyParameters params = (UOVPrivateKeyParameters)privateKey;
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.uovOidLookup(params.getParameters()));
+
+            return new PrivateKeyInfo(algorithmIdentifier, params.getEncoded(), attributes);
+        }
+        else if (privateKey instanceof SDitHPrivateKeyParameters)
+        {
+            SDitHPrivateKeyParameters params = (SDitHPrivateKeyParameters)privateKey;
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.sdithOidLookup(params.getParameters()));
+
+            return new PrivateKeyInfo(algorithmIdentifier, params.getEncoded(), attributes);
+        }
         else
         {
             throw new IOException("key parameters not recognized");
@@ -384,7 +495,7 @@ public class PrivateKeyInfoFactory
         }
         catch (ClassNotFoundException e)
         {
-            throw new IOException("cannot parse BDS: " + e.getMessage());
+            throw Exceptions.ioException("cannot parse BDS: " + e.getMessage(), e);
         }
 
         if ((bds.getMaxIndex() != (1 << totalHeight) - 1))
@@ -439,7 +550,7 @@ public class PrivateKeyInfoFactory
         }
         catch (ClassNotFoundException e)
         {
-            throw new IOException("cannot parse BDSStateMap: " + e.getMessage());
+            throw Exceptions.ioException("cannot parse BDSStateMap: " + e.getMessage(), e);
         }
 
         if ((bds.getMaxIndex() != (1L << totalHeight) - 1))

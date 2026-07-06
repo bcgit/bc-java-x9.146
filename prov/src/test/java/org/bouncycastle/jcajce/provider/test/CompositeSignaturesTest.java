@@ -29,12 +29,14 @@ import java.util.List;
 import java.util.Map;
 
 import junit.framework.TestCase;
+import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
-import org.bouncycastle.internal.asn1.iana.IANAObjectIdentifiers;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
 import org.bouncycastle.jcajce.CompositePrivateKey;
 import org.bouncycastle.jcajce.CompositePublicKey;
 import org.bouncycastle.jcajce.interfaces.MLDSAPrivateKey;
@@ -55,16 +57,6 @@ import org.bouncycastle.util.encoders.Hex;
 public class CompositeSignaturesTest
     extends TestCase
 {
-    public static void main(String[] args)
-        throws Exception
-    {
-        CompositeSignaturesTest test = new CompositeSignaturesTest();
-        test.setUp();
-        List<Map<String, Object>> testVectors = test.readTestVectorsFromJson("pqc/crypto/composite", "testvectors.json");
-        test.compositeSignaturesTest(testVectors);
-        test.testSigningAndVerificationInternal();
-    }
-
     private static String[] compositeSignaturesOIDs = {
         "1.3.6.1.5.5.7.6.37", // id_MLDSA44_RSA2048_PSS_SHA256
         "1.3.6.1.5.5.7.6.38", // id_MLDSA44_RSA2048_PKCS15_SHA256 
@@ -119,6 +111,117 @@ public class CompositeSignaturesTest
     public void setUp()
     {
         Security.addProvider(new BouncyCastleProvider());
+    }
+
+    /**
+     * A truncated composite-signature public key whose body is the raw concatenation form (not a DER SEQUENCE)
+     * and is shorter than the first component must surface as a checked IOException from
+     * generatePublic(SubjectPublicKeyInfo), not an unchecked NegativeArraySizeException escaping the
+     * KeyFactorySpi.split helper. Mirrors the compositekem sibling guard.
+     */
+    public void testMalformedTruncatedCompositePublicKey()
+        throws Exception
+    {
+        org.bouncycastle.jcajce.provider.asymmetric.compositesignatures.KeyFactorySpi keyFactorySpi =
+            new org.bouncycastle.jcajce.provider.asymmetric.compositesignatures.KeyFactorySpi();
+
+        // id_MLDSA44_ECDSA_P256_SHA256 expects a first component of 1312 bytes; supply only 16 raw bytes
+        // that do not parse as a DER SEQUENCE, forcing the raw-concatenation split path.
+        byte[] truncatedBody = new byte[16];
+        SubjectPublicKeyInfo malformed = new SubjectPublicKeyInfo(
+            new AlgorithmIdentifier(IANAObjectIdentifiers.id_MLDSA44_ECDSA_P256_SHA256), truncatedBody);
+
+        try
+        {
+            keyFactorySpi.generatePublic(malformed);
+            fail("expected IOException for truncated composite public key");
+        }
+        catch (java.io.IOException e)
+        {
+            TestCase.assertEquals("malformed composite public key: body shorter than the first component", e.getMessage());
+        }
+    }
+
+    /**
+     * A composite-signature public key whose body parses as a DER SEQUENCE but whose element count is
+     * not exactly two must surface as a checked IOException from generatePublic(SubjectPublicKeyInfo),
+     * not an unchecked ArrayIndexOutOfBoundsException (size 1) or IndexOutOfBoundsException (size 3)
+     * escaping through the fixed two-element factory list and getKeysSpecs. Mirrors the split() guard
+     * exercised by testMalformedTruncatedCompositePublicKey.
+     */
+    public void testMalformedCompositePublicKeyWrongComponentCount()
+        throws Exception
+    {
+        org.bouncycastle.jcajce.provider.asymmetric.compositesignatures.KeyFactorySpi keyFactorySpi =
+            new org.bouncycastle.jcajce.provider.asymmetric.compositesignatures.KeyFactorySpi();
+
+        // A one-element SEQUENCE body: getKeysSpecs would read subjectPublicKeys[1] and previously
+        // threw ArrayIndexOutOfBoundsException.
+        ASN1EncodableVector oneElement = new ASN1EncodableVector();
+        oneElement.add(new DEROctetString(new byte[8]));
+        SubjectPublicKeyInfo oneComponent = new SubjectPublicKeyInfo(
+            new AlgorithmIdentifier(IANAObjectIdentifiers.id_MLDSA44_ECDSA_P256_SHA256),
+            new DERSequence(oneElement).getEncoded());
+
+        try
+        {
+            keyFactorySpi.generatePublic(oneComponent);
+            fail("expected IOException for one-component composite public key");
+        }
+        catch (java.io.IOException e)
+        {
+            TestCase.assertEquals("malformed composite public key: expected exactly two components", e.getMessage());
+        }
+
+        // A three-element SEQUENCE body: the factories.get(i) loop would read factories.get(2) and
+        // previously threw IndexOutOfBoundsException.
+        ASN1EncodableVector threeElements = new ASN1EncodableVector();
+        threeElements.add(new DEROctetString(new byte[8]));
+        threeElements.add(new DEROctetString(new byte[8]));
+        threeElements.add(new DEROctetString(new byte[8]));
+        SubjectPublicKeyInfo threeComponents = new SubjectPublicKeyInfo(
+            new AlgorithmIdentifier(IANAObjectIdentifiers.id_MLDSA44_ECDSA_P256_SHA256),
+            new DERSequence(threeElements).getEncoded());
+
+        try
+        {
+            keyFactorySpi.generatePublic(threeComponents);
+            fail("expected IOException for three-component composite public key");
+        }
+        catch (java.io.IOException e)
+        {
+            TestCase.assertEquals("malformed composite public key: expected exactly two components", e.getMessage());
+        }
+    }
+
+    /**
+     * A truncated composite-signature private key whose body is shorter than the 32-byte ML-DSA seed
+     * must surface as a checked IOException from generatePrivate(PrivateKeyInfo), not an unchecked
+     * IllegalArgumentException ("32 &gt; N") escaping out of Arrays.copyOfRange. Mirrors the compositekem
+     * sibling guard and the generatePublic-side split() guard exercised by
+     * testMalformedTruncatedCompositePublicKey.
+     */
+    public void testMalformedTruncatedCompositePrivateKey()
+        throws Exception
+    {
+        org.bouncycastle.jcajce.provider.asymmetric.compositesignatures.KeyFactorySpi keyFactorySpi =
+            new org.bouncycastle.jcajce.provider.asymmetric.compositesignatures.KeyFactorySpi();
+
+        // id_MLDSA44_ECDSA_P256_SHA256 expects a 32-byte ML-DSA seed followed by the traditional key;
+        // supply only a 16-byte raw octet body, shorter than the seed.
+        byte[] truncatedBody = new byte[16];
+        PrivateKeyInfo malformed = new PrivateKeyInfo(
+            new AlgorithmIdentifier(IANAObjectIdentifiers.id_MLDSA44_ECDSA_P256_SHA256), new DEROctetString(truncatedBody));
+
+        try
+        {
+            keyFactorySpi.generatePrivate(malformed);
+            fail("expected IOException for truncated composite private key");
+        }
+        catch (java.io.IOException e)
+        {
+            TestCase.assertEquals("malformed composite private key: body shorter than the ML-DSA seed", e.getMessage());
+        }
     }
 
     public void testTestVectors()
@@ -243,6 +346,43 @@ public class CompositeSignaturesTest
         TestCase.assertEquals("EC", compPub.getPublicKeys().get(1).getAlgorithm());
         TestCase.assertEquals(firstAlg, compPriv.getPrivateKeys().get(0).getAlgorithm());
         TestCase.assertEquals("EC", compPriv.getPrivateKeys().get(1).getAlgorithm());
+    }
+
+    public void testKeyBuilders()
+        throws Exception
+    {
+        String[] algorithms = new String[]{
+            "MLDSA44-RSA2048-PSS-SHA256",
+            "MLDSA44-RSA2048-PKCS15-SHA256",
+            "MLDSA44-Ed25519-SHA512",
+            "MLDSA44-ECDSA-P256-SHA256",
+            "MLDSA65-RSA3072-PSS-SHA512",
+            "MLDSA65-RSA3072-PKCS15-SHA512",
+            "MLDSA65-RSA4096-PSS-SHA512",
+            "MLDSA65-RSA4096-PKCS15-SHA512",
+            "MLDSA65-ECDSA-P256-SHA512",
+            "MLDSA65-ECDSA-P384-SHA512",
+            "MLDSA65-ECDSA-brainpoolP256r1-SHA512",
+            "MLDSA65-Ed25519-SHA512",
+            "MLDSA87-ECDSA-P384-SHA512",
+            "MLDSA87-ECDSA-brainpoolP384R1-SHA512",
+            "MLDSA87-Ed448-SHAKE256",
+            "MLDSA87-RSA4096-PSS-SHA512",
+            "MLDSA87-ECDSA-P521-SHA512",
+            "MLDSA87-RSA3072-PSS-SHA512"
+        };
+
+        CompositePublicKey.Builder pubBuilder = null;
+        CompositePrivateKey.Builder privBuilder = null;
+
+        for (int i = 0; i != algorithms.length; i++)
+        {
+            pubBuilder = CompositePublicKey.builder(algorithms[i]);
+            privBuilder = CompositePrivateKey.builder(algorithms[i]);
+        }
+
+        assertNotNull(pubBuilder);
+        assertNotNull(privBuilder);
     }
 
     public void testSelfComposition()
@@ -802,7 +942,7 @@ public class CompositeSignaturesTest
     }
 
 
-    public List<Map<String, Object>> readTestVectorsFromJson(String homeDire, String fileName)
+    public static List<Map<String, Object>> readTestVectorsFromJson(String homeDire, String fileName)
         throws Exception
     {
         InputStream src = TestResourceFinder.findTestResource(homeDire, fileName);

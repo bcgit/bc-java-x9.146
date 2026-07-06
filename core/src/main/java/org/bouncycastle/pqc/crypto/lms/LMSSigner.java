@@ -4,6 +4,7 @@ import java.io.IOException;
 
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.pqc.crypto.MessageSigner;
+import org.bouncycastle.util.Exceptions;
 
 public class LMSSigner
     implements MessageSigner
@@ -61,19 +62,26 @@ public class LMSSigner
         }
         catch (IOException e)
         {
-            throw new IllegalStateException("unable to encode signature: " + e.getMessage());
+            throw Exceptions.illegalStateException("unable to encode signature", e);
         }
     }
 
     public boolean verifySignature(byte[] message, byte[] signature)
     {
+        // A malformed/truncated signature must not throw out of verify: the decode
+        // can fail with IOException (truncation) or a RuntimeException (out-of-range
+        // type fields surface as NullPointerException / NegativeArraySizeException).
         try
         {
             return LMS.verifySignature(pubKey, LMSSignature.getInstance(signature), message);
         }
         catch (IOException e)
         {
-            throw new IllegalStateException("unable to decode signature: " + e.getMessage());
+            return false;
+        }
+        catch (RuntimeException e)
+        {
+            return false;
         }
     }
 }

@@ -102,7 +102,7 @@ public class ElephantEngine
             (byte)0x6e, (byte)0x6d, (byte)0x6b, (byte)0x60, (byte)0x62, (byte)0x61, (byte)0x64, (byte)0x6f, (byte)0x67, (byte)0x6a, (byte)0x68, (byte)0x65, (byte)0x69, (byte)0x6c, (byte)0x63, (byte)0x66
         };
 
-        public Spongent(int nBits, int nSBox, int nRounds, byte lfsrIV)
+        Spongent(int nBits, int nSBox, int nRounds, byte lfsrIV)
         {
             this.nRounds = nRounds;
             this.nSBox = nSBox;
@@ -149,12 +149,11 @@ public class ElephantEngine
     private class Dumbo
         extends Spongent
     {
-        public Dumbo()
+        Dumbo()
         {
             super(160, 20, 80, (byte)0x75);
         }
 
-        @Override
         public void lfsr_step()
         {
             next_mask[BlockSize - 1] = (byte)((((current_mask[0] & 0xFF) << 3) | ((current_mask[0] & 0xFF) >>> 5)) ^
@@ -165,12 +164,11 @@ public class ElephantEngine
     private class Jumbo
         extends Spongent
     {
-        public Jumbo()
+        Jumbo()
         {
             super(176, 22, 90, (byte)0x45);
         }
 
-        @Override
         public void lfsr_step()
         {
             next_mask[BlockSize - 1] = (byte)(rotl(current_mask[0]) ^ ((current_mask[3] & 0xFF) << 7) ^ ((current_mask[19] & 0xFF) >>> 7));
@@ -188,7 +186,6 @@ public class ElephantEngine
 
         private final int[] KeccakRhoOffsets = {0, 1, 6, 4, 3, 4, 4, 6, 7, 4, 3, 2, 3, 1, 7, 1, 5, 7, 5, 0, 2, 2, 5, 0, 6};
 
-        @Override
         public void permutation(byte[] state)
         {
             for (int i = 0; i < nRounds; i++)
@@ -197,7 +194,6 @@ public class ElephantEngine
             }
         }
 
-        @Override
         public void lfsr_step()
         {
             next_mask[BlockSize - 1] = (byte)(rotl(current_mask[0]) ^ rotl(current_mask[2]) ^ (current_mask[13] << 1));
@@ -217,7 +213,7 @@ public class ElephantEngine
             }
             for (x = 0; x < 5; x++)
             {
-                tempA[x + 5] = (byte)(ROL8(tempA[(x + 1) % 5], 1) ^ tempA[(x + 4) % 5]);
+                tempA[x + 5] = (byte)(Bytes.rotateLeft(tempA[(x + 1) % 5], 1) ^ tempA[(x + 4) % 5]);
             }
             for (x = 0; x < 5; x++)
             {
@@ -231,7 +227,7 @@ public class ElephantEngine
             {
                 for (y = 0; y < 5; y++)
                 {
-                    tempA[index(x, y)] = ROL8(state[index(x, y)], KeccakRhoOffsets[index(x, y)]);
+                    tempA[index(x, y)] = Bytes.rotateLeft(state[index(x, y)], KeccakRhoOffsets[index(x, y)]);
                 }
             }
             //pi
@@ -256,13 +252,6 @@ public class ElephantEngine
             }
             //iota
             state[0] ^= KeccakRoundConstants[indexRound];//index(0,0)
-        }
-
-        //TODO: search for " >>> (8 - " merge with with CamelliaLightEngine.lRot8,
-        // code in OCBBlockCipher.init, DualECSP800DRBG.pad8,
-        private byte ROL8(byte a, int offset)
-        {
-            return (byte)((a << offset) | ((a & 0xff) >>> (8 - offset)));
         }
 
         private int index(int x, int y)

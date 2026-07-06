@@ -807,21 +807,16 @@ public final class AES
 
         protected AlgorithmParameters engineGenerateParameters()
         {
-            byte[] iv = new byte[12];
+            random = CryptoServicesRegistrar.getSecureRandom(random);
 
-            if (random == null)
-            {
-                random = new SecureRandom();
-            }
-
-            random.nextBytes(iv);
+            byte[] nonce = new byte[12];
+            random.nextBytes(nonce);
 
             AlgorithmParameters params;
-
             try
             {
                 params = createParametersInstance("CCM");
-                params.init(new CCMParameters(iv, 12).getEncoded());
+                params.init(new CCMParameters(nonce, 12).getEncoded());
             }
             catch (Exception e)
             {
@@ -846,17 +841,12 @@ public final class AES
 
         protected AlgorithmParameters engineGenerateParameters()
         {
+            random = CryptoServicesRegistrar.getSecureRandom(random);
+
             byte[] nonce = new byte[12];
-
-            if (random == null)
-            {
-                random = new SecureRandom();
-            }
-
             random.nextBytes(nonce);
 
             AlgorithmParameters params;
-
             try
             {
                 params = createParametersInstance("GCM");
@@ -890,7 +880,7 @@ public final class AES
         {
             if (GcmSpecUtil.isGcmSpec(paramSpec))
             {
-                gcmParams = GcmSpecUtil.extractGcmParameters(paramSpec);
+                gcmParams = GCMParameters.getInstance(GcmSpecUtil.extractGcmParameters(paramSpec));
             }
             else if (paramSpec instanceof AEADParameterSpec)
             {
@@ -975,7 +965,7 @@ public final class AES
         {
             if (GcmSpecUtil.isGcmSpec(paramSpec))
             {
-                ccmParams = CCMParameters.getInstance(GcmSpecUtil.extractGcmParameters(paramSpec));
+                ccmParams = CCMParameters.getInstance(GcmSpecUtil.extractCcmParameters(paramSpec));
             }
             else if (paramSpec instanceof AEADParameterSpec)
             {
@@ -1291,6 +1281,22 @@ public final class AES
 
             addGMacAlgorithm(provider, "AES", PREFIX + "$AESGMAC", PREFIX + "$KeyGen128");
             addPoly1305Algorithm(provider, "AES", PREFIX + "$Poly1305", PREFIX + "$Poly1305KeyGen");
+
+            // RFC 9044: AES-GMAC for use as the macAlgorithm in CMS AuthenticatedData.
+            // GMACParameters shares the GCMParameters wire format, so the parameter handling
+            // is aliased to the GCM AlgorithmParameters/AlgorithmParameterGenerator.
+            provider.addAlgorithm("Mac", NISTObjectIdentifiers.id_aes128_GMAC, PREFIX + "$AESGMAC");
+            provider.addAlgorithm("Mac", NISTObjectIdentifiers.id_aes192_GMAC, PREFIX + "$AESGMAC");
+            provider.addAlgorithm("Mac", NISTObjectIdentifiers.id_aes256_GMAC, PREFIX + "$AESGMAC");
+            provider.addAlgorithm("KeyGenerator", NISTObjectIdentifiers.id_aes128_GMAC, PREFIX + "$KeyGen128");
+            provider.addAlgorithm("KeyGenerator", NISTObjectIdentifiers.id_aes192_GMAC, PREFIX + "$KeyGen192");
+            provider.addAlgorithm("KeyGenerator", NISTObjectIdentifiers.id_aes256_GMAC, PREFIX + "$KeyGen256");
+            provider.addAlgorithm("Alg.Alias.AlgorithmParameters." + NISTObjectIdentifiers.id_aes128_GMAC, "GCM");
+            provider.addAlgorithm("Alg.Alias.AlgorithmParameters." + NISTObjectIdentifiers.id_aes192_GMAC, "GCM");
+            provider.addAlgorithm("Alg.Alias.AlgorithmParameters." + NISTObjectIdentifiers.id_aes256_GMAC, "GCM");
+            provider.addAlgorithm("Alg.Alias.AlgorithmParameterGenerator." + NISTObjectIdentifiers.id_aes128_GMAC, "GCM");
+            provider.addAlgorithm("Alg.Alias.AlgorithmParameterGenerator." + NISTObjectIdentifiers.id_aes192_GMAC, "GCM");
+            provider.addAlgorithm("Alg.Alias.AlgorithmParameterGenerator." + NISTObjectIdentifiers.id_aes256_GMAC, "GCM");
         }
     }
 }

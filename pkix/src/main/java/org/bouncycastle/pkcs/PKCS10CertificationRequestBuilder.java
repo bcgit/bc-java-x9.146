@@ -19,7 +19,7 @@ import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.operator.ContentSigner;
-
+import org.bouncycastle.util.Exceptions;
 /**
  * A class for creating PKCS#10 Certification requests.
  * <pre>
@@ -74,12 +74,13 @@ public class PKCS10CertificationRequestBuilder
     }
 
     /**
-     * Set an attribute to the certification request we are building.
-     * Removed existing attributes with the same attrType.
+     * Add an attribute on the certification request we are building, only if no attribute of
+     * the same type has previously been added or set.
      *
      * @param attrType  the OID giving the type of the attribute.
      * @param attrValue the ASN.1 structure that forms the value of the attribute.
      * @return this builder object.
+     * @throws IllegalStateException if an attribute of the given type is already present.
      */
     public PKCS10CertificationRequestBuilder setAttribute(ASN1ObjectIdentifier attrType, ASN1Encodable attrValue)
     {
@@ -96,12 +97,13 @@ public class PKCS10CertificationRequestBuilder
     }
 
     /**
-     * Add an attribute with multiple values to the certification request we are building.
-     * Removed existing attributes with the same attrType.
+     * Add a multi-valued attribute on the certification request we are building, only if no
+     * attribute of the same type has previously been added or set.
      *
      * @param attrType  the OID giving the type of the attribute.
-     * @param attrValue the ASN.1 structure that forms the value of the attribute.
+     * @param attrValue the ASN.1 structures that form the values of the attribute.
      * @return this builder object.
+     * @throws IllegalStateException if an attribute of the given type is already present.
      */
     public PKCS10CertificationRequestBuilder setAttribute(ASN1ObjectIdentifier attrType, ASN1Encodable[] attrValue)
     {
@@ -159,7 +161,7 @@ public class PKCS10CertificationRequestBuilder
     }
 
     /**
-     * Generate an PKCS#10 request based on the past in signer.
+     * Generate a PKCS#10 request based on the passed-in signer.
      *
      * @param signer the content signer to be used to generate the signature validating the certification request.
      * @return a holder containing the resulting PKCS#10 certification request.
@@ -204,19 +206,19 @@ public class PKCS10CertificationRequestBuilder
         }
         catch (IOException e)
         {
-            throw new IllegalStateException("cannot produce certification request signature");
+            throw Exceptions.illegalStateException("cannot produce certification request signature", e);
         }
     }
 
     /**
-     * Generate a PKCS10 certificate request, based on the current issuer and subject
-     * using the passed in signer and containing altSignatureAlgorithm. altSubjectPublicKeyInfo, and altSignatureValue attributes
-     * based on the passed altSigner.
+     * Generate a PKCS#10 certification request additionally carrying the
+     * subjectAltPublicKeyInfo, altSignatureAlgorithm and altSignatureValue attributes used by
+     * paired ("chameleon") certificates per draft-bonnell-lamps-chameleon-certs.
      *
-     * @param signer    the content signer to be used to generate the signature validating the certification request.
-     * @param altPublicKey the public key to verify the altSignatureValue generated as part of this build.
-     * @param altSigner the content signer used to create the altSignatureAlgorithm and altSignatureValue extension.
-     * @return a holder containing the resulting signed certificate.
+     * @param signer       the content signer used to produce the primary signature.
+     * @param altPublicKey the alternate public key being committed to by the alternate signature.
+     * @param altSigner    the content signer used to produce the alternate signature value.
+     * @return a holder containing the resulting PKCS#10 certification request with both signatures.
      */
     public PKCS10CertificationRequest build(
         ContentSigner signer,
@@ -252,7 +254,7 @@ public class PKCS10CertificationRequestBuilder
         }
         catch (IOException e)
         {
-            throw new IllegalStateException("cannot produce certification request signature");
+            throw Exceptions.illegalStateException("cannot produce certification request signature", e);
         }
 
         // create final request
@@ -268,7 +270,7 @@ public class PKCS10CertificationRequestBuilder
         }
         catch (IOException e)
         {
-            throw new IllegalStateException("cannot produce certification request signature");
+            throw Exceptions.illegalStateException("cannot produce certification request signature", e);
         }
     }
 }

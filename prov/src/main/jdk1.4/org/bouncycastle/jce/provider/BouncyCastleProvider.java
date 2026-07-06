@@ -22,7 +22,6 @@ import org.bouncycastle.jcajce.provider.util.AsymmetricKeyInfoConverter;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.pqc.jcajce.provider.newhope.NHKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.sphincs.Sphincs256KeyFactorySpi;
-import org.bouncycastle.pqc.jcajce.provider.dilithium.DilithiumKeyFactorySpi;
 
 /**
  * To add the provider at runtime use:
@@ -51,7 +50,7 @@ import org.bouncycastle.pqc.jcajce.provider.dilithium.DilithiumKeyFactorySpi;
 public final class BouncyCastleProvider extends Provider
     implements ConfigurableProvider
 {
-    private static String info = "BouncyCastle Security Provider v1.83";
+    private static String info = "BouncyCastle Security Provider v1.85";
 
     public static final String PROVIDER_NAME = "BC";
 
@@ -66,7 +65,16 @@ public final class BouncyCastleProvider extends Provider
 
     private static final String[] SYMMETRIC_GENERIC =
     {
-        "PBEPBKDF1", "PBEPBKDF2", "PBEPKCS12", "TLSKDF", "SCRYPT"
+        "PBEPBKDF1", "PBEPBKDF2", "PBEPKCS12", "TLSKDF", "SCRYPT", "ARGON2", "HKDF"
+    };
+
+    /*
+     * Configurable kdfs
+     */
+    private static final String KDF_PACKAGE = "org.bouncycastle.jcajce.provider.kdf.";
+    private static final String[] KDFS =
+    {
+        "HKDF", "PBKDF2", "SCRYPT"
     };
 
     private static final String[] SYMMETRIC_MACS =
@@ -79,7 +87,7 @@ public final class BouncyCastleProvider extends Provider
         "AES", "ARC4", "ARIA", "Blowfish", "Camellia", "CAST5", "CAST6", "ChaCha", "DES", "DESede",
         "GOST28147", "Grainv1", "Grain128", "HC128", "HC256", "IDEA", "Noekeon", "RC2", "RC5",
         "RC6", "Rijndael", "Salsa20", "SEED", "Serpent", "Shacal2", "Skipjack", "SM4", "TEA", "Twofish", "Threefish",
-        "VMPC", "VMPCKSA3", "XTEA", "XSalsa20", "OpenSSLPBKDF", "DSTU7624", "GOST3412_2015", "Zuc"
+        "VMPC", "VMPCKSA3", "XTEA", "XSalsa20", "XChaCha", "OpenSSLPBKDF", "DSTU7624", "GOST3412_2015", "Zuc"
     };
 
      /*
@@ -96,7 +104,7 @@ public final class BouncyCastleProvider extends Provider
 
     private static final String[] ASYMMETRIC_CIPHERS =
     {
-        "DSA", "DH", "EC", "RSA", "GOST", "ECGOST", "ElGamal", "DSTU4145", "GM", "EdEC", "SPHINCSPlus", "Dilithium", "Falcon", "NTRU", "CONTEXT", "SLHDSA", "MLDSA", "MLKEM"
+        "DSA", "DH", "EC", "RSA", "GOST", "ECGOST", "ElGamal", "DSTU4145", "GM", "EdEC", "Falcon", "NTRU", "CONTEXT", "SLHDSA", "MLDSA", "MLKEM"
     };
 
     /*
@@ -135,7 +143,7 @@ public final class BouncyCastleProvider extends Provider
      */
     public BouncyCastleProvider()
     {
-        super(PROVIDER_NAME, 1.8300, info);
+        super(PROVIDER_NAME, 1.85, info);
 
         AccessController.doPrivileged(new PrivilegedAction()
         {
@@ -164,6 +172,8 @@ public final class BouncyCastleProvider extends Provider
         loadAlgorithms(KEYSTORE_PACKAGE, KEYSTORES);
 
         loadAlgorithms(SECURE_RANDOM_PACKAGE, SECURE_RANDOMS);
+
+        loadAlgorithms(KDF_PACKAGE, KDFS);
 
         loadPQCKeys();  // so we can handle certificates containing them.
         //
@@ -235,9 +245,6 @@ public final class BouncyCastleProvider extends Provider
     {
         addKeyInfoConverter(PQCObjectIdentifiers.sphincs256, new Sphincs256KeyFactorySpi());
         addKeyInfoConverter(PQCObjectIdentifiers.newHope, new NHKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.dilithium2, new DilithiumKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.dilithium3, new DilithiumKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.dilithium5, new DilithiumKeyFactorySpi());
     }
 
     public void setParameter(String parameterName, Object parameter)

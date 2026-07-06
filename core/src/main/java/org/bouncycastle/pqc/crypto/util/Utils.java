@@ -18,13 +18,20 @@ import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.digests.SHA512Digest;
 import org.bouncycastle.crypto.digests.SHAKEDigest;
+import org.bouncycastle.pqc.crypto.mqom.MQOMParameters;
+import org.bouncycastle.pqc.crypto.sdith.SDitHParameters;
+import org.bouncycastle.pqc.crypto.uov.UOVParameters;
 import org.bouncycastle.internal.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.pqc.asn1.SPHINCS256KeyParams;
-import org.bouncycastle.pqc.crypto.bike.BIKEParameters;
+import org.bouncycastle.pqc.crypto.aimer.AIMerParameters;
+import org.bouncycastle.pqc.legacy.bike.BIKEParameters;
 import org.bouncycastle.pqc.crypto.cmce.CMCEParameters;
 import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumParameters;
+import org.bouncycastle.pqc.crypto.faest.FaestParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconParameters;
 import org.bouncycastle.pqc.crypto.frodo.FrodoParameters;
+import org.bouncycastle.pqc.crypto.haetae.HAETAEParameters;
+import org.bouncycastle.pqc.crypto.hawk.HawkParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCParameters;
 import org.bouncycastle.pqc.crypto.mayo.MayoParameters;
 import org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters;
@@ -33,14 +40,17 @@ import org.bouncycastle.pqc.crypto.ntru.NTRUParameters;
 import org.bouncycastle.pqc.crypto.ntruplus.NTRUPlusParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.NTRULPRimeParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.SNTRUPrimeParameters;
-import org.bouncycastle.pqc.crypto.picnic.PicnicParameters;
-import org.bouncycastle.pqc.crypto.rainbow.RainbowParameters;
 import org.bouncycastle.pqc.crypto.saber.SABERParameters;
 import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAParameters;
+import org.bouncycastle.pqc.crypto.qruov.QRUOVParameters;
 import org.bouncycastle.pqc.crypto.snova.SnovaParameters;
+import org.bouncycastle.pqc.crypto.sqisign.SQIsignParameters;
 import org.bouncycastle.pqc.crypto.sphincs.SPHINCSKeyParameters;
-import org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSKeyParameters;
+import org.bouncycastle.pqc.legacy.bike.BIKEParameters;
+import org.bouncycastle.pqc.legacy.picnic.PicnicParameters;
+import org.bouncycastle.pqc.legacy.rainbow.RainbowParameters;
+import org.bouncycastle.pqc.legacy.sphincsplus.SPHINCSPlusParameters;
 
 class Utils
 {
@@ -111,6 +121,32 @@ class Utils
 
     static final Map ntruPlusOids = new HashMap<ASN1ObjectIdentifier, NTRUPlusParameters>();
     static final Map ntruPlusParams = new HashMap<NTRUPlusParameters, ASN1ObjectIdentifier>();
+
+    static final Map aimerOids = new HashMap<ASN1ObjectIdentifier, AIMerParameters>();
+    static final Map aimerParams = new HashMap<AIMerParameters, ASN1ObjectIdentifier>();
+
+    static final Map faestOids = new HashMap<ASN1ObjectIdentifier, FaestParameters>();
+    static final Map faestParams = new HashMap<FaestParameters, ASN1ObjectIdentifier>();
+
+    static final Map qruovOids = new HashMap<ASN1ObjectIdentifier, QRUOVParameters>();
+    static final Map qruovParams = new HashMap<QRUOVParameters, ASN1ObjectIdentifier>();
+    static final Map sqisignOids = new HashMap<ASN1ObjectIdentifier, SQIsignParameters>();
+    static final Map sqisignParams = new HashMap<SQIsignParameters, ASN1ObjectIdentifier>();
+
+    static final Map haetaeOids = new HashMap<ASN1ObjectIdentifier, HAETAEParameters>();
+    static final Map haetaeParams = new HashMap<HAETAEParameters, ASN1ObjectIdentifier>();
+
+    static final Map hawkOids = new HashMap<ASN1ObjectIdentifier, HawkParameters>();
+    static final Map hawkParams = new HashMap<HawkParameters, ASN1ObjectIdentifier>();
+
+    static final Map sdithOids = new HashMap<SDitHParameters, ASN1ObjectIdentifier>();
+    static final Map sdithParams = new HashMap<ASN1ObjectIdentifier, SDitHParameters>();
+
+    static final Map mqomOids = new HashMap<ASN1ObjectIdentifier, MQOMParameters>();
+    static final Map mqomParams = new HashMap<MQOMParameters, ASN1ObjectIdentifier>();
+
+    static final Map uovOids = new HashMap<UOVParameters, ASN1ObjectIdentifier>();
+    static final Map uovParams = new HashMap<ASN1ObjectIdentifier, UOVParameters>();
 
     static
     {
@@ -576,13 +612,194 @@ class Utils
         snovaParams.put(BCObjectIdentifiers.snova_75_33_2_shake_ssk, SnovaParameters.SNOVA_75_33_2_SHAKE_SSK);
         snovaParams.put(BCObjectIdentifiers.snova_75_33_2_shake_esk, SnovaParameters.SNOVA_75_33_2_SHAKE_ESK);
 
-        ntruPlusParams.put(BCObjectIdentifiers.ntruPlus768, NTRUPlusParameters.ntruplus_kem_768);
-        ntruPlusParams.put(BCObjectIdentifiers.ntruPlus864, NTRUPlusParameters.ntruplus_kem_864);
-        ntruPlusParams.put(BCObjectIdentifiers.ntruPlus1152, NTRUPlusParameters.ntruplus_kem_1152);
+        ntruPlusParams.put(BCObjectIdentifiers.ntruplus768, NTRUPlusParameters.ntruplus_kem_768);
+        ntruPlusParams.put(BCObjectIdentifiers.ntruplus864, NTRUPlusParameters.ntruplus_kem_864);
+        ntruPlusParams.put(BCObjectIdentifiers.ntruplus1152, NTRUPlusParameters.ntruplus_kem_1152);
 
-        ntruPlusOids.put(NTRUPlusParameters.ntruplus_kem_768, BCObjectIdentifiers.ntruPlus768);
-        ntruPlusOids.put(NTRUPlusParameters.ntruplus_kem_864, BCObjectIdentifiers.ntruPlus864);
-        ntruPlusOids.put(NTRUPlusParameters.ntruplus_kem_1152, BCObjectIdentifiers.ntruPlus1152);
+        ntruPlusOids.put(NTRUPlusParameters.ntruplus_kem_768, BCObjectIdentifiers.ntruplus768);
+        ntruPlusOids.put(NTRUPlusParameters.ntruplus_kem_864, BCObjectIdentifiers.ntruplus864);
+        ntruPlusOids.put(NTRUPlusParameters.ntruplus_kem_1152, BCObjectIdentifiers.ntruplus1152);
+
+        aimerParams.put(BCObjectIdentifiers.aimer_128f, AIMerParameters.aimer128f);
+        aimerParams.put(BCObjectIdentifiers.aimer_128s, AIMerParameters.aimer128s);
+        aimerParams.put(BCObjectIdentifiers.aimer_192f, AIMerParameters.aimer192f);
+        aimerParams.put(BCObjectIdentifiers.aimer_192s, AIMerParameters.aimer192s);
+        aimerParams.put(BCObjectIdentifiers.aimer_256f, AIMerParameters.aimer256f);
+        aimerParams.put(BCObjectIdentifiers.aimer_256s, AIMerParameters.aimer256s);
+
+        aimerOids.put(AIMerParameters.aimer128f, BCObjectIdentifiers.aimer_128f);
+        aimerOids.put(AIMerParameters.aimer128s, BCObjectIdentifiers.aimer_128s);
+        aimerOids.put(AIMerParameters.aimer192f, BCObjectIdentifiers.aimer_192f);
+        aimerOids.put(AIMerParameters.aimer192s, BCObjectIdentifiers.aimer_192s);
+        aimerOids.put(AIMerParameters.aimer256f, BCObjectIdentifiers.aimer_256f);
+        aimerOids.put(AIMerParameters.aimer256s, BCObjectIdentifiers.aimer_256s);
+
+        faestOids.put(FaestParameters.faest_128s, BCObjectIdentifiers.faest_128s);
+        faestOids.put(FaestParameters.faest_128f, BCObjectIdentifiers.faest_128f);
+        faestOids.put(FaestParameters.faest_192s, BCObjectIdentifiers.faest_192s);
+        faestOids.put(FaestParameters.faest_192f, BCObjectIdentifiers.faest_192f);
+        faestOids.put(FaestParameters.faest_256s, BCObjectIdentifiers.faest_256s);
+        faestOids.put(FaestParameters.faest_256f, BCObjectIdentifiers.faest_256f);
+        faestOids.put(FaestParameters.faest_em_128s, BCObjectIdentifiers.faest_em_128s);
+        faestOids.put(FaestParameters.faest_em_128f, BCObjectIdentifiers.faest_em_128f);
+        faestOids.put(FaestParameters.faest_em_192s, BCObjectIdentifiers.faest_em_192s);
+        faestOids.put(FaestParameters.faest_em_192f, BCObjectIdentifiers.faest_em_192f);
+        faestOids.put(FaestParameters.faest_em_256s, BCObjectIdentifiers.faest_em_256s);
+        faestOids.put(FaestParameters.faest_em_256f, BCObjectIdentifiers.faest_em_256f);
+
+        faestParams.put(BCObjectIdentifiers.faest_128s, FaestParameters.faest_128s);
+        faestParams.put(BCObjectIdentifiers.faest_128f, FaestParameters.faest_128f);
+        faestParams.put(BCObjectIdentifiers.faest_192s, FaestParameters.faest_192s);
+        faestParams.put(BCObjectIdentifiers.faest_192f, FaestParameters.faest_192f);
+        faestParams.put(BCObjectIdentifiers.faest_256s, FaestParameters.faest_256s);
+        faestParams.put(BCObjectIdentifiers.faest_256f, FaestParameters.faest_256f);
+        faestParams.put(BCObjectIdentifiers.faest_em_128s, FaestParameters.faest_em_128s);
+        faestParams.put(BCObjectIdentifiers.faest_em_128f, FaestParameters.faest_em_128f);
+        faestParams.put(BCObjectIdentifiers.faest_em_192s, FaestParameters.faest_em_192s);
+        faestParams.put(BCObjectIdentifiers.faest_em_192f, FaestParameters.faest_em_192f);
+        faestParams.put(BCObjectIdentifiers.faest_em_256s, FaestParameters.faest_em_256s);
+        faestParams.put(BCObjectIdentifiers.faest_em_256f, FaestParameters.faest_em_256f);
+
+        // QR-UOV — SHAKE-PRG variants are the OID-mapped canonical form.
+        qruovOids.put(QRUOVParameters.qruov_1_q127_L3_v156_m54_shake, BCObjectIdentifiers.qruov1q127L3v156m54);
+        qruovOids.put(QRUOVParameters.qruov_1_q31_L3_v165_m60_shake, BCObjectIdentifiers.qruov1q31L3v165m60);
+        qruovOids.put(QRUOVParameters.qruov_1_q31_L10_v600_m70_shake, BCObjectIdentifiers.qruov1q31L10v600m70);
+        qruovOids.put(QRUOVParameters.qruov_1_q7_L10_v740_m100_shake, BCObjectIdentifiers.qruov1q7L10v740m100);
+        qruovOids.put(QRUOVParameters.qruov_3_q127_L3_v228_m78_shake, BCObjectIdentifiers.qruov3q127L3v228m78);
+        qruovOids.put(QRUOVParameters.qruov_3_q31_L3_v246_m87_shake, BCObjectIdentifiers.qruov3q31L3v246m87);
+        qruovOids.put(QRUOVParameters.qruov_3_q31_L10_v890_m100_shake, BCObjectIdentifiers.qruov3q31L10v890m100);
+        qruovOids.put(QRUOVParameters.qruov_3_q7_L10_v1100_m140_shake, BCObjectIdentifiers.qruov3q7L10v1100m140);
+        qruovOids.put(QRUOVParameters.qruov_5_q127_L3_v306_m105_shake, BCObjectIdentifiers.qruov5q127L3v306m105);
+        qruovOids.put(QRUOVParameters.qruov_5_q31_L3_v324_m114_shake, BCObjectIdentifiers.qruov5q31L3v324m114);
+        qruovOids.put(QRUOVParameters.qruov_5_q31_L10_v1120_m120_shake, BCObjectIdentifiers.qruov5q31L10v1120m120);
+        qruovOids.put(QRUOVParameters.qruov_5_q7_L10_v1490_m190_shake, BCObjectIdentifiers.qruov5q7L10v1490m190);
+
+        qruovParams.put(BCObjectIdentifiers.qruov1q127L3v156m54, QRUOVParameters.qruov_1_q127_L3_v156_m54_shake);
+        qruovParams.put(BCObjectIdentifiers.qruov1q31L3v165m60, QRUOVParameters.qruov_1_q31_L3_v165_m60_shake);
+        qruovParams.put(BCObjectIdentifiers.qruov1q31L10v600m70, QRUOVParameters.qruov_1_q31_L10_v600_m70_shake);
+        qruovParams.put(BCObjectIdentifiers.qruov1q7L10v740m100, QRUOVParameters.qruov_1_q7_L10_v740_m100_shake);
+        qruovParams.put(BCObjectIdentifiers.qruov3q127L3v228m78, QRUOVParameters.qruov_3_q127_L3_v228_m78_shake);
+        qruovParams.put(BCObjectIdentifiers.qruov3q31L3v246m87, QRUOVParameters.qruov_3_q31_L3_v246_m87_shake);
+        qruovParams.put(BCObjectIdentifiers.qruov3q31L10v890m100, QRUOVParameters.qruov_3_q31_L10_v890_m100_shake);
+        qruovParams.put(BCObjectIdentifiers.qruov3q7L10v1100m140, QRUOVParameters.qruov_3_q7_L10_v1100_m140_shake);
+        qruovParams.put(BCObjectIdentifiers.qruov5q127L3v306m105, QRUOVParameters.qruov_5_q127_L3_v306_m105_shake);
+        qruovParams.put(BCObjectIdentifiers.qruov5q31L3v324m114, QRUOVParameters.qruov_5_q31_L3_v324_m114_shake);
+        qruovParams.put(BCObjectIdentifiers.qruov5q31L10v1120m120, QRUOVParameters.qruov_5_q31_L10_v1120_m120_shake);
+        qruovParams.put(BCObjectIdentifiers.qruov5q7L10v1490m190, QRUOVParameters.qruov_5_q7_L10_v1490_m190_shake);
+
+        sqisignOids.put(SQIsignParameters.sqisign_lvl1, BCObjectIdentifiers.sqisign_lvl1);
+        sqisignOids.put(SQIsignParameters.sqisign_lvl3, BCObjectIdentifiers.sqisign_lvl3);
+        sqisignOids.put(SQIsignParameters.sqisign_lvl5, BCObjectIdentifiers.sqisign_lvl5);
+
+        sqisignParams.put(BCObjectIdentifiers.sqisign_lvl1, SQIsignParameters.sqisign_lvl1);
+        sqisignParams.put(BCObjectIdentifiers.sqisign_lvl3, SQIsignParameters.sqisign_lvl3);
+        sqisignParams.put(BCObjectIdentifiers.sqisign_lvl5, SQIsignParameters.sqisign_lvl5);
+
+        haetaeOids.put(HAETAEParameters.haetae2, BCObjectIdentifiers.haetae2);
+        haetaeOids.put(HAETAEParameters.haetae3, BCObjectIdentifiers.haetae3);
+        haetaeOids.put(HAETAEParameters.haetae5, BCObjectIdentifiers.haetae5);
+
+        haetaeParams.put(BCObjectIdentifiers.haetae2, HAETAEParameters.haetae2);
+        haetaeParams.put(BCObjectIdentifiers.haetae3, HAETAEParameters.haetae3);
+        haetaeParams.put(BCObjectIdentifiers.haetae5, HAETAEParameters.haetae5);
+
+        hawkOids.put(HawkParameters.Hawk_256, BCObjectIdentifiers.hawk256);
+        hawkOids.put(HawkParameters.Hawk_512, BCObjectIdentifiers.hawk512);
+        hawkOids.put(HawkParameters.Hawk_1024, BCObjectIdentifiers.hawk1024);
+
+        hawkParams.put(BCObjectIdentifiers.hawk256, HawkParameters.Hawk_256);
+        hawkParams.put(BCObjectIdentifiers.hawk512, HawkParameters.Hawk_512);
+        hawkParams.put(BCObjectIdentifiers.hawk1024, HawkParameters.Hawk_1024);
+
+        MQOMParameters[] mqomAll = new MQOMParameters[]{
+            MQOMParameters.mqom2_cat1_gf2_fast_r3, MQOMParameters.mqom2_cat1_gf2_fast_r5,
+            MQOMParameters.mqom2_cat1_gf2_short_r3, MQOMParameters.mqom2_cat1_gf2_short_r5,
+            MQOMParameters.mqom2_cat1_gf16_fast_r3, MQOMParameters.mqom2_cat1_gf16_fast_r5,
+            MQOMParameters.mqom2_cat1_gf16_short_r3, MQOMParameters.mqom2_cat1_gf16_short_r5,
+            MQOMParameters.mqom2_cat1_gf256_fast_r3, MQOMParameters.mqom2_cat1_gf256_fast_r5,
+            MQOMParameters.mqom2_cat1_gf256_short_r3, MQOMParameters.mqom2_cat1_gf256_short_r5,
+            MQOMParameters.mqom2_cat3_gf2_fast_r3, MQOMParameters.mqom2_cat3_gf2_fast_r5,
+            MQOMParameters.mqom2_cat3_gf2_short_r3, MQOMParameters.mqom2_cat3_gf2_short_r5,
+            MQOMParameters.mqom2_cat3_gf16_fast_r3, MQOMParameters.mqom2_cat3_gf16_fast_r5,
+            MQOMParameters.mqom2_cat3_gf16_short_r3, MQOMParameters.mqom2_cat3_gf16_short_r5,
+            MQOMParameters.mqom2_cat3_gf256_fast_r3, MQOMParameters.mqom2_cat3_gf256_fast_r5,
+            MQOMParameters.mqom2_cat3_gf256_short_r3, MQOMParameters.mqom2_cat3_gf256_short_r5,
+            MQOMParameters.mqom2_cat5_gf2_fast_r3, MQOMParameters.mqom2_cat5_gf2_fast_r5,
+            MQOMParameters.mqom2_cat5_gf2_short_r3, MQOMParameters.mqom2_cat5_gf2_short_r5,
+            MQOMParameters.mqom2_cat5_gf16_fast_r3, MQOMParameters.mqom2_cat5_gf16_fast_r5,
+            MQOMParameters.mqom2_cat5_gf16_short_r3, MQOMParameters.mqom2_cat5_gf16_short_r5,
+            MQOMParameters.mqom2_cat5_gf256_fast_r3, MQOMParameters.mqom2_cat5_gf256_fast_r5,
+            MQOMParameters.mqom2_cat5_gf256_short_r3, MQOMParameters.mqom2_cat5_gf256_short_r5
+        };
+        ASN1ObjectIdentifier[] mqomOidArr = new ASN1ObjectIdentifier[]{
+            BCObjectIdentifiers.mqom2_cat1_gf2_fast_r3, BCObjectIdentifiers.mqom2_cat1_gf2_fast_r5,
+            BCObjectIdentifiers.mqom2_cat1_gf2_short_r3, BCObjectIdentifiers.mqom2_cat1_gf2_short_r5,
+            BCObjectIdentifiers.mqom2_cat1_gf16_fast_r3, BCObjectIdentifiers.mqom2_cat1_gf16_fast_r5,
+            BCObjectIdentifiers.mqom2_cat1_gf16_short_r3, BCObjectIdentifiers.mqom2_cat1_gf16_short_r5,
+            BCObjectIdentifiers.mqom2_cat1_gf256_fast_r3, BCObjectIdentifiers.mqom2_cat1_gf256_fast_r5,
+            BCObjectIdentifiers.mqom2_cat1_gf256_short_r3, BCObjectIdentifiers.mqom2_cat1_gf256_short_r5,
+            BCObjectIdentifiers.mqom2_cat3_gf2_fast_r3, BCObjectIdentifiers.mqom2_cat3_gf2_fast_r5,
+            BCObjectIdentifiers.mqom2_cat3_gf2_short_r3, BCObjectIdentifiers.mqom2_cat3_gf2_short_r5,
+            BCObjectIdentifiers.mqom2_cat3_gf16_fast_r3, BCObjectIdentifiers.mqom2_cat3_gf16_fast_r5,
+            BCObjectIdentifiers.mqom2_cat3_gf16_short_r3, BCObjectIdentifiers.mqom2_cat3_gf16_short_r5,
+            BCObjectIdentifiers.mqom2_cat3_gf256_fast_r3, BCObjectIdentifiers.mqom2_cat3_gf256_fast_r5,
+            BCObjectIdentifiers.mqom2_cat3_gf256_short_r3, BCObjectIdentifiers.mqom2_cat3_gf256_short_r5,
+            BCObjectIdentifiers.mqom2_cat5_gf2_fast_r3, BCObjectIdentifiers.mqom2_cat5_gf2_fast_r5,
+            BCObjectIdentifiers.mqom2_cat5_gf2_short_r3, BCObjectIdentifiers.mqom2_cat5_gf2_short_r5,
+            BCObjectIdentifiers.mqom2_cat5_gf16_fast_r3, BCObjectIdentifiers.mqom2_cat5_gf16_fast_r5,
+            BCObjectIdentifiers.mqom2_cat5_gf16_short_r3, BCObjectIdentifiers.mqom2_cat5_gf16_short_r5,
+            BCObjectIdentifiers.mqom2_cat5_gf256_fast_r3, BCObjectIdentifiers.mqom2_cat5_gf256_fast_r5,
+            BCObjectIdentifiers.mqom2_cat5_gf256_short_r3, BCObjectIdentifiers.mqom2_cat5_gf256_short_r5
+        };
+        for (int i = 0; i < mqomAll.length; i++)
+        {
+            mqomOids.put(mqomAll[i], mqomOidArr[i]);
+            mqomParams.put(mqomOidArr[i], mqomAll[i]);
+        }
+
+        UOVParameters[] uovAll = new UOVParameters[]{
+            UOVParameters.uov_Is, UOVParameters.uov_Is_pkc, UOVParameters.uov_Is_pkc_skc,
+            UOVParameters.uov_Ip, UOVParameters.uov_Ip_pkc, UOVParameters.uov_Ip_pkc_skc,
+            UOVParameters.uov_III, UOVParameters.uov_III_pkc, UOVParameters.uov_III_pkc_skc,
+            UOVParameters.uov_V, UOVParameters.uov_V_pkc, UOVParameters.uov_V_pkc_skc
+        };
+        ASN1ObjectIdentifier[] uovOidArr = new ASN1ObjectIdentifier[]{
+            BCObjectIdentifiers.uov_Is_classic, BCObjectIdentifiers.uov_Is_pkc, BCObjectIdentifiers.uov_Is_pkc_skc,
+            BCObjectIdentifiers.uov_Ip_classic, BCObjectIdentifiers.uov_Ip_pkc, BCObjectIdentifiers.uov_Ip_pkc_skc,
+            BCObjectIdentifiers.uov_III_classic, BCObjectIdentifiers.uov_III_pkc, BCObjectIdentifiers.uov_III_pkc_skc,
+            BCObjectIdentifiers.uov_V_classic, BCObjectIdentifiers.uov_V_pkc, BCObjectIdentifiers.uov_V_pkc_skc
+        };
+        for (int i = 0; i < uovAll.length; i++)
+        {
+            uovOids.put(uovAll[i], uovOidArr[i]);
+            uovParams.put(uovOidArr[i], uovAll[i]);
+        }
+
+        sdithOids.put(SDitHParameters.sdith_hypercube_cat1_gf256, BCObjectIdentifiers.sdith_hypercube_cat1_gf256);
+        sdithOids.put(SDitHParameters.sdith_hypercube_cat3_gf256, BCObjectIdentifiers.sdith_hypercube_cat3_gf256);
+        sdithOids.put(SDitHParameters.sdith_hypercube_cat5_gf256, BCObjectIdentifiers.sdith_hypercube_cat5_gf256);
+        sdithOids.put(SDitHParameters.sdith_hypercube_cat1_p251, BCObjectIdentifiers.sdith_hypercube_cat1_p251);
+        sdithOids.put(SDitHParameters.sdith_hypercube_cat3_p251, BCObjectIdentifiers.sdith_hypercube_cat3_p251);
+        sdithOids.put(SDitHParameters.sdith_hypercube_cat5_p251, BCObjectIdentifiers.sdith_hypercube_cat5_p251);
+        sdithParams.put(BCObjectIdentifiers.sdith_hypercube_cat1_gf256, SDitHParameters.sdith_hypercube_cat1_gf256);
+        sdithParams.put(BCObjectIdentifiers.sdith_hypercube_cat3_gf256, SDitHParameters.sdith_hypercube_cat3_gf256);
+        sdithParams.put(BCObjectIdentifiers.sdith_hypercube_cat5_gf256, SDitHParameters.sdith_hypercube_cat5_gf256);
+        sdithParams.put(BCObjectIdentifiers.sdith_hypercube_cat1_p251, SDitHParameters.sdith_hypercube_cat1_p251);
+        sdithParams.put(BCObjectIdentifiers.sdith_hypercube_cat3_p251, SDitHParameters.sdith_hypercube_cat3_p251);
+        sdithParams.put(BCObjectIdentifiers.sdith_hypercube_cat5_p251, SDitHParameters.sdith_hypercube_cat5_p251);
+
+        sdithOids.put(SDitHParameters.sdith_threshold_cat1_gf256, BCObjectIdentifiers.sdith_threshold_cat1_gf256);
+        sdithOids.put(SDitHParameters.sdith_threshold_cat3_gf256, BCObjectIdentifiers.sdith_threshold_cat3_gf256);
+        sdithOids.put(SDitHParameters.sdith_threshold_cat5_gf256, BCObjectIdentifiers.sdith_threshold_cat5_gf256);
+        sdithOids.put(SDitHParameters.sdith_threshold_cat1_p251, BCObjectIdentifiers.sdith_threshold_cat1_p251);
+        sdithOids.put(SDitHParameters.sdith_threshold_cat3_p251, BCObjectIdentifiers.sdith_threshold_cat3_p251);
+        sdithOids.put(SDitHParameters.sdith_threshold_cat5_p251, BCObjectIdentifiers.sdith_threshold_cat5_p251);
+        sdithParams.put(BCObjectIdentifiers.sdith_threshold_cat1_gf256, SDitHParameters.sdith_threshold_cat1_gf256);
+        sdithParams.put(BCObjectIdentifiers.sdith_threshold_cat3_gf256, SDitHParameters.sdith_threshold_cat3_gf256);
+        sdithParams.put(BCObjectIdentifiers.sdith_threshold_cat5_gf256, SDitHParameters.sdith_threshold_cat5_gf256);
+        sdithParams.put(BCObjectIdentifiers.sdith_threshold_cat1_p251, SDitHParameters.sdith_threshold_cat1_p251);
+        sdithParams.put(BCObjectIdentifiers.sdith_threshold_cat3_p251, SDitHParameters.sdith_threshold_cat3_p251);
+        sdithParams.put(BCObjectIdentifiers.sdith_threshold_cat5_p251, SDitHParameters.sdith_threshold_cat5_p251);
     }
 
     static ASN1ObjectIdentifier slhdsaOidLookup(SLHDSAParameters params)
@@ -668,6 +885,10 @@ class Utils
             return new SHAKEDigest(128);
         }
         if (oid.equals(NISTObjectIdentifiers.id_shake256))
+        {
+            return new SHAKEDigest(256);
+        }
+        if (oid.equals(NISTObjectIdentifiers.id_shake256_len))
         {
             return new SHAKEDigest(256);
         }
@@ -905,6 +1126,97 @@ class Utils
     static ASN1ObjectIdentifier ntruPlusOidLookup(NTRUPlusParameters params)
     {
         return (ASN1ObjectIdentifier)ntruPlusOids.get(params);
+    }
+
+    static AIMerParameters aimerParamsLookup(ASN1ObjectIdentifier oid)
+    {
+        return (AIMerParameters)aimerParams.get(oid);
+    }
+
+    static ASN1ObjectIdentifier aimerOidLookup(AIMerParameters params)
+    {
+        return (ASN1ObjectIdentifier)aimerOids.get(params);
+    }
+
+    public static ASN1ObjectIdentifier hawkOidLookup(HawkParameters params)
+    {
+        return (ASN1ObjectIdentifier)hawkOids.get(params);
+    }
+
+    static HawkParameters hawkParamsLookup(ASN1ObjectIdentifier oid)
+    {
+        return (HawkParameters)hawkParams.get(oid);
+    }
+
+
+    static ASN1ObjectIdentifier faestOidLookup(FaestParameters params)
+    {
+        return (ASN1ObjectIdentifier)faestOids.get(params);
+    }
+
+    static FaestParameters faestParamsLookup(ASN1ObjectIdentifier oid)
+    {
+        return (FaestParameters)faestParams.get(oid);
+    }
+
+    static ASN1ObjectIdentifier qruovOidLookup(QRUOVParameters params)
+    {
+        return (ASN1ObjectIdentifier)qruovOids.get(params);
+    }
+
+    static QRUOVParameters qruovParamsLookup(ASN1ObjectIdentifier oid)
+    {
+        return (QRUOVParameters)qruovParams.get(oid);
+    }
+
+    static ASN1ObjectIdentifier sqisignOidLookup(SQIsignParameters params)
+    {
+        return (ASN1ObjectIdentifier)sqisignOids.get(params);
+    }
+
+    static SQIsignParameters sqisignParamsLookup(ASN1ObjectIdentifier oid)
+    {
+        return (SQIsignParameters)sqisignParams.get(oid);
+    }
+
+    static ASN1ObjectIdentifier haetaeOidLookup(HAETAEParameters params)
+    {
+        return (ASN1ObjectIdentifier)haetaeOids.get(params);
+    }
+
+    static HAETAEParameters haetaeParamsLookup(ASN1ObjectIdentifier oid)
+    {
+        return (HAETAEParameters)haetaeParams.get(oid);
+    }
+
+    static ASN1ObjectIdentifier mqomOidLookup(MQOMParameters params)
+    {
+        return (ASN1ObjectIdentifier)mqomOids.get(params);
+    }
+
+    static MQOMParameters mqomParamsLookup(ASN1ObjectIdentifier oid)
+    {
+        return (MQOMParameters)mqomParams.get(oid);
+    }
+
+    static ASN1ObjectIdentifier uovOidLookup(UOVParameters params)
+    {
+        return (ASN1ObjectIdentifier)uovOids.get(params);
+    }
+
+    static UOVParameters uovParamsLookup(ASN1ObjectIdentifier oid)
+    {
+        return (UOVParameters)uovParams.get(oid);
+    }
+
+    static ASN1ObjectIdentifier sdithOidLookup(SDitHParameters params)
+    {
+        return (ASN1ObjectIdentifier)sdithOids.get(params);
+    }
+
+    static SDitHParameters sdithParamsLookup(ASN1ObjectIdentifier oid)
+    {
+        return (SDitHParameters)sdithParams.get(oid);
     }
 
     private static boolean isRaw(byte[] data)

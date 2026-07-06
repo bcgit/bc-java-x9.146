@@ -14,12 +14,13 @@ import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
-import org.bouncycastle.internal.asn1.iana.IANAObjectIdentifiers;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
 import org.bouncycastle.internal.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.jcajce.provider.asymmetric.compositesignatures.CompositeIndex;
 import org.bouncycastle.jcajce.provider.asymmetric.compositesignatures.KeyFactorySpi;
 import org.bouncycastle.jcajce.provider.util.AsymmetricKeyInfoConverter;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
 
 /**
  * A composite key class.
@@ -258,7 +259,7 @@ public class CompositePublicKey
             }
             catch (IOException e)
             {
-                throw new IllegalStateException("unable to encode composite public key: " + e.getMessage());
+                throw Exceptions.illegalStateException("unable to encode composite public key", e);
             }
         }
 
@@ -286,7 +287,7 @@ public class CompositePublicKey
         }
         catch (IOException e)
         {
-            throw new IllegalStateException("unable to encode composite public key: " + e.getMessage());
+            throw Exceptions.illegalStateException("unable to encode composite public key", e);
         }
     }
 

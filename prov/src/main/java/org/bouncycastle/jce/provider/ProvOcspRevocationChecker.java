@@ -261,52 +261,64 @@ class ProvOcspRevocationChecker
                         {
                             BasicOCSPResponse basicResp = BasicOCSPResponse.getInstance(respBytes.getResponse().getOctets());
 
-                            if (preValidated || validatedOcspResponse(basicResp, parameters, nonce, parent.getOcspResponderCert(), helper))
+                            if (!preValidated && !validatedOcspResponse(basicResp, parameters, nonce, parent.getOcspResponderCert(), helper))
                             {
-                                ResponseData responseData = ResponseData.getInstance(basicResp.getTbsResponseData());
+                                throw new CertPathValidatorException(
+                                    "OCSP response failed to validate", null, parameters.getCertPath(), parameters.getIndex());
+                            }
 
-                                ASN1Sequence s = responseData.getResponses();
+                            ResponseData responseData = ResponseData.getInstance(basicResp.getTbsResponseData());
 
-                                CertID certID = null;
-                                for (int i = 0; i != s.size(); i++)
+                            ASN1Sequence s = responseData.getResponses();
+
+                            CertID certID = null;
+                            for (int i = 0; i != s.size(); i++)
+                            {
+                                SingleResponse resp = SingleResponse.getInstance(s.getObjectAt(i));
+
+                                if (serialNumber.equals(resp.getCertID().getSerialNumber()))
                                 {
-                                    SingleResponse resp = SingleResponse.getInstance(s.getObjectAt(i));
-
-                                    if (serialNumber.equals(resp.getCertID().getSerialNumber()))
+                                    ASN1GeneralizedTime nextUp = resp.getNextUpdate();
+                                    if (nextUp != null && parameters.getValidDate().after(nextUp.getDate()))
                                     {
-                                        ASN1GeneralizedTime nextUp = resp.getNextUpdate();
-                                        if (nextUp != null && parameters.getValidDate().after(nextUp.getDate()))
-                                        {
-                                            throw new ExtCertPathValidatorException("OCSP response expired");
-                                        }
-                                        if (certID == null || !isEqualAlgId(certID.getHashAlgorithm(), resp.getCertID().getHashAlgorithm()))
-                                        {
-                                            org.bouncycastle.asn1.x509.Certificate issuer = extractCert();
+                                        throw new ExtCertPathValidatorException("OCSP response expired");
+                                    }
+                                    if (certID == null || !isEqualAlgId(certID.getHashAlgorithm(), resp.getCertID().getHashAlgorithm()))
+                                    {
+                                        org.bouncycastle.asn1.x509.Certificate issuer = extractCert();
 
-                                            certID = createCertID(resp.getCertID(), issuer, serialNumber);
-                                        }
-                                        if (certID.equals(resp.getCertID()))
+                                        certID = createCertID(resp.getCertID(), issuer, serialNumber);
+                                    }
+                                    if (certID.equals(resp.getCertID()))
+                                    {
+                                        if (resp.getCertStatus().getTagNo() == 0)
                                         {
-                                            if (resp.getCertStatus().getTagNo() == 0)
-                                            {
-                                                // we're good!
-                                                return;
-                                            }
-                                            if (resp.getCertStatus().getTagNo() == 1)
-                                            {
-                                                RevokedInfo info = RevokedInfo.getInstance(resp.getCertStatus().getStatus());
-                                                CRLReason reason = info.getRevocationReason();
-                                                throw new CertPathValidatorException(
-                                                    "certificate revoked, reason=(" + reason + "), date=" + info.getRevocationTime().getDate(),
-                                                    null, parameters.getCertPath(), parameters.getIndex());
-                                            }
+                                            // we're good!
+                                            return;
+                                        }
+                                        if (resp.getCertStatus().getTagNo() == 1)
+                                        {
+                                            RevokedInfo info = RevokedInfo.getInstance(resp.getCertStatus().getStatus());
+                                            CRLReason reason = info.getRevocationReason();
                                             throw new CertPathValidatorException(
-                                                "certificate revoked, details unknown",
+                                                "certificate revoked, reason=(" + reason + "), date=" + info.getRevocationTime().getDate(),
                                                 null, parameters.getCertPath(), parameters.getIndex());
                                         }
+                                        throw new CertPathValidatorException(
+                                            "certificate revoked, details unknown",
+                                            null, parameters.getCertPath(), parameters.getIndex());
                                     }
                                 }
                             }
+
+                            // Reaching here means no SingleResponse was bound to this certificate's
+                            // CertID (any full match returns or throws above). A signed-but-unrelated
+                            // stapled response - e.g. a 'good' status for a different serial from the
+                            // same CA - must not be treated as evidence that THIS certificate is good;
+                            // fail recoverably so CRL fallback can run, matching the network-fetch
+                            // path's OcspCache.isCertIDFoundAndCurrent enforcement.
+                            throw new RecoverableCertPathValidatorException(
+                                "no OCSP response found for certificate", null, parameters.getCertPath(), parameters.getIndex());
                         }
                         catch (CertPathValidatorException e)
                         {

@@ -5,6 +5,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.security.GeneralSecurityException;
+import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -24,14 +25,24 @@ import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
+import org.bouncycastle.internal.asn1.isara.IsaraObjectIdentifiers;
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.digests.SHA512Digest;
 import org.bouncycastle.crypto.digests.SHAKEDigest;
 import org.bouncycastle.pqc.jcajce.interfaces.StateAwareSignature;
 import org.bouncycastle.pqc.jcajce.interfaces.XMSSMTKey;
+import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
+import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
+import org.bouncycastle.pqc.asn1.XMSSMTKeyParams;
+import org.bouncycastle.pqc.crypto.util.PrivateKeyFactory;
+import org.bouncycastle.pqc.crypto.xmss.XMSSMTPrivateKeyParameters;
 import org.bouncycastle.pqc.jcajce.interfaces.XMSSMTPrivateKey;
 import org.bouncycastle.pqc.jcajce.provider.BouncyCastlePQCProvider;
 import org.bouncycastle.pqc.jcajce.spec.XMSSMTParameterSpec;
@@ -123,6 +134,38 @@ public class XMSSMTTest
         XMSSMTKey privKey2 = (XMSSMTKey)oIn.readObject();
 
         assertEquals(privKey, privKey2);
+    }
+
+    public void testRFC9802PublicKeyEncoding()
+        throws Exception
+    {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSSMT", "BCPQC");
+
+        kpg.initialize(new XMSSMTParameterSpec(20, 2, XMSSMTParameterSpec.SHA256), new SecureRandom());
+
+        KeyPair kp = kpg.generateKeyPair();
+
+        // RFC 9802: id-alg-xmssmt-hashsig, absent parameters, raw RFC 8391 key in the BIT STRING.
+        SubjectPublicKeyInfo keyInfo = SubjectPublicKeyInfo.getInstance(kp.getPublic().getEncoded());
+
+        assertEquals(IANAObjectIdentifiers.id_alg_xmssmt_hashsig, keyInfo.getAlgorithm().getAlgorithm());
+        assertNull(keyInfo.getAlgorithm().getParameters());
+
+        byte[] rawKey = keyInfo.getPublicKeyData().getOctets();
+
+        KeyFactory kFact = KeyFactory.getInstance("XMSSMT", "BCPQC");
+
+        PublicKey pubKey = kFact.generatePublic(new X509EncodedKeySpec(kp.getPublic().getEncoded()));
+
+        assertEquals(kp.getPublic(), pubKey);
+
+        // the legacy draft form - id_alg_xmssmt with the key wrapped in an OCTET STRING - must still decode.
+        SubjectPublicKeyInfo legacy = new SubjectPublicKeyInfo(
+            new AlgorithmIdentifier(IsaraObjectIdentifiers.id_alg_xmssmt), new DEROctetString(rawKey));
+
+        PublicKey legacyKey = kFact.generatePublic(new X509EncodedKeySpec(legacy.getEncoded()));
+
+        assertEquals(kp.getPublic(), legacyKey);
     }
 
     public void testPublicKeyRecovery()
@@ -392,6 +435,136 @@ public class XMSSMTTest
         assertTrue(sig.verify(s));
     }
 
+    public void testSP800208KeyGenAndRoundTrip()
+        throws Exception
+    {
+        String[] treeDigests = {
+            XMSSMTParameterSpec.SHA256_192, XMSSMTParameterSpec.SHAKE256_256, XMSSMTParameterSpec.SHAKE256_192};
+
+        for (int i = 0; i != treeDigests.length; i++)
+        {
+            String treeDigest = treeDigests[i];
+
+            KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSSMT", "BCPQC");
+            kpg.initialize(new XMSSMTParameterSpec(20, 2, treeDigest), new SecureRandom());
+            KeyPair kp = kpg.generateKeyPair();
+
+            // private and public halves share the RFC 9802 algorithm OID
+            assertEquals(treeDigest, IANAObjectIdentifiers.id_alg_xmssmt_hashsig,
+                SubjectPublicKeyInfo.getInstance(kp.getPublic().getEncoded()).getAlgorithm().getAlgorithm());
+            assertEquals(treeDigest, IANAObjectIdentifiers.id_alg_xmssmt_hashsig,
+                PrivateKeyInfo.getInstance(kp.getPrivate().getEncoded()).getPrivateKeyAlgorithm().getAlgorithm());
+
+            // getTreeDigest() reflects the specific SP 800-208 variant (n included)
+            assertEquals(treeDigest, ((XMSSMTKey)kp.getPublic()).getTreeDigest());
+            assertEquals(treeDigest, ((XMSSMTKey)kp.getPrivate()).getTreeDigest());
+
+            // KeyFactory round-trips both halves to equal keys
+            KeyFactory kFact = KeyFactory.getInstance("XMSSMT", "BCPQC");
+            PublicKey pubKey = kFact.generatePublic(new X509EncodedKeySpec(kp.getPublic().getEncoded()));
+            PrivateKey privKey = kFact.generatePrivate(new PKCS8EncodedKeySpec(kp.getPrivate().getEncoded()));
+            assertEquals(treeDigest, kp.getPublic(), pubKey);
+            assertEquals(treeDigest, kp.getPrivate(), privKey);
+
+            // the generated key signs and verifies
+            Signature sig = Signature.getInstance("XMSSMT", "BCPQC");
+            sig.initSign(kp.getPrivate());
+            sig.update(msg, 0, msg.length);
+            byte[] s = sig.sign();
+            sig.initVerify(kp.getPublic());
+            sig.update(msg, 0, msg.length);
+            assertTrue(treeDigest, sig.verify(s));
+        }
+    }
+
+    public void testSignerKeyDigestFamilyEnforcement()
+        throws Exception
+    {
+        KeyPairGenerator shaKpg = KeyPairGenerator.getInstance("XMSSMT", "BCPQC");
+        shaKpg.initialize(new XMSSMTParameterSpec(4, 2, XMSSMTParameterSpec.SHA256), new SecureRandom());
+        KeyPair shaKp = shaKpg.generateKeyPair();
+
+        KeyPairGenerator shakeKpg = KeyPairGenerator.getInstance("XMSSMT", "BCPQC");
+        shakeKpg.initialize(new XMSSMTParameterSpec(4, 2, XMSSMTParameterSpec.SHAKE256), new SecureRandom());
+        KeyPair shakeKp = shakeKpg.generateKeyPair();
+
+        // a SHA256 key handed to a SHAKE256-named signer is rejected on both init paths
+        Signature shakeSig = Signature.getInstance("XMSSMT-SHAKE256", "BCPQC");
+        try
+        {
+            shakeSig.initSign(shaKp.getPrivate());
+            fail("no exception on mismatched private key");
+        }
+        catch (InvalidKeyException e)
+        {
+            // expected
+        }
+        try
+        {
+            shakeSig.initVerify(shaKp.getPublic());
+            fail("no exception on mismatched public key");
+        }
+        catch (InvalidKeyException e)
+        {
+            // expected
+        }
+
+        // ...and the reverse (SHAKE256 key on a SHA256-named signer)
+        Signature shaSig = Signature.getInstance("XMSSMT-SHA256", "BCPQC");
+        try
+        {
+            shaSig.initSign(shakeKp.getPrivate());
+            fail("no exception on mismatched private key");
+        }
+        catch (InvalidKeyException e)
+        {
+            // expected
+        }
+
+        // a matching key is accepted and round-trips
+        shakeSig.initSign(shakeKp.getPrivate());
+        shakeSig.update(msg, 0, msg.length);
+        byte[] s = shakeSig.sign();
+        shakeSig.initVerify(shakeKp.getPublic());
+        shakeSig.update(msg, 0, msg.length);
+        assertTrue(shakeSig.verify(s));
+
+        // the generic "XMSSMT" signer is lenient - it accepts any key
+        Signature genericSig = Signature.getInstance("XMSSMT", "BCPQC");
+        genericSig.initSign(shaKp.getPrivate());
+        genericSig.update(msg, 0, msg.length);
+        byte[] gs = genericSig.sign();
+        genericSig.initVerify(shaKp.getPublic());
+        genericSig.update(msg, 0, msg.length);
+        assertTrue(genericSig.verify(gs));
+
+        // SP 800-208 SHAKE256/256 keys (tree digest id-shake256-len) are within the SHAKE256 family
+        KeyPairGenerator sp800Kpg = KeyPairGenerator.getInstance("XMSSMT", "BCPQC");
+        sp800Kpg.initialize(new XMSSMTParameterSpec(4, 2, XMSSMTParameterSpec.SHAKE256_256), new SecureRandom());
+        KeyPair sp800Kp = sp800Kpg.generateKeyPair();
+
+        Signature sp800Sig = Signature.getInstance("XMSSMT-SHAKE256", "BCPQC");
+        sp800Sig.initSign(sp800Kp.getPrivate());
+        sp800Sig.update(msg, 0, msg.length);
+        byte[] sp = sp800Sig.sign();
+        sp800Sig.initVerify(sp800Kp.getPublic());
+        sp800Sig.update(msg, 0, msg.length);
+        assertTrue(sp800Sig.verify(sp));
+
+        // and SHA-256/192 keys are within the SHA256 family
+        KeyPairGenerator sha192Kpg = KeyPairGenerator.getInstance("XMSSMT", "BCPQC");
+        sha192Kpg.initialize(new XMSSMTParameterSpec(4, 2, XMSSMTParameterSpec.SHA256_192), new SecureRandom());
+        KeyPair sha192Kp = sha192Kpg.generateKeyPair();
+
+        Signature sha192Sig = Signature.getInstance("XMSSMT-SHA256", "BCPQC");
+        sha192Sig.initSign(sha192Kp.getPrivate());
+        sha192Sig.update(msg, 0, msg.length);
+        byte[] sh = sha192Sig.sign();
+        sha192Sig.initVerify(sha192Kp.getPublic());
+        sha192Sig.update(msg, 0, msg.length);
+        assertTrue(sha192Sig.verify(sh));
+    }
+
     public void testKeyRebuild()
         throws Exception
     {
@@ -414,14 +587,27 @@ public class XMSSMTTest
 
         XMSSMTPrivateKey pKey = (XMSSMTPrivateKey)kp.getPrivate();
 
-        PrivateKeyInfo pKeyInfo = PrivateKeyInfo.getInstance(pKey.getEncoded());
-
         KeyFactory keyFactory = KeyFactory.getInstance("XMSSMT", "BCPQC");
 
-        ASN1Sequence seq = ASN1Sequence.getInstance(pKeyInfo.parsePrivateKey());
+        // Reconstruct the legacy (pre-1.85) PQCObjectIdentifiers.xmss_mt encoding of the key, then
+        // drop the BDS state. This exercises both the retained legacy read path - confirming keys
+        // written by older releases still decode - and the no-BDS-state rebuild, which is only
+        // reachable through the legacy form (the current default id-alg-xmssmt-hashsig encoding
+        // always carries the BDS state inline).
+        XMSSMTPrivateKeyParameters lwParams = (XMSSMTPrivateKeyParameters)PrivateKeyFactory.createKey(pKey.getEncoded());
+        byte[] raw = lwParams.getEncoded();                 // index || skSeed || skPRF || pubSeed || root || bds
+        int headerLen = (20 + 7) / 8 + 4 * 32;              // indexSize + 4 * n  (n = 32 for SHA-256)
+        byte[] bdsState = Arrays.copyOfRange(raw, headerLen, raw.length);
+        org.bouncycastle.pqc.asn1.XMSSMTPrivateKey legacyKey = new org.bouncycastle.pqc.asn1.XMSSMTPrivateKey(
+            lwParams.getIndex(), lwParams.getSecretKeySeed(), lwParams.getSecretKeyPRF(),
+            lwParams.getPublicSeed(), lwParams.getRoot(), bdsState);
+        AlgorithmIdentifier legacyAlg = new AlgorithmIdentifier(PQCObjectIdentifiers.xmss_mt,
+            new XMSSMTKeyParams(20, 4, new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256)));
+
+        ASN1Sequence seq = ASN1Sequence.getInstance(new PrivateKeyInfo(legacyAlg, legacyKey).parsePrivateKey());
 
         // create a new PrivateKeyInfo containing a key with no BDS state.
-        pKeyInfo = new PrivateKeyInfo(pKeyInfo.getPrivateKeyAlgorithm(),
+        PrivateKeyInfo pKeyInfo = new PrivateKeyInfo(legacyAlg,
             new DERSequence(new ASN1Encodable[]{seq.getObjectAt(0), seq.getObjectAt(1)}));
 
         XMSSMTPrivateKey privKey = (XMSSMTPrivateKey)keyFactory.generatePrivate(new PKCS8EncodedKeySpec(pKeyInfo.getEncoded()));
@@ -507,7 +693,7 @@ public class XMSSMTTest
         testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_mt_SHAKE128_512ph, BCObjectIdentifiers.xmss_mt_SHAKE128, "SHAKE128", new DoubleDigest(new SHAKEDigest(128)));
         testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_mt_SHA512ph, BCObjectIdentifiers.xmss_mt_SHA512, "SHA512", new SHA512Digest());
         testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_mt_SHAKE256ph, BCObjectIdentifiers.xmss_mt_SHAKE256, "SHAKE256", new SHAKEDigest(256));
-        testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_mt_SHAKE256_1024ph, BCObjectIdentifiers.xmss_mt_SHAKE256, "SHAKE128", new DoubleDigest(new SHAKEDigest(256)));
+        testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_mt_SHAKE256_1024ph, BCObjectIdentifiers.xmss_mt_SHAKE256, "SHAKE256", new DoubleDigest(new SHAKEDigest(256)));
     }
 
     public void testExhaustion()

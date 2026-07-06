@@ -3,8 +3,11 @@ package org.bouncycastle.asn1;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
+import org.bouncycastle.util.Integers;
 
 /**
  * Base class for BIT STRING objects
@@ -49,7 +52,7 @@ public abstract class ASN1BitString
             }
             catch (IOException e)
             {
-                throw new IllegalArgumentException("failed to construct BIT STRING from byte[]: " + e.getMessage());
+                throw Exceptions.illegalArgumentException("failed to construct BIT STRING from byte[]", e);
             }
         }
 
@@ -66,15 +69,18 @@ public abstract class ASN1BitString
         return (ASN1BitString)TYPE.getTagged(taggedObject, declaredExplicit);
     }
 
+    static final byte[] EMPTY_OCTETS_CONTENTS = new byte[]{ 0x00 };
+
     private static final char[]  table = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
 
     /**
      * @param bitString an int containing the BIT STRING
      * @return the correct number of pad bits for a bit string defined in
      * a 32 bit constant
+     * 
+     * @deprecated Will be removed
      */
-    static protected int getPadBits(
-        int bitString)
+    static protected int getPadBits(int bitString)
     {
         int val = 0;
         for (int i = 3; i >= 0; i--)
@@ -121,6 +127,8 @@ public abstract class ASN1BitString
      * @param bitString an int containing the BIT STRING
      * @return the correct number of bytes for a bit string defined in
      * a 32 bit constant
+     * 
+     * @deprecated Will be removed
      */
     static protected byte[] getBytes(int bitString)
     {
@@ -172,16 +180,46 @@ public abstract class ASN1BitString
         {
             throw new NullPointerException("'data' cannot be null");
         }
-        if (data.length == 0 && padBits != 0)
-        {
-            throw new IllegalArgumentException("zero length data with non-zero pad bits");
-        }
         if (padBits > 7 || padBits < 0)
         {
             throw new IllegalArgumentException("pad bits cannot be greater than 7 or less than 0");
         }
+        if (data.length == 0 && padBits != 0)
+        {
+            throw new IllegalArgumentException("zero length data with non-zero pad bits");
+        }
 
         this.contents = Arrays.prepend(data, (byte)padBits);
+    }
+
+    ASN1BitString(int namedBits)
+    {
+        if (namedBits == 0)
+        {
+            this.contents = EMPTY_OCTETS_CONTENTS;
+            return;
+        }
+
+        int bits = Integers.bitLength(namedBits);
+        int bytes = (bits + 7) / 8;
+//        assert 0 < bytes && bytes <= 4;
+
+        byte[] data = new byte[1 + bytes];
+
+        for (int i = 1; i < bytes; i++)
+        {
+            data[i] = (byte)namedBits;
+            namedBits >>>= 8;
+        }
+
+//        assert (namedBits & 0xFF) != 0;
+        data[bytes] = (byte)namedBits;
+
+        int padBits = Integers.numberOfTrailingZeros(namedBits);
+//        assert padBits < 8;
+        data[0] = (byte)padBits;
+
+        this.contents = data;
     }
 
     ASN1BitString(byte[] contents, boolean check)
@@ -212,6 +250,55 @@ public abstract class ASN1BitString
         }
 
         this.contents = contents;
+    }
+
+    /**
+     * Build the contents octets for a BIT STRING holding the DER encoding of 'obj' - the
+     * pad-count octet (zero) followed by the encoding - in a single allocation.
+     */
+    static byte[] derEncodedContents(ASN1Encodable obj) throws IOException
+    {
+        ASN1Primitive primitive = obj.toASN1Primitive().toDERObject();
+
+        byte[] contents = new byte[1 + primitive.encodedLength(true)];
+
+        ContentsOutputStream cOut = new ContentsOutputStream(contents, 1);
+        primitive.encodeTo(cOut, ASN1Encoding.DER);
+        if (cOut.getPosition() != contents.length)
+        {
+            throw new IllegalStateException("encoded length did not match actual encoding");
+        }
+
+        return contents;
+    }
+
+    private static final class ContentsOutputStream
+        extends OutputStream
+    {
+        private final byte[] buf;
+        private int pos;
+
+        ContentsOutputStream(byte[] buf, int pos)
+        {
+            this.buf = buf;
+            this.pos = pos;
+        }
+
+        public void write(int b)
+        {
+            buf[pos++] = (byte)b;
+        }
+
+        public void write(byte[] b, int off, int len)
+        {
+            System.arraycopy(b, off, buf, pos, len);
+            pos += len;
+        }
+
+        int getPosition()
+        {
+            return pos;
+        }
     }
 
     public InputStream getBitStream() throws IOException
@@ -249,7 +336,7 @@ public abstract class ASN1BitString
         }
         catch (IOException e)
         {
-            throw new ASN1ParsingException("Internal error encoding BitString: " + e.getMessage(), e);
+            throw new ASN1ParsingException("Internal error encoding BitString", e);
         }
 
         StringBuilder buf = new StringBuilder(1 + string.length * 2);
@@ -297,6 +384,11 @@ public abstract class ASN1BitString
         if (contents[0] != 0)
         {
             throw new IllegalStateException("attempt to get non-octet aligned data from BIT STRING");
+        }
+
+        if (contents.length == 1)
+        {
+            return ASN1OctetString.EMPTY_OCTETS;
         }
 
         return Arrays.copyOfRange(contents, 1, contents.length);

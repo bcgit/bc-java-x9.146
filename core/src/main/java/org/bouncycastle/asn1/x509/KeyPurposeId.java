@@ -23,7 +23,7 @@ import org.bouncycastle.asn1.ASN1Primitive;
 public class KeyPurposeId
     extends ASN1Object
 {
-    private static final ASN1ObjectIdentifier id_kp = new ASN1ObjectIdentifier("1.3.6.1.5.5.7.3");
+    private static final ASN1ObjectIdentifier id_kp = X509ObjectIdentifiers.id_pkix.branch("3");
 
     /**
      * { 2 5 29 37 0 }
@@ -128,6 +128,49 @@ public class KeyPurposeId
      *          security(5) mechanisms(5) pkix(7) kp(3) 32 }
      */
     public static final KeyPurposeId id_kp_cmKGA = new KeyPurposeId(id_kp.branch("32"));
+
+    /**
+     * RFC 9336 sec. 3.1 - signing documents (e.g. PDF, XML, JSON) for human consumption.
+     * <p>
+     * id-kp-documentSigning OBJECT IDENTIFIER ::= { id-kp 36 }
+     */
+    public static final KeyPurposeId id_kp_documentSigning = new KeyPurposeId(id_kp.branch("36"));
+
+    /**
+     * RFC 9734 sec. 3 - proving the identity of an Instant Messaging (IM) client,
+     * whose IM URI (RFC 3860) or XMPP URI (RFC 6121) appears in the subjectAltName.
+     * <p>
+     * id-kp-imUri OBJECT IDENTIFIER ::= { id-kp 40 }
+     */
+    public static final KeyPurposeId id_kp_imUri = new KeyPurposeId(id_kp.branch("40"));
+
+    /**
+     * RFC 9809 sec. 3 - signing general-purpose configuration files.
+     * <p>
+     * id-kp-configSigning OBJECT IDENTIFIER ::= { id-kp 41 }
+     */
+    public static final KeyPurposeId id_kp_configSigning = new KeyPurposeId(id_kp.branch("41"));
+
+    /**
+     * RFC 9809 sec. 3 - signing trust anchor configuration files.
+     * <p>
+     * id-kp-trustAnchorConfigSigning OBJECT IDENTIFIER ::= { id-kp 42 }
+     */
+    public static final KeyPurposeId id_kp_trustAnchorConfigSigning = new KeyPurposeId(id_kp.branch("42"));
+
+    /**
+     * RFC 9809 sec. 3 - signing software or firmware update packages.
+     * <p>
+     * id-kp-updatePackageSigning OBJECT IDENTIFIER ::= { id-kp 43 }
+     */
+    public static final KeyPurposeId id_kp_updatePackageSigning = new KeyPurposeId(id_kp.branch("43"));
+
+    /**
+     * RFC 9809 sec. 3 - authenticating communication peers for safety-critical communication.
+     * <p>
+     * id-kp-safetyCommunication OBJECT IDENTIFIER ::= { id-kp 44 }
+     */
+    public static final KeyPurposeId id_kp_safetyCommunication = new KeyPurposeId(id_kp.branch("44"));
 
 
 

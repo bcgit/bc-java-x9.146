@@ -42,6 +42,8 @@ import org.bouncycastle.crypto.params.ParametersWithIV;
 import org.bouncycastle.crypto.params.RC2Parameters;
 import org.bouncycastle.crypto.params.RC5Parameters;
 import org.bouncycastle.jcajce.provider.symmetric.util.BCPBEKey;
+import org.bouncycastle.jcajce.provider.util.SecurityExceptions;
+import org.bouncycastle.util.Exceptions;
 import org.bouncycastle.util.Strings;
 
 public class BrokenJCEBlockCipher
@@ -371,7 +373,7 @@ public class BrokenJCEBlockCipher
         }
         catch (InvalidAlgorithmParameterException e)
         {
-            throw new IllegalArgumentException(e.getMessage());
+            throw Exceptions.illegalArgumentException(e.getMessage(), e);
         }
     }
 
@@ -425,11 +427,11 @@ public class BrokenJCEBlockCipher
         }
         catch (DataLengthException e)
         {
-            throw new IllegalBlockSizeException(e.getMessage());
+            throw SecurityExceptions.illegalBlockSizeException(e.getMessage(), e);
         }
         catch (InvalidCipherTextException e)
         {
-            throw new BadPaddingException(e.getMessage());
+            throw SecurityExceptions.badPaddingException(e.getMessage(), e);
         }
 
         byte[]  out = new byte[len];
@@ -460,11 +462,11 @@ public class BrokenJCEBlockCipher
         }
         catch (DataLengthException e)
         {
-            throw new IllegalBlockSizeException(e.getMessage());
+            throw SecurityExceptions.illegalBlockSizeException(e.getMessage(), e);
         }
         catch (InvalidCipherTextException e)
         {
-            throw new BadPaddingException(e.getMessage());
+            throw SecurityExceptions.badPaddingException(e.getMessage(), e);
         }
     }
 
@@ -484,7 +486,7 @@ public class BrokenJCEBlockCipher
         }
         catch (BadPaddingException e)
         {
-            throw new IllegalBlockSizeException(e.getMessage());
+            throw SecurityExceptions.illegalBlockSizeException(e.getMessage(), e);
         }
     }
 

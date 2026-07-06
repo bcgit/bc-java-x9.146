@@ -10,12 +10,21 @@ public class SNTRUPrimeKEMExtractor
 
     public SNTRUPrimeKEMExtractor(SNTRUPrimePrivateKeyParameters privateKey)
     {
+        if (privateKey == null)
+        {
+            throw new NullPointerException("'privateKey' cannot be null");
+        }
+
         this.privateKey = privateKey;
     }
 
     @Override
     public byte[] extractSecret(byte[] encapsulation)
     {
+        if (encapsulation.length != getEncapsulationLength())
+        {
+            throw new IllegalArgumentException("encapsulation wrong length");
+        }
         SNTRUPrimeParameters params = privateKey.getParameters();
 
         int p = params.getP();
@@ -120,7 +129,7 @@ public class SNTRUPrimeKEMExtractor
          * Match Ciphertext ct with input encapsulation
          * Update encR accordingly
          */
-        int mask = (Arrays.areEqual(encapsulation, ct)) ? 0 : -1;
+        int mask = (Arrays.constantTimeAreEqual(encapsulation, ct)) ? 0 : -1;
 
         /*
          * Update encR with Ciphertext diff mask

@@ -2,6 +2,7 @@ package org.bouncycastle.crypto.test;
 
 import java.security.SecureRandom;
 
+import org.bouncycastle.crypto.InvalidCipherTextException;
 import org.bouncycastle.crypto.engines.DSTU7624Engine;
 import org.bouncycastle.crypto.engines.DSTU7624WrapEngine;
 import org.bouncycastle.crypto.macs.DSTU7624Mac;
@@ -97,6 +98,75 @@ public class DSTU7624Test
         XTSModeTests();
         GCMModeTests();
         testOverlapping();
+        kccmKgcmNoUnverifiedPlaintextOnFailure();
+    }
+
+    private void kccmKgcmNoUnverifiedPlaintextOnFailure()
+        throws Exception
+    {
+        byte[] key = Hex.decode("000102030405060708090A0B0C0D0E0F");
+        byte[] iv = Hex.decode("101112131415161718191A1B1C1D1E1F");
+        byte[] plaintext = Hex.decode("303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F");
+
+        // KCCM: plaintext is recovered into the output before the MAC is checked, so a tag failure
+        // must not leave it there.
+        {
+            AEADParameters params = new AEADParameters(new KeyParameter(key), 128, iv);
+            KCCMBlockCipher ccm = new KCCMBlockCipher(new DSTU7624Engine(128));
+            ccm.init(true, params);
+            byte[] ct = new byte[ccm.getOutputSize(plaintext.length)];
+            ccm.doFinal(ct, ccm.processBytes(plaintext, 0, plaintext.length, ct, 0));
+
+            ct[ct.length - 1] ^= 0x01;  // corrupt the (masked) MAC
+
+            ccm.init(false, params);
+            byte[] out = new byte[ct.length];
+            Arrays.fill(out, (byte)0x55);
+            try
+            {
+                ccm.doFinal(out, ccm.processBytes(ct, 0, ct.length, out, 0));
+                fail("tampered KCCM ciphertext must not verify");
+            }
+            catch (InvalidCipherTextException e)
+            {
+                checkNoUnverifiedPlaintext("KCCM", out, plaintext.length);
+            }
+        }
+
+        // KGCM
+        {
+            AEADParameters params = new AEADParameters(new KeyParameter(key), 128, iv);
+            KGCMBlockCipher gcm = new KGCMBlockCipher(new DSTU7624Engine(128));
+            gcm.init(true, params);
+            byte[] ct = new byte[gcm.getOutputSize(plaintext.length)];
+            gcm.doFinal(ct, gcm.processBytes(plaintext, 0, plaintext.length, ct, 0));
+
+            ct[ct.length - 1] ^= 0x01;  // corrupt the tag
+
+            gcm.init(false, params);
+            byte[] out = new byte[ct.length];
+            Arrays.fill(out, (byte)0x55);
+            try
+            {
+                gcm.doFinal(out, gcm.processBytes(ct, 0, ct.length, out, 0));
+                fail("tampered KGCM ciphertext must not verify");
+            }
+            catch (InvalidCipherTextException e)
+            {
+                checkNoUnverifiedPlaintext("KGCM", out, plaintext.length);
+            }
+        }
+    }
+
+    private void checkNoUnverifiedPlaintext(String name, byte[] out, int plaintextLen)
+    {
+        for (int i = 0; i != plaintextLen; i++)
+        {
+            if (out[i] != (byte)0x55)
+            {
+                fail(name + " left unverified plaintext in the output buffer on tag failure");
+            }
+        }
     }
 
     public static void main(
@@ -366,10 +436,10 @@ public class DSTU7624Test
         byte[] mac;
         byte[] encrypted = new byte[expectedEncrypted.length];
 
-        byte[] decrypted = new byte[encrypted.length];
-        byte[] expectedDecrypted = new byte[input.length + expectedMac.length];
-        System.arraycopy(input, 0, expectedDecrypted, 0, input.length);
-        System.arraycopy(expectedMac, 0, expectedDecrypted, input.length, expectedMac.length);
+        // decryption no longer appends the MAC to the recovered plaintext; the output is
+        // the plaintext only and the MAC is available via getMac() (standard AEAD contract).
+        byte[] decrypted = new byte[input.length];
+        byte[] expectedDecrypted = Arrays.clone(input);
         int len;
 
 
@@ -429,10 +499,8 @@ public class DSTU7624Test
         mac = new byte[expectedMac.length];
         encrypted = new byte[expectedEncrypted.length];
 
-        decrypted = new byte[encrypted.length];
-        expectedDecrypted = new byte[input.length + expectedMac.length];
-        System.arraycopy(input, 0, expectedDecrypted, 0, input.length);
-        System.arraycopy(expectedMac, 0, expectedDecrypted, input.length, expectedMac.length);
+        decrypted = new byte[input.length];
+        expectedDecrypted = Arrays.clone(input);
 
 
         param = new AEADParameters(new KeyParameter(key), 128, iv);
@@ -490,10 +558,8 @@ public class DSTU7624Test
         mac = new byte[expectedMac.length];
         encrypted = new byte[expectedEncrypted.length];
 
-        decrypted = new byte[encrypted.length];
-        expectedDecrypted = new byte[input.length + expectedMac.length];
-        System.arraycopy(input, 0, expectedDecrypted, 0, input.length);
-        System.arraycopy(expectedMac, 0, expectedDecrypted, input.length, expectedMac.length);
+        decrypted = new byte[input.length];
+        expectedDecrypted = Arrays.clone(input);
 
 
         param = new AEADParameters(new KeyParameter(key), 256, iv);
@@ -551,10 +617,8 @@ public class DSTU7624Test
         mac = new byte[expectedMac.length];
         encrypted = new byte[expectedEncrypted.length];
 
-        decrypted = new byte[encrypted.length];
-        expectedDecrypted = new byte[input.length + expectedMac.length];
-        System.arraycopy(input, 0, expectedDecrypted, 0, input.length);
-        System.arraycopy(expectedMac, 0, expectedDecrypted, input.length, expectedMac.length);
+        decrypted = new byte[input.length];
+        expectedDecrypted = Arrays.clone(input);
 
 
         param = new AEADParameters(new KeyParameter(key), 512, iv);
@@ -601,6 +665,177 @@ public class DSTU7624Test
         }
 
         doFinalTest(new KCCMBlockCipher(new DSTU7624Engine(512), 8), key, iv, authText, input, expectedEncrypted);
+
+        CCMModePartialBlockTests();
+
+        CCMModeLongMessageKeystreamTest();
+        CCMModeNonceBindingTest();
+        KCCMNonceReuseTests();
+    }
+
+    /*
+     * Regression test for the KCCM gamma-counter carry bug: the per-block counter advance must
+     * propagate carry across the whole block, otherwise only the low byte of the counter changes
+     * and the keystream block E(s) repeats every 256 blocks, encrypting a long message with a
+     * two-time pad. Encrypting 257 identical (zero) plaintext blocks makes ciphertext block i
+     * equal block i+256 under the buggy no-carry code; with carry they differ. See github #287.
+     */
+    private void CCMModeLongMessageKeystreamTest()
+        throws Exception
+    {
+        byte[] key = Hex.decode("000102030405060708090A0B0C0D0E0F");
+        byte[] iv = Hex.decode("101112131415161718191A1B1C1D1E1F");
+
+        KCCMBlockCipher ccm = new KCCMBlockCipher(new DSTU7624Engine(128));
+        int blockSize = ccm.getUnderlyingCipher().getBlockSize();
+
+        // 257 blocks of zero plaintext: with zero input each ciphertext block equals its keystream
+        // block, so a repeating keystream shows up directly as repeated ciphertext blocks.
+        byte[] input = new byte[257 * blockSize];
+
+        AEADParameters param = new AEADParameters(new KeyParameter(key), 128, iv);
+        ccm.init(true, param);
+        byte[] encrypted = new byte[ccm.getOutputSize(input.length)];
+        int len = ccm.processBytes(input, 0, input.length, encrypted, 0);
+        len += ccm.doFinal(encrypted, len);
+
+        byte[] block0 = Arrays.copyOfRange(encrypted, 0, blockSize);
+        byte[] block256 = Arrays.copyOfRange(encrypted, 256 * blockSize, 257 * blockSize);
+        if (Arrays.areEqual(block0, block256))
+        {
+            fail("Failed CCM long-message keystream test - keystream block repeats every 256 blocks (two-time pad)");
+        }
+
+        // sanity: encrypt/decrypt still round-trips over the long message
+        ccm.init(false, param);
+        byte[] decrypted = new byte[ccm.getOutputSize(len)];
+        int decLen = ccm.processBytes(encrypted, 0, len, decrypted, 0);
+        decLen += ccm.doFinal(decrypted, decLen);
+
+        if (decLen != input.length || !Arrays.areEqual(input, Arrays.copyOfRange(decrypted, 0, input.length)))
+        {
+            fail("Failed CCM long-message round-trip");
+        }
+    }
+
+    /*
+     * Regression test ensuring the G1 block is processed unconditionally; it had been previously skipped when no
+     * associated data was present. The G1 block folds the nonce, data length and MAC-size flag into the MAC. If it
+     * is absent, the underlying MAC is independent of the nonce, so a chosen-plaintext attacker could forge a valid
+     * ciphertext+tag for an un-queried nonce by cancelling the nonce-dependent data/tag keystreams across three
+     * empty-AAD encryption queries. This test assembles such a forgery and requires that the decryptor rejects it.
+     * (A plain wrong-nonce decryption does NOT catch this specific bug, since the tag is masked by a nonce-
+     * dependent keystream; so it fails even when the MAC ignores it.)
+     */
+    private void CCMModeNonceBindingTest() throws Exception
+    {
+        byte[] key = Hex.decode("000102030405060708090A0B0C0D0E0F");
+        byte[] nonce1 = Hex.decode("101112131415161718191A1B1C1D1E1F");
+        byte[] nonce2 = Hex.decode("202122232425262728292A2B2C2D2E2F");
+        byte[] plaintext = Hex.decode("303132333435363738393A3B3C3D3E3F");
+        int blockSize = plaintext.length;
+
+        // Three empty-AAD encryption-oracle queries used to build a cross-nonce forgery.
+        byte[] z1 = CCMModeNoAADEncrypt(key, nonce1, new byte[blockSize]); // enc(0, N1)
+        byte[] z2 = CCMModeNoAADEncrypt(key, nonce2, new byte[blockSize]); // enc(0, N2)
+        byte[] zp = CCMModeNoAADEncrypt(key, nonce2, plaintext);           // enc(P, N2)
+
+        // C_forge = P xor C0' (decrypts to P under N1); T_forge = TP xor T0 xor T0' cancels the
+        // nonce-2 keystream and the E_K(0) terms, which only validates if the MAC ignores the nonce.
+        byte[] forged = new byte[2 * blockSize];
+        for (int i = 0; i < blockSize; i++)
+        {
+            forged[i] = (byte)(plaintext[i] ^ z1[i]);
+            forged[blockSize + i] = (byte)(zp[blockSize + i] ^ z2[blockSize + i] ^ z1[blockSize + i]);
+        }
+
+        KCCMBlockCipher ccm = new KCCMBlockCipher(new DSTU7624Engine(128));
+        ccm.init(false, new AEADParameters(new KeyParameter(key), 128, nonce1));
+        byte[] decrypted = new byte[ccm.getOutputSize(forged.length)];
+        try
+        {
+            int len = ccm.processBytes(forged, 0, forged.length, decrypted, 0);
+            ccm.doFinal(decrypted, len);
+            fail("Failed CCM nonce-binding test - cross-nonce forgery accepted (MAC not bound to nonce)");
+        }
+        catch (InvalidCipherTextException e)
+        {
+            // expected: the G1 nonce binding makes the forged tag invalid
+        }
+    }
+
+    private static byte[] CCMModeNoAADEncrypt(byte[] key, byte[] nonce, byte[] plaintext) throws Exception
+    {
+        KCCMBlockCipher ccm = new KCCMBlockCipher(new DSTU7624Engine(128));
+        ccm.init(true, new AEADParameters(new KeyParameter(key), 128, nonce));
+        byte[] output = new byte[ccm.getOutputSize(plaintext.length)];
+        int len = ccm.processBytes(plaintext, 0, plaintext.length, output, 0);
+        len += ccm.doFinal(output, len);
+        return output;
+    }
+
+    /*
+     * Round-trip (self-consistency) tests for non-block-aligned KCCM input. DSTU 7624:2014 does
+     * not publish a partial-block CCM test vector, so these confirm only that encrypt-then-decrypt
+     * recovers the plaintext and that tampering is detected -- the produced bytes are NOT verified
+     * against an independent conformant implementation. See github #287 and the interop caveat on
+     * KCCMBlockCipher.
+     */
+    private void CCMModePartialBlockTests()
+        throws Exception
+    {
+        byte[] key = Hex.decode("000102030405060708090A0B0C0D0E0F");
+        byte[] iv = Hex.decode("101112131415161718191A1B1C1D1E1F");
+        byte[] authText = Hex.decode("202122232425262728292A2B2C2D2E2F");
+
+        // 20 bytes against a 16-byte block: one full block plus a 4-byte partial block
+        byte[] input = Hex.decode("303132333435363738393A3B3C3D3E3F40414243");
+
+        AEADParameters param = new AEADParameters(new KeyParameter(key), 128, iv);
+        KCCMBlockCipher ccm = new KCCMBlockCipher(new DSTU7624Engine(128));
+
+        // encrypt
+        ccm.init(true, param);
+        ccm.processAADBytes(authText, 0, authText.length);
+        byte[] encrypted = new byte[ccm.getOutputSize(input.length)];
+        int len = ccm.processBytes(input, 0, input.length, encrypted, 0);
+        len += ccm.doFinal(encrypted, len);
+
+        if (len != input.length + ccm.getUnderlyingCipher().getBlockSize())
+        {
+            fail("Failed CCM partial-block ciphertext length - got " + len);
+        }
+
+        // decrypt and confirm round-trip
+        ccm.init(false, param);
+        ccm.processAADBytes(authText, 0, authText.length);
+        byte[] decrypted = new byte[ccm.getOutputSize(len)];
+        int decLen = ccm.processBytes(encrypted, 0, len, decrypted, 0);
+        decLen += ccm.doFinal(decrypted, decLen);
+
+        if (decLen != input.length || !Arrays.areEqual(input, Arrays.copyOfRange(decrypted, 0, input.length)))
+        {
+            fail("Failed CCM partial-block round-trip - expected "
+                + Hex.toHexString(input)
+                + " got " + Hex.toHexString(Arrays.copyOfRange(decrypted, 0, decLen)));
+        }
+
+        // tampering with the partial ciphertext must fail the MAC check
+        encrypted[input.length - 1] ^= 0x01;
+        ccm.init(false, param);
+        ccm.processAADBytes(authText, 0, authText.length);
+        byte[] tampered = new byte[ccm.getOutputSize(len)];
+        try
+        {
+            int l = ccm.processBytes(encrypted, 0, len, tampered, 0);
+            ccm.doFinal(tampered, l);
+
+            fail("Failed CCM partial-block tamper detection - no exception thrown");
+        }
+        catch (InvalidCipherTextException e)
+        {
+            // expected
+        }
     }
 
     private void XTSModeTests()
@@ -1423,6 +1658,156 @@ public class DSTU7624Test
                 + Hex.toHexString(expectedMac)
                 + " got mac: " + Hex.toHexString(mac));
         }
+
+        KGMacPartialBlockTests();
+        KGCMNonceReuseTests();
+    }
+
+    /*
+     * Regression test for the KGMac (KGCM/GMAC) partial-block path. A message whose length is not a
+     * multiple of the block size used to be authenticated by reading the trailing partial block out
+     * of the backing buffer, whose bytes past the message length are not zeroed on reset(); the MAC
+     * therefore depended on the instance's history. After zero-padding the trailing block it must be
+     * deterministic regardless of what the instance processed previously. DSTU 7624:2014 publishes no
+     * partial-block GMAC vector, so this is a self-consistency check only -- see github #287 and the
+     * interop caveat on KGCMBlockCipher.
+     */
+    private void KGMacPartialBlockTests()
+        throws Exception
+    {
+        byte[] key = Hex.decode("000102030405060708090A0B0C0D0E0F");
+        byte[] iv = Hex.decode("101112131415161718191A1B1C1D1E1F");
+        ParametersWithIV param = new ParametersWithIV(new KeyParameter(key), iv);
+
+        // 20 bytes against a 16-byte block: one full block plus a 4-byte partial block
+        byte[] message = Hex.decode("303132333435363738393A3B3C3D3E3F40414243");
+
+        // a fresh instance that only ever sees the partial message
+        KGMac fresh = new KGMac(new KGCMBlockCipher(new DSTU7624Engine(128)));
+        fresh.init(param);
+        fresh.update(message, 0, message.length);
+        byte[] freshMac = new byte[fresh.getMacSize()];
+        fresh.doFinal(freshMac, 0);
+
+        // a reused instance: process a longer message, reset, then the same partial message
+        KGMac reused = new KGMac(new KGCMBlockCipher(new DSTU7624Engine(128)));
+        reused.init(param);
+        byte[] filler = new byte[48];
+        Arrays.fill(filler, (byte)0xFF);
+        reused.update(filler, 0, filler.length);
+        byte[] discard = new byte[reused.getMacSize()];
+        reused.doFinal(discard, 0);
+        reused.reset();
+        reused.update(message, 0, message.length);
+        byte[] reusedMac = new byte[reused.getMacSize()];
+        reused.doFinal(reusedMac, 0);
+
+        if (!Arrays.areEqual(freshMac, reusedMac))
+        {
+            fail("Failed KGMac partial-block determinism - fresh "
+                + Hex.toHexString(freshMac)
+                + " but reused " + Hex.toHexString(reusedMac));
+        }
+    }
+
+    /*
+     * Re-initialising for encryption with the same key and nonce is rejected (a repeated key+nonce
+     * is catastrophic for any GCM-family mode), matching GCMBlockCipher. reset()-based reuse,
+     * a fresh nonce, and re-init for decryption are all still allowed.
+     */
+    private void KGCMNonceReuseTests()
+        throws Exception
+    {
+        byte[] key = Hex.decode("000102030405060708090A0B0C0D0E0F");
+        byte[] nonce = Hex.decode("101112131415161718191A1B1C1D1E1F");
+        byte[] nonce2 = Hex.decode("202122232425262728292A2B2C2D2E2F");
+
+        KGCMBlockCipher c = new KGCMBlockCipher(new DSTU7624Engine(128));
+        c.init(true, new AEADParameters(new KeyParameter(key), 128, nonce));
+        kgcmEncryptBlock(c);
+
+        // reset()-based reuse must still work (it does not re-init)
+        c.reset();
+        kgcmEncryptBlock(c);
+
+        // re-init for encryption with the same key+nonce must be rejected
+        try
+        {
+            c.init(true, new AEADParameters(new KeyParameter(key), 128, nonce));
+            fail("KGCM nonce reuse not detected on re-init for encryption");
+        }
+        catch (IllegalArgumentException e)
+        {
+            isTrue("wrong KGCM nonce-reuse message: " + e.getMessage(),
+                "cannot reuse nonce for KGCM encryption".equals(e.getMessage()));
+        }
+
+        // a different nonce is fine
+        c.init(true, new AEADParameters(new KeyParameter(key), 128, nonce2));
+
+        // re-init for decryption with the same key+nonce is allowed (the guard is encrypt-only)
+        KGCMBlockCipher d = new KGCMBlockCipher(new DSTU7624Engine(128));
+        d.init(true, new AEADParameters(new KeyParameter(key), 128, nonce));
+        d.init(false, new AEADParameters(new KeyParameter(key), 128, nonce));
+    }
+
+    private void kgcmEncryptBlock(KGCMBlockCipher cipher)
+        throws Exception
+    {
+        byte[] in = new byte[16];
+        byte[] out = new byte[cipher.getOutputSize(in.length)];
+        int len = cipher.processBytes(in, 0, in.length, out, 0);
+        cipher.doFinal(out, len);
+    }
+
+    /*
+     * Re-initialising for encryption with the same key and nonce is rejected (a repeated key+nonce
+     * is catastrophic for the CCM construction), matching GCMBlockCipher / KGCMBlockCipher.
+     * reset()-based reuse, a fresh nonce, and re-init for decryption are all still allowed.
+     */
+    private void KCCMNonceReuseTests()
+        throws Exception
+    {
+        byte[] key = Hex.decode("000102030405060708090A0B0C0D0E0F");
+        byte[] nonce = Hex.decode("101112131415161718191A1B1C1D1E1F");
+        byte[] nonce2 = Hex.decode("202122232425262728292A2B2C2D2E2F");
+
+        KCCMBlockCipher c = new KCCMBlockCipher(new DSTU7624Engine(128));
+        c.init(true, new AEADParameters(new KeyParameter(key), 128, nonce));
+        kccmEncryptBlock(c);
+
+        // reset()-based reuse must still work (it does not re-init)
+        c.reset();
+        kccmEncryptBlock(c);
+
+        // re-init for encryption with the same key+nonce must be rejected
+        try
+        {
+            c.init(true, new AEADParameters(new KeyParameter(key), 128, nonce));
+            fail("KCCM nonce reuse not detected on re-init for encryption");
+        }
+        catch (IllegalArgumentException e)
+        {
+            isTrue("wrong KCCM nonce-reuse message: " + e.getMessage(),
+                "cannot reuse nonce for KCCM encryption".equals(e.getMessage()));
+        }
+
+        // a different nonce is fine
+        c.init(true, new AEADParameters(new KeyParameter(key), 128, nonce2));
+
+        // re-init for decryption with the same key+nonce is allowed (the guard is encrypt-only)
+        KCCMBlockCipher d = new KCCMBlockCipher(new DSTU7624Engine(128));
+        d.init(true, new AEADParameters(new KeyParameter(key), 128, nonce));
+        d.init(false, new AEADParameters(new KeyParameter(key), 128, nonce));
+    }
+
+    private void kccmEncryptBlock(KCCMBlockCipher cipher)
+        throws Exception
+    {
+        byte[] in = new byte[16];
+        byte[] out = new byte[cipher.getOutputSize(in.length)];
+        int len = cipher.processBytes(in, 0, in.length, out, 0);
+        cipher.doFinal(out, len);
     }
 
     private void doFinalTest(AEADBlockCipher cipher, byte[] key, byte[] iv, byte[] authText, byte[] input, byte[] expected)

@@ -10,6 +10,7 @@ import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
 
 public class IvAlgorithmParameters
     extends BaseAlgorithmParameters
@@ -70,7 +71,7 @@ public class IvAlgorithmParameters
         //
         // check that we don't have a DER encoded octet string
         //
-        if ((params.length % 8) != 0
+        if (params.length >= 2 && (params.length % 8) != 0
             && params[0] == 0x04 && params[1] == params.length - 2)
         {
             ASN1OctetString oct = (ASN1OctetString)ASN1Primitive.fromByteArray(params);
@@ -96,7 +97,7 @@ public class IvAlgorithmParameters
             }
             catch (Exception e)
             {
-                throw new IOException("Exception decoding: " + e);
+                throw Exceptions.ioException("Exception decoding: " + e, e);
             }
 
             return;

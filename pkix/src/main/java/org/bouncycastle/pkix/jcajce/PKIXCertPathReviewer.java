@@ -37,7 +37,6 @@ import java.util.Vector;
 
 import javax.security.auth.x500.X500Principal;
 
-import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Enumerated;
 import org.bouncycastle.asn1.ASN1IA5String;
@@ -66,6 +65,7 @@ import org.bouncycastle.asn1.x509.PolicyInformation;
 import org.bouncycastle.asn1.x509.qualified.Iso4217CurrencyCode;
 import org.bouncycastle.asn1.x509.qualified.MonetaryValue;
 import org.bouncycastle.asn1.x509.qualified.QCStatement;
+import org.bouncycastle.asn1.x509.qualified.QcType;
 import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
 import org.bouncycastle.pkix.PKIXNameConstraintValidator;
 import org.bouncycastle.pkix.PKIXNameConstraintValidatorException;
@@ -74,8 +74,10 @@ import org.bouncycastle.pkix.util.LocaleString;
 import org.bouncycastle.pkix.util.filter.TrustedInput;
 import org.bouncycastle.pkix.util.filter.UntrustedInput;
 import org.bouncycastle.pkix.util.filter.UntrustedUrlInput;
+import org.bouncycastle.util.Exceptions;
 import org.bouncycastle.util.Integers;
 import org.bouncycastle.util.Objects;
+import org.bouncycastle.util.Properties;
 
 /**
  * PKIXCertPathReviewer<br>
@@ -169,7 +171,7 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
             }
             catch (GeneralSecurityException e)
             {
-                throw new IllegalStateException("unable to rebuild certpath");
+                throw Exceptions.illegalStateException("unable to rebuild certpath", e);
             }
             this.certs = certs;
         }
@@ -431,6 +433,22 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
         
         // (b)  and (c)
         PKIXNameConstraintValidator nameConstraintValidator = new PKIXNameConstraintValidator();
+
+        // RFC 5280 sec. 4.2.1.10: the name constraints extension MUST be used
+        // only in a CA certificate. The path validation algorithm never
+        // processes the extension on a non-CA certificate, so its presence
+        // there is an issuance defect worth surfacing - but acceptance remains
+        // RFC-permissible, hence a notification rather than an error.
+        for (int c = 0; c != certs.size(); c++)
+        {
+            X509Certificate ncCert = (X509Certificate)certs.get(c);
+            if (ncCert.getBasicConstraints() == -1
+                && ncCert.getExtensionValue(NAME_CONSTRAINTS) != null)
+            {
+                ErrorBundle msg = createErrorBundle("CertPathReviewer.ncNonCACert");
+                addNotification(msg, c);
+            }
+        }
 
         //
         // process each certificate except the last in the path
@@ -775,8 +793,6 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
         X509Certificate sign = null;
 
         AlgorithmIdentifier workingAlgId = null;
-        ASN1ObjectIdentifier workingPublicKeyAlgorithm = null;
-        ASN1Encodable workingPublicKeyParameters = null;
 
         if (trust != null)
         {
@@ -794,8 +810,6 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
             try
             {
                 workingAlgId = getAlgorithmIdentifier(workingPublicKey);
-                workingPublicKeyAlgorithm = workingAlgId.getAlgorithm();
-                workingPublicKeyParameters = workingAlgId.getParameters();
             }
             catch (CertPathValidatorException ex)
             {
@@ -1041,16 +1055,12 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
             {
                 workingPublicKey = getNextWorkingKey(certs, index);
                 workingAlgId = getAlgorithmIdentifier(workingPublicKey);
-                workingPublicKeyAlgorithm = workingAlgId.getAlgorithm();
-                workingPublicKeyParameters = workingAlgId.getParameters();
             }
             catch (CertPathValidatorException ex)
             {
                 ErrorBundle msg = createErrorBundle("CertPathReviewer.pubKeyError");
                 addError(msg,index);
                 workingAlgId = null;
-                workingPublicKeyAlgorithm = null;
-                workingPublicKeyParameters = null;
             }
 
         } // for
@@ -1339,8 +1349,24 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
                         }
                     }
 
+                    // Bound the valid-policy-tree: policy mapping plus anyPolicy expansion can
+                    // grow it multiplicatively per certificate, so a crafted chain could drive an
+                    // exponential blow-up (CVE-2023-0464 class). Checked once per certificate.
+                    {
+                        int maxPolicyNodes = Properties.asInteger(Properties.X509_MAX_POLICY_NODES, 8192);
+                        int policyNodeCount = 0;
+                        for (int pj = 0; pj != policyNodes.length; pj++)
+                        {
+                            policyNodeCount += policyNodes[pj].size();
+                            if (policyNodeCount > maxPolicyNodes)
+                            {
+                                throw new CertPathReviewerException(
+                                    createErrorBundle("CertPathReviewer.policyTreeTooLarge"));
+                            }
+                        }
+                    }
                 }
-                
+
                 // e)
                 
                 if (certPolicies == null) 
@@ -1778,6 +1804,8 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
             addError(cpre.getErrorMessage(),cpre.getIndex());
             validPolicyTree = null;
         }
+
+        policyTree = validPolicyTree;
     }
 
     private void checkCriticalExtensions()
@@ -1928,6 +1956,61 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
                                     new TrustedInput(new Double(value)),
                                     limit});
                     }
+                    addNotification(msg,index);
+                }
+                else if (QCStatement.id_qcs_pkixQCSyntax_v2.equals(stmt.getStatementId()))
+                {
+                    // process statement - just recognize the statement (RFC 3739 PKIX QC syntax v2)
+                }
+                else if (QCStatement.id_etsi_qcs_QcType.equals(stmt.getStatementId()))
+                {
+                    // ETSI EN 319 412-5 sec. 4.2.3 - the declared type(s) of qualified certificate
+                    ASN1ObjectIdentifier[] qcTypes = QcType.getInstance(stmt.getStatementInfo()).getTypes();
+                    StringBuffer typeNames = new StringBuffer();
+                    for (int k = 0; k != qcTypes.length; k++)
+                    {
+                        if (k != 0)
+                        {
+                            typeNames.append(", ");
+                        }
+                        if (QCStatement.id_etsi_qct_esign.equals(qcTypes[k]))
+                        {
+                            typeNames.append("electronic signature");
+                        }
+                        else if (QCStatement.id_etsi_qct_eseal.equals(qcTypes[k]))
+                        {
+                            typeNames.append("electronic seal");
+                        }
+                        else if (QCStatement.id_etsi_qct_web.equals(qcTypes[k]))
+                        {
+                            typeNames.append("website authentication");
+                        }
+                        else
+                        {
+                            typeNames.append(qcTypes[k].getId());
+                        }
+                    }
+                    ErrorBundle msg = createErrorBundle("CertPathReviewer.QcType",
+                            new Object[] {typeNames.toString()});
+                    addNotification(msg,index);
+                }
+                else if (QCStatement.id_etsi_qcs_RetentionPeriod.equals(stmt.getStatementId()))
+                {
+                    // ETSI EN 319 412-5 sec. 4.3.3 - years the issuer retains material information after expiry
+                    ErrorBundle msg = createErrorBundle("CertPathReviewer.QcRetentionPeriod",
+                            new Object[] {ASN1Integer.getInstance(stmt.getStatementInfo()).getValue()});
+                    addNotification(msg,index);
+                }
+                else if (QCStatement.id_etsi_qcs_QcPds.equals(stmt.getStatementId()))
+                {
+                    // ETSI EN 319 412-5 sec. 4.3.4 - PKI Disclosure Statements
+                    ErrorBundle msg = createErrorBundle("CertPathReviewer.QcPDS");
+                    addNotification(msg,index);
+                }
+                else if (QCStatement.id_etsi_qcs_QcCClegislation.equals(stmt.getStatementId()))
+                {
+                    // ETSI EN 319 412-5 sec. 4.2.4 - country(ies) whose legislation governs this qualified certificate
+                    ErrorBundle msg = createErrorBundle("CertPathReviewer.QcCClegislation");
                     addNotification(msg,index);
                 }
                 else

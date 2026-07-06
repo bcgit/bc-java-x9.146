@@ -20,21 +20,21 @@ import org.bouncycastle.crypto.params.DSAPublicKeyParameters;
 import org.bouncycastle.crypto.params.ECPublicKeyParameters;
 import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters;
 import org.bouncycastle.crypto.params.Ed448PublicKeyParameters;
+import org.bouncycastle.crypto.params.MLDSAPublicKeyParameters;
+import org.bouncycastle.crypto.params.ParametersWithID;
 import org.bouncycastle.crypto.params.RSAKeyParameters;
+import org.bouncycastle.crypto.params.SLHDSAPublicKeyParameters;
 import org.bouncycastle.crypto.signers.DSADigestSigner;
 import org.bouncycastle.crypto.signers.ECDSASigner;
 import org.bouncycastle.crypto.signers.Ed25519Signer;
 import org.bouncycastle.crypto.signers.Ed448Signer;
+import org.bouncycastle.crypto.signers.MLDSASigner;
 import org.bouncycastle.crypto.signers.PSSSigner;
 import org.bouncycastle.crypto.signers.RSADigestSigner;
+import org.bouncycastle.crypto.signers.SLHDSASigner;
+import org.bouncycastle.crypto.signers.SM2Signer;
 import org.bouncycastle.crypto.util.PublicKeyFactory;
 import org.bouncycastle.pqc.crypto.MessageSignerAdapter;
-import org.bouncycastle.pqc.crypto.falcon.FalconPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSASigner;
-import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.slhdsa.SLHDSASigner;
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.SignatureAlgorithm;
@@ -50,6 +50,7 @@ import org.bouncycastle.tls.crypto.TlsVerifier;
 import org.bouncycastle.tls.crypto.impl.LegacyTls13Verifier;
 import org.bouncycastle.tls.crypto.impl.PQCUtil;
 import org.bouncycastle.tls.crypto.impl.RSAUtil;
+import org.bouncycastle.util.Strings;
 
 /**
  * Implementation class for a single X.509 certificate based on the BC light-weight API.
@@ -284,18 +285,17 @@ public class BcTlsRawKeyCertificate
             case SignatureScheme.mldsa87_ed448:
                 return createAltVerifier(SignatureScheme.DRAFT_mldsa87);
 
-            // TODO[RFC 8998]
-//        case SignatureScheme.sm2sig_sm3:
-//        {
-//            ParametersWithID parametersWithID = new ParametersWithID(getPubKeyEC(),
-//                Strings.toByteArray("TLSv1.3+GM+Cipher+Suite"));
-//
-//            SM2Signer verifier = new SM2Signer();
-//            verifier.init(false, parametersWithID);
-//
-//            return new BcTls13Verifier(verifier);
-//        }
+            // RFC 8998
+            case SignatureScheme.sm2sig_sm3:
+            {
+                byte[] identifier = Strings.toByteArray("TLSv1.3+GM+Cipher+Suite");
+                ParametersWithID parametersWithID = new ParametersWithID(getPubKeyEC(), identifier);
 
+                SM2Signer verifier = new SM2Signer();
+                verifier.init(false, parametersWithID);
+
+                return new BcTls13Verifier(verifier);
+            }
             default:
                 throw new TlsFatalAlert(AlertDescription.certificate_unknown);
         }
@@ -387,17 +387,17 @@ public class BcTlsRawKeyCertificate
             return new BcTls13Verifier(verifier);
         }
 
-        // TODO[RFC 8998]
-//        case SignatureScheme.sm2sig_sm3:
-//        {
-//            ParametersWithID parametersWithID = new ParametersWithID(getPubKeyEC(),
-//                Strings.toByteArray("TLSv1.3+GM+Cipher+Suite"));
-//
-//            SM2Signer verifier = new SM2Signer();
-//            verifier.init(false, parametersWithID);
-//
-//            return new BcTls13Verifier(verifier);
-//        }
+        // RFC 8998
+        case SignatureScheme.sm2sig_sm3:
+        {
+            byte[] identifier = Strings.toByteArray("TLSv1.3+GM+Cipher+Suite");
+            ParametersWithID parametersWithID = new ParametersWithID(getPubKeyEC(), identifier);
+
+            SM2Signer verifier = new SM2Signer();
+            verifier.init(false, parametersWithID);
+
+            return new BcTls13Verifier(verifier);
+        }
 
         case SignatureScheme.mldsa44:
         case SignatureScheme.mldsa65:
@@ -629,17 +629,7 @@ public class BcTlsRawKeyCertificate
             throw new TlsFatalAlert(AlertDescription.certificate_unknown, "Public key not Ed448", e);
         }
     }
-//    private FalconPublicKeyParameters getPubKeyFalcon(SubjectPublicKeyInfo keyInfo) throws IOException
-//    {
-//        try
-//        {
-//            return (FalconPublicKeyParameters) getPQCPublicKey(keyInfo);
-//        }
-//        catch (ClassCastException e)
-//        {
-//            throw new TlsFatalAlert(AlertDescription.certificate_unknown, e);
-//        }
-//    }
+
     public Ed448PublicKeyParameters getPubKeyEd448() throws IOException
     {
         return getPubKeyEd448(this.keyInfo);
@@ -665,7 +655,7 @@ public class BcTlsRawKeyCertificate
     {
         try
         {
-            return (SLHDSAPublicKeyParameters)getPQCPublicKey();
+            return (SLHDSAPublicKeyParameters)getPublicKey();
         }
         catch (ClassCastException e)
         {

@@ -43,6 +43,7 @@ import javax.crypto.Mac;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
+import javax.crypto.interfaces.PBEKey;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.bouncycastle.asn1.ASN1Encodable;
@@ -58,6 +59,7 @@ import org.bouncycastle.asn1.bc.ObjectDataSequence;
 import org.bouncycastle.asn1.bc.ObjectStore;
 import org.bouncycastle.asn1.bc.ObjectStoreData;
 import org.bouncycastle.asn1.bc.ObjectStoreIntegrityCheck;
+import org.bouncycastle.asn1.bc.PbkdKeyData;
 import org.bouncycastle.asn1.bc.PbkdMacIntegrityCheck;
 import org.bouncycastle.asn1.bc.SecretKeyData;
 import org.bouncycastle.asn1.bc.SignatureCheck;
@@ -94,11 +96,14 @@ import org.bouncycastle.jcajce.BCFKSStoreParameter;
 import org.bouncycastle.jcajce.BCLoadStoreParameter;
 import org.bouncycastle.jcajce.provider.keystore.util.AdaptingKeyStoreSpi;
 import org.bouncycastle.jcajce.provider.keystore.util.ParameterUtil;
+import org.bouncycastle.jcajce.provider.util.SecurityExceptions;
 import org.bouncycastle.jcajce.util.BCJcaJceHelper;
 import org.bouncycastle.jcajce.util.DefaultJcaJceHelper;
 import org.bouncycastle.jcajce.util.JcaJceHelper;
 import org.bouncycastle.jce.interfaces.ECKey;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
+import org.bouncycastle.util.Properties;
 import org.bouncycastle.util.Strings;
 
 class BcFKSKeyStoreSpi
@@ -165,6 +170,7 @@ class BcFKSKeyStoreSpi
     private final static BigInteger SECRET_KEY = BigInteger.valueOf(2);
     private final static BigInteger PROTECTED_PRIVATE_KEY = BigInteger.valueOf(3);
     private final static BigInteger PROTECTED_SECRET_KEY = BigInteger.valueOf(4);
+    private final static BigInteger PBKDF_KEY = BigInteger.valueOf(5);
 
     private final JcaJceHelper helper;
     private final Map<String, ObjectData> entries = new HashMap<String, ObjectData>();
@@ -217,7 +223,7 @@ class BcFKSKeyStoreSpi
                 }
                 catch (Exception e)
                 {
-                    throw new UnrecoverableKeyException("BCFKS KeyStore unable to recover private key (" + alias + "): " + e.getMessage());
+                    throw SecurityExceptions.unrecoverableKeyException("BCFKS KeyStore unable to recover private key (" + alias + "): " + e.getMessage(), e);
                 }
             }
             else if (ent.getType().equals(SECRET_KEY) || ent.getType().equals(PROTECTED_SECRET_KEY))
@@ -233,7 +239,27 @@ class BcFKSKeyStoreSpi
                 }
                 catch (Exception e)
                 {
-                    throw new UnrecoverableKeyException("BCFKS KeyStore unable to recover secret key (" + alias + "): " + e.getMessage());
+                    throw SecurityExceptions.unrecoverableKeyException("BCFKS KeyStore unable to recover secret key (" + alias + "): " + e.getMessage(), e);
+                }
+            }
+            else if (ent.getType().equals(PBKDF_KEY))
+            {
+                EncryptedSecretKeyData encKeyData = EncryptedSecretKeyData.getInstance(ent.getData());
+
+                try
+                {
+                    PbkdKeyData keyData = PbkdKeyData.getInstance(decryptData("SECRET_KEY_ENCRYPTION", encKeyData.getKeyEncryptionAlgorithm(), password, encKeyData.getEncryptedKeyData()));
+
+                    return new RecoveredPBEKey(
+                        keyData.getKeyAlgorithm(),
+                        bytesToChars(keyData.getPassword()),
+                        keyData.getSalt(),
+                        keyData.getIterationCount(),
+                        keyData.getKeyEncoding());
+                }
+                catch (Exception e)
+                {
+                    throw SecurityExceptions.unrecoverableKeyException("BCFKS KeyStore unable to recover PBE key (" + alias + "): " + e.getMessage(), e);
                 }
             }
             else
@@ -405,6 +431,56 @@ class BcFKSKeyStoreSpi
                 throw new ExtKeyStoreException("BCFKS KeyStore exception storing private key: " + e.toString(), e);
             }
         }
+        else if (key instanceof PBEKey)
+        {
+            if (chain != null)
+            {
+                throw new KeyStoreException("BCFKS KeyStore cannot store certificate chain with PBE key.");
+            }
+
+            try
+            {
+                PBEKey pbeKey = (PBEKey)key;
+                PbkdKeyData pbeData = new PbkdKeyData(
+                    pbeKey.getAlgorithm(),
+                    charsToBytes(pbeKey.getPassword()),
+                    pbeKey.getSalt(),
+                    pbeKey.getIterationCount(),
+                    pbeKey.getEncoded());
+
+                KeyDerivationFunc pbkdAlgId = generatePkbdAlgorithmIdentifier(PKCSObjectIdentifiers.id_PBKDF2, 256 / 8);
+                byte[] keyBytes = generateKey(pbkdAlgId, "SECRET_KEY_ENCRYPTION", ((password != null) ? password : new char[0]), 32);
+
+                EncryptedSecretKeyData keyData;
+                if (storeEncryptionAlgorithm.equals(NISTObjectIdentifiers.id_aes256_CCM))
+                {
+                    Cipher c = createCipher("AES/CCM/NoPadding", keyBytes);
+
+                    byte[] encryptedKey = c.doFinal(pbeData.getEncoded());
+
+                    AlgorithmParameters algParams = c.getParameters();
+
+                    PBES2Parameters pbeParams = new PBES2Parameters(pbkdAlgId, new EncryptionScheme(NISTObjectIdentifiers.id_aes256_CCM, CCMParameters.getInstance(algParams.getEncoded())));
+
+                    keyData = new EncryptedSecretKeyData(new AlgorithmIdentifier(PKCSObjectIdentifiers.id_PBES2, pbeParams), encryptedKey);
+                }
+                else
+                {
+                    Cipher c = createCipher("AESKWP", keyBytes);
+
+                    byte[] encryptedKey = c.doFinal(pbeData.getEncoded());
+
+                    PBES2Parameters pbeParams = new PBES2Parameters(pbkdAlgId, new EncryptionScheme(NISTObjectIdentifiers.id_aes256_wrap_pad));
+
+                    keyData = new EncryptedSecretKeyData(new AlgorithmIdentifier(PKCSObjectIdentifiers.id_PBES2, pbeParams), encryptedKey);
+                }
+                entries.put(alias, new ObjectData(PBKDF_KEY, alias, creationDate, lastEditDate, keyData.getEncoded(), null));
+            }
+            catch (Exception e)
+            {
+                throw new ExtKeyStoreException("BCFKS KeyStore exception storing PBE key: " + e.toString(), e);
+            }
+        }
         else if (key instanceof SecretKey)
         {
             if (chain != null)
@@ -493,6 +569,35 @@ class BcFKSKeyStoreSpi
         c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(keyBytes, "AES"));
 
         return c;
+    }
+
+    private static byte[] charsToBytes(char[] chars)
+    {
+        if (chars == null)
+        {
+            return new byte[0];
+        }
+        byte[] bytes = new byte[chars.length * 2];
+        for (int i = 0; i != chars.length; i++)
+        {
+            bytes[2 * i] = (byte)(chars[i] >>> 8);
+            bytes[2 * i + 1] = (byte)chars[i];
+        }
+        return bytes;
+    }
+
+    private static char[] bytesToChars(byte[] bytes)
+    {
+        if (bytes == null || bytes.length == 0)
+        {
+            return new char[0];
+        }
+        char[] chars = new char[bytes.length / 2];
+        for (int i = 0; i != chars.length; i++)
+        {
+            chars[i] = (char)(((bytes[2 * i] & 0xff) << 8) | (bytes[2 * i + 1] & 0xff));
+        }
+        return chars;
     }
 
     private SecureRandom getDefaultSecureRandom()
@@ -740,6 +845,10 @@ class BcFKSKeyStoreSpi
         {
             ScryptParams params = ScryptParams.getInstance(pbkdAlgorithm.getParameters());
 
+            // The KDF cost parameters arrive in the not-yet-integrity-checked keystore, so bound
+            // them before the (memory/CPU intensive) derivation to avoid a pre-verification DoS.
+            validateScryptParams(params);
+
             if (params.getKeyLength() != null)
             {
                 keySizeInBytes = params.getKeyLength().intValue();
@@ -765,11 +874,14 @@ class BcFKSKeyStoreSpi
                 throw new IOException("no keyLength found in PBKDF2Params");
             }
 
+            // As above: bound the attacker-supplied iteration count before the derivation.
+            int iterationCount = validateIterationCount(pbkdf2Params.getIterationCount());
+
             if (pbkdf2Params.getPrf().getAlgorithm().equals(PKCSObjectIdentifiers.id_hmacWithSHA512))
             {
                 PKCS5S2ParametersGenerator pGen = new PKCS5S2ParametersGenerator(new SHA512Digest());
 
-                pGen.init(Arrays.concatenate(encPassword, differentiator), pbkdf2Params.getSalt(), pbkdf2Params.getIterationCount().intValue());
+                pGen.init(Arrays.concatenate(encPassword, differentiator), pbkdf2Params.getSalt(), iterationCount);
 
                 return ((KeyParameter)pGen.generateDerivedParameters(keySizeInBytes * 8)).getKey();
             }
@@ -777,7 +889,7 @@ class BcFKSKeyStoreSpi
             {
                 PKCS5S2ParametersGenerator pGen = new PKCS5S2ParametersGenerator(new SHA3Digest(512));
 
-                pGen.init(Arrays.concatenate(encPassword, differentiator), pbkdf2Params.getSalt(), pbkdf2Params.getIterationCount().intValue());
+                pGen.init(Arrays.concatenate(encPassword, differentiator), pbkdf2Params.getSalt(), iterationCount);
 
                 return ((KeyParameter)pGen.generateDerivedParameters(keySizeInBytes * 8)).getKey();
             }
@@ -790,6 +902,57 @@ class BcFKSKeyStoreSpi
         {
             throw new IOException("BCFKS KeyStore: unrecognized MAC PBKD.");
         }
+    }
+
+    // Hard sanity bound on the scrypt block size r. r is also passed as the parallelization
+    // parameter p here, so an oversized r is a CPU-exhaustion vector independent of total memory.
+    // The standard value is 8; anything beyond this is rejected as abusive.
+    private static final int MAX_SCRYPT_BLOCK_SIZE = 1024;
+
+    private static void validateScryptParams(ScryptParams params)
+        throws IOException
+    {
+        BigInteger n = params.getCostParameter();
+        BigInteger r = params.getBlockSize();
+
+        if (n == null || r == null
+            || n.signum() <= 0 || r.signum() <= 0
+            || n.bitLength() > 31 || r.bitLength() > 31)
+        {
+            throw new IOException("BCFKS KeyStore: invalid scrypt parameters");
+        }
+
+        long blockSize = r.longValue();
+        if (blockSize > MAX_SCRYPT_BLOCK_SIZE)
+        {
+            throw new IOException("BCFKS KeyStore: scrypt block size (" + blockSize + ") greater than " + MAX_SCRYPT_BLOCK_SIZE);
+        }
+
+        long maxMemory = Properties.asInteger(Properties.BCFKS_MAX_SCRYPT_MEMORY, 1 << 30);
+        long cost = n.longValue();
+        // Reject if the working memory ~128 * N * r would exceed the bound, computed so as not to
+        // overflow (128 * blockSize is small because blockSize is capped above).
+        if (cost > maxMemory / (128L * blockSize))
+        {
+            throw new IOException("BCFKS KeyStore: scrypt cost parameters require more than " + maxMemory + " bytes");
+        }
+    }
+
+    private static int validateIterationCount(BigInteger ic)
+        throws IOException
+    {
+        if (ic == null || ic.signum() < 0 || ic.bitLength() > 31)
+        {
+            throw new IOException("BCFKS KeyStore: invalid iteration count");
+        }
+
+        long max = Properties.asInteger(Properties.BCFKS_MAX_IT_COUNT, 5000000);
+        if (ic.longValue() > max)
+        {
+            throw new IOException("BCFKS KeyStore: iteration count (" + ic + ") greater than " + max);
+        }
+
+        return ic.intValue();
     }
 
     private void verifySig(ASN1Encodable store, SignatureCheck integrityCheck, PublicKey key)
@@ -832,7 +995,7 @@ class BcFKSKeyStoreSpi
         }
         catch (InvalidKeyException e)
         {
-            throw new IOException("Cannot set up MAC calculation: " + e.getMessage());
+            throw Exceptions.ioException("Cannot set up MAC calculation: " + e.getMessage(), e);
         }
 
         return mac.doFinal(content);
@@ -920,7 +1083,7 @@ class BcFKSKeyStoreSpi
                 }
                 catch (GeneralSecurityException e)
                 {
-                    throw new IOException("error creating signature: " + e.getMessage(), e);
+                    throw Exceptions.ioException("error creating signature: " + e.getMessage(), e);
                 }
             }
             else
@@ -994,7 +1157,7 @@ class BcFKSKeyStoreSpi
         }
         catch (NoSuchProviderException e)
         {
-            throw new IOException("cannot calculate mac: " + e.getMessage());
+            throw Exceptions.ioException("cannot calculate mac: " + e.getMessage(), e);
         }
 
         ObjectStore store = new ObjectStore(encStoreData, new ObjectStoreIntegrityCheck(new PbkdMacIntegrityCheck(hmacAlgorithm, hmacPkbdAlgorithm, mac)));
@@ -1045,19 +1208,19 @@ class BcFKSKeyStoreSpi
         }
         catch (BadPaddingException e)
         {
-            throw new IOException(e.toString());
+            throw Exceptions.ioException(e.toString(), e);
         }
         catch (IllegalBlockSizeException e)
         {
-            throw new IOException(e.toString());
+            throw Exceptions.ioException(e.toString(), e);
         }
         catch (InvalidKeyException e)
         {
-            throw new IOException(e.toString());
+            throw Exceptions.ioException(e.toString(), e);
         }
         catch (NoSuchProviderException e)
         {
-            throw new IOException(e.toString());
+            throw Exceptions.ioException(e.toString(), e);
         }
         return encStoreData;
     }
@@ -1208,7 +1371,7 @@ class BcFKSKeyStoreSpi
         }
         catch (Exception e)
         {
-            throw new IOException(e.getMessage());
+            throw Exceptions.ioException(e.getMessage(), e);
         }
 
         ObjectStoreIntegrityCheck integrityCheck = store.getIntegrityCheck();
@@ -1229,7 +1392,7 @@ class BcFKSKeyStoreSpi
             }
             catch (NoSuchProviderException e)
             {
-                throw new IOException(e.getMessage());
+                throw Exceptions.ioException(e.getMessage(), e);
             }
         }
         else if (integrityCheck.getType() == ObjectStoreIntegrityCheck.SIG_CHECK)
@@ -1272,7 +1435,7 @@ class BcFKSKeyStoreSpi
             }
             catch (GeneralSecurityException e)
             {
-                throw new IOException("error verifying signature: " + e.getMessage(), e);
+                throw Exceptions.ioException("error verifying signature: " + e.getMessage(), e);
             }
         }
         else
@@ -1302,7 +1465,7 @@ class BcFKSKeyStoreSpi
         }
         catch (ParseException e)
         {
-            throw new IOException("BCFKS KeyStore unable to parse store data information.");
+            throw Exceptions.ioException("BCFKS KeyStore unable to parse store data information.", e);
         }
 
         if (!storeData.getIntegrityAlgorithm().equals(integrityAlg))
@@ -1365,7 +1528,7 @@ class BcFKSKeyStoreSpi
         }
         catch (Exception e)
         {
-            throw new IOException(e.toString());
+            throw Exceptions.ioException(e.toString(), e);
         }
     }
 
@@ -1580,7 +1743,7 @@ class BcFKSKeyStoreSpi
             }
             catch (InvalidKeyException e)
             {   // this should never happen...
-                throw new UnrecoverableKeyException("unable to recover key (" + alias + "): " + e.getMessage());
+                throw SecurityExceptions.unrecoverableKeyException("unable to recover key (" + alias + "): " + e.getMessage(), e);
             }
 
             if (cache.containsKey(alias))
@@ -1670,6 +1833,55 @@ class BcFKSKeyStoreSpi
         public Throwable getCause()
         {
             return cause;
+        }
+    }
+
+    private static class RecoveredPBEKey
+        implements PBEKey
+    {
+        private final String algorithm;
+        private final char[] password;
+        private final byte[] salt;
+        private final int iterationCount;
+        private final byte[] encoded;
+
+        RecoveredPBEKey(String algorithm, char[] password, byte[] salt, int iterationCount, byte[] encoded)
+        {
+            this.algorithm = algorithm;
+            this.password = password;
+            this.salt = (salt != null) ? (byte[])salt.clone() : null;
+            this.iterationCount = iterationCount;
+            this.encoded = (encoded != null) ? (byte[])encoded.clone() : null;
+        }
+
+        public String getAlgorithm()
+        {
+            return algorithm;
+        }
+
+        public String getFormat()
+        {
+            return (encoded != null) ? "RAW" : null;
+        }
+
+        public byte[] getEncoded()
+        {
+            return (encoded != null) ? (byte[])encoded.clone() : null;
+        }
+
+        public char[] getPassword()
+        {
+            return (char[])password.clone();
+        }
+
+        public byte[] getSalt()
+        {
+            return (salt != null) ? (byte[])salt.clone() : null;
+        }
+
+        public int getIterationCount()
+        {
+            return iterationCount;
         }
     }
 }

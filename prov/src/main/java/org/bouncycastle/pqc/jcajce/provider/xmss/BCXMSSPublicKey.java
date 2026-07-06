@@ -74,6 +74,11 @@ public class BCXMSSPublicKey
         return keyParams;
     }
 
+    ASN1ObjectIdentifier getTreeDigestOID()
+    {
+        return treeDigest;
+    }
+
     public boolean equals(Object o)
     {
         if (o == this)
@@ -118,7 +123,7 @@ public class BCXMSSPublicKey
 
     public String getTreeDigest()
     {
-        return DigestUtil.getXMSSDigestName(treeDigest);
+        return DigestUtil.getXMSSDigestName(treeDigest, keyParams.getParameters().getTreeDigestSize());
     }
 
     private void readObject(

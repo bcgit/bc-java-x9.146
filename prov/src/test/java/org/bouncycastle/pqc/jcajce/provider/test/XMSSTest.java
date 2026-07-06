@@ -5,6 +5,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.security.GeneralSecurityException;
+import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -24,8 +25,13 @@ import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
+import org.bouncycastle.internal.asn1.isara.IsaraObjectIdentifiers;
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.digests.SHA512Digest;
@@ -130,6 +136,168 @@ public class XMSSTest
         XMSSKey privKey2 = (XMSSKey)oIn.readObject();
 
         assertEquals(privKey, privKey2);
+    }
+
+    public void testRFC9802PublicKeyEncoding()
+        throws Exception
+    {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+
+        kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA256), new SecureRandom());
+
+        KeyPair kp = kpg.generateKeyPair();
+
+        // RFC 9802: id-alg-xmss-hashsig, absent parameters, raw RFC 8391 key in the BIT STRING.
+        SubjectPublicKeyInfo keyInfo = SubjectPublicKeyInfo.getInstance(kp.getPublic().getEncoded());
+
+        assertEquals(IANAObjectIdentifiers.id_alg_xmss_hashsig, keyInfo.getAlgorithm().getAlgorithm());
+        assertNull(keyInfo.getAlgorithm().getParameters());
+
+        byte[] rawKey = keyInfo.getPublicKeyData().getOctets();
+
+        KeyFactory kFact = KeyFactory.getInstance("XMSS", "BCPQC");
+
+        PublicKey pubKey = kFact.generatePublic(new X509EncodedKeySpec(kp.getPublic().getEncoded()));
+
+        assertEquals(kp.getPublic(), pubKey);
+
+        // the legacy draft form - id_alg_xmss with the key wrapped in an OCTET STRING - must still decode.
+        SubjectPublicKeyInfo legacy = new SubjectPublicKeyInfo(
+            new AlgorithmIdentifier(IsaraObjectIdentifiers.id_alg_xmss), new DEROctetString(rawKey));
+
+        PublicKey legacyKey = kFact.generatePublic(new X509EncodedKeySpec(legacy.getEncoded()));
+
+        assertEquals(kp.getPublic(), legacyKey);
+    }
+
+    public void testSP800208KeyGenAndRoundTrip()
+        throws Exception
+    {
+        String[] treeDigests = {
+            XMSSParameterSpec.SHA256_192, XMSSParameterSpec.SHAKE256_256, XMSSParameterSpec.SHAKE256_192};
+
+        for (int i = 0; i != treeDigests.length; i++)
+        {
+            String treeDigest = treeDigests[i];
+
+            KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+            kpg.initialize(new XMSSParameterSpec(10, treeDigest), new SecureRandom());
+            KeyPair kp = kpg.generateKeyPair();
+
+            // private and public halves share the RFC 9802 algorithm OID
+            assertEquals(treeDigest, IANAObjectIdentifiers.id_alg_xmss_hashsig,
+                SubjectPublicKeyInfo.getInstance(kp.getPublic().getEncoded()).getAlgorithm().getAlgorithm());
+            assertEquals(treeDigest, IANAObjectIdentifiers.id_alg_xmss_hashsig,
+                PrivateKeyInfo.getInstance(kp.getPrivate().getEncoded()).getPrivateKeyAlgorithm().getAlgorithm());
+
+            // getTreeDigest() reflects the specific SP 800-208 variant (n included)
+            assertEquals(treeDigest, ((XMSSKey)kp.getPublic()).getTreeDigest());
+            assertEquals(treeDigest, ((XMSSKey)kp.getPrivate()).getTreeDigest());
+
+            // KeyFactory round-trips both halves to equal keys
+            KeyFactory kFact = KeyFactory.getInstance("XMSS", "BCPQC");
+            PublicKey pubKey = kFact.generatePublic(new X509EncodedKeySpec(kp.getPublic().getEncoded()));
+            PrivateKey privKey = kFact.generatePrivate(new PKCS8EncodedKeySpec(kp.getPrivate().getEncoded()));
+            assertEquals(treeDigest, kp.getPublic(), pubKey);
+            assertEquals(treeDigest, kp.getPrivate(), privKey);
+
+            // the generated key signs and verifies
+            Signature xmssSig = Signature.getInstance("XMSS", "BCPQC");
+            xmssSig.initSign(kp.getPrivate());
+            xmssSig.update(msg, 0, msg.length);
+            byte[] s = xmssSig.sign();
+            xmssSig.initVerify(kp.getPublic());
+            xmssSig.update(msg, 0, msg.length);
+            assertTrue(treeDigest, xmssSig.verify(s));
+        }
+    }
+
+    public void testSignerKeyDigestFamilyEnforcement()
+        throws Exception
+    {
+        KeyPairGenerator shaKpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+        shaKpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA256), new SecureRandom());
+        KeyPair shaKp = shaKpg.generateKeyPair();
+
+        KeyPairGenerator shakeKpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+        shakeKpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHAKE256), new SecureRandom());
+        KeyPair shakeKp = shakeKpg.generateKeyPair();
+
+        // a SHA256 key handed to a SHAKE256-named signer is rejected on both init paths
+        Signature shakeSig = Signature.getInstance("XMSS-SHAKE256", "BCPQC");
+        try
+        {
+            shakeSig.initSign(shaKp.getPrivate());
+            fail("no exception on mismatched private key");
+        }
+        catch (InvalidKeyException e)
+        {
+            // expected
+        }
+        try
+        {
+            shakeSig.initVerify(shaKp.getPublic());
+            fail("no exception on mismatched public key");
+        }
+        catch (InvalidKeyException e)
+        {
+            // expected
+        }
+
+        // ...and the reverse (SHAKE256 key on a SHA256-named signer)
+        Signature shaSig = Signature.getInstance("XMSS-SHA256", "BCPQC");
+        try
+        {
+            shaSig.initSign(shakeKp.getPrivate());
+            fail("no exception on mismatched private key");
+        }
+        catch (InvalidKeyException e)
+        {
+            // expected
+        }
+
+        // a matching key is accepted and round-trips
+        shakeSig.initSign(shakeKp.getPrivate());
+        shakeSig.update(msg, 0, msg.length);
+        byte[] s = shakeSig.sign();
+        shakeSig.initVerify(shakeKp.getPublic());
+        shakeSig.update(msg, 0, msg.length);
+        assertTrue(shakeSig.verify(s));
+
+        // the generic "XMSS" signer is lenient - it accepts any key
+        Signature genericSig = Signature.getInstance("XMSS", "BCPQC");
+        genericSig.initSign(shaKp.getPrivate());
+        genericSig.update(msg, 0, msg.length);
+        byte[] gs = genericSig.sign();
+        genericSig.initVerify(shaKp.getPublic());
+        genericSig.update(msg, 0, msg.length);
+        assertTrue(genericSig.verify(gs));
+
+        // SP 800-208 SHAKE256/256 keys (tree digest id-shake256-len) are within the SHAKE256 family
+        KeyPairGenerator sp800Kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+        sp800Kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHAKE256_256), new SecureRandom());
+        KeyPair sp800Kp = sp800Kpg.generateKeyPair();
+
+        Signature sp800Sig = Signature.getInstance("XMSS-SHAKE256", "BCPQC");
+        sp800Sig.initSign(sp800Kp.getPrivate());
+        sp800Sig.update(msg, 0, msg.length);
+        byte[] sp = sp800Sig.sign();
+        sp800Sig.initVerify(sp800Kp.getPublic());
+        sp800Sig.update(msg, 0, msg.length);
+        assertTrue(sp800Sig.verify(sp));
+
+        // and SHA-256/192 keys are within the SHA256 family
+        KeyPairGenerator sha192Kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+        sha192Kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA256_192), new SecureRandom());
+        KeyPair sha192Kp = sha192Kpg.generateKeyPair();
+
+        Signature sha192Sig = Signature.getInstance("XMSS-SHA256", "BCPQC");
+        sha192Sig.initSign(sha192Kp.getPrivate());
+        sha192Sig.update(msg, 0, msg.length);
+        byte[] sh = sha192Sig.sign();
+        sha192Sig.initVerify(sha192Kp.getPublic());
+        sha192Sig.update(msg, 0, msg.length);
+        assertTrue(sha192Sig.verify(sh));
     }
 
     public void testPublicKeyRecovery()

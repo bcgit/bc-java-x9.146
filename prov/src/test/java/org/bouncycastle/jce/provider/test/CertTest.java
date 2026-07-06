@@ -35,6 +35,8 @@ import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERTaggedObject;
+import org.bouncycastle.asn1.gm.GMObjectIdentifiers;
+import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.internal.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.jce.interfaces.ECPublicKey;
@@ -255,6 +257,22 @@ public class CertTest
             + "AAN+AHqOEJXSDejYy0UwxxrH/9+N2z5xu/if0J6qQmK92W0hW158wpJg+ovV3+wQ"
             + "wvIEPRL2rocL0tKfAsVq1IawSJzSNgxG0lrcla3MrJBnZ4GaZDu4FutZh72MR3Gt"
             + "JaAL3iTJHJD55kK2D/VoyY1djlsPuNh6AEgdVwFAyp0v");
+
+    // github #2321: thisUpdate/nextUpdate are 13-character UTCTime-shaped
+    // values tagged as GeneralizedTime ("240123000000Z" reads as year 2401,
+    // month 23 - out of range), so the CRL must fail to parse.
+    byte[] gentimeCRL = Base64.decode(
+        "MIIB7DCB1QIBATANBgkqhkiG9w0BAQsFADBOMQswCQYDVQQGEwJVUzELMAkGA1UE"
+            + "CAwCVVMxCzAJBgNVBAcMAlVTMQswCQYDVQQKDAJVUzELMAkGA1UEAwwCVVMxCzAJ"
+            + "BgNVBAsMAlVTGA0yNDAxMjMwMDAwMDBaGA0zNDAxMjAwMDAwMDBaMDUwMwIUHIAC"
+            + "LvgfJAXulqYS3LYf4KxwHl4XDTI1MDMxMzAyNDQ0MFowDDAKBgNVHRUEAwoBBqAc"
+            + "MBowGAYDVR0UBBECDxnP/97adO3y9qRGDM7hQDANBgkqhkiG9w0BAQsFAAOCAQEA"
+            + "aDY9jBdAJiAujUkaLYLVtzNWF/0SxD5CB4dYIcZMqtPKLn5ykcxkXvnRbVihJ+Kn"
+            + "AAv9Fkn5iwj77EGwxNjyZktQ4gAmcMhCTBEcAHbmi92tHttot9Sr44+CN+0NaaQD"
+            + "OflIeVw7Zir90TWufjScy8/e7FkVm+aD5CicrbJWqoe21pB1Q1jS49iNrZzqZ2vw"
+            + "HLiqNAzpecxwUih/YPe5+CBk5Nq4vICeieGVC/JO9r5SkdDwWQTl0I3kSK6n4Jh7"
+            + "53FmIen80F2ZZuZu4/fhJ7C4rlr6W9i6FrK06s5mk1PeYFHKhCkwI8wp8cIudJQD"
+            + "lLsK2u4CTcuTKdbDLsszYA==");
 
     //
     // ecdsa cert with extra octet string.
@@ -1477,38 +1495,54 @@ public class CertTest
             fail("PKCS7 crl collection not right");
         }
 
-        // data with no certificates or CRLs
-
+        // data with no certificates or CRLs — per github #457 these must now
+        // throw rather than return null (spec compliance for empty input).
         sigData = new SignedData(new DERSet(), new ContentInfo(CMSObjectIdentifiers.data, null), new DERSet(), new DERSet(), new DERSet());
 
         info = new ContentInfo(CMSObjectIdentifiers.signedData, sigData);
 
-        cert = (X509Certificate)cf.generateCertificate(new ByteArrayInputStream(info.getEncoded()));
-        if (cert != null)
+        try
         {
-            fail("PKCS7 cert present");
+            cf.generateCertificate(new ByteArrayInputStream(info.getEncoded()));
+            fail("PKCS7 cert: empty SignedData did not throw CertificateException");
         }
-        crl = (X509CRL)cf.generateCRL(new ByteArrayInputStream(info.getEncoded()));
-        if (crl != null)
+        catch (CertificateException e)
         {
-            fail("PKCS7 crl present");
+            // expected
+        }
+        try
+        {
+            cf.generateCRL(new ByteArrayInputStream(info.getEncoded()));
+            fail("PKCS7 crl: empty SignedData did not throw CRLException");
+        }
+        catch (CRLException e)
+        {
+            // expected
         }
 
-        // data with absent certificates and CRLS
+        // data with absent certificates and CRLS — same exception expectation.
 
         sigData = new SignedData(new DERSet(), new ContentInfo(CMSObjectIdentifiers.data, null), null, null, new DERSet());
 
         info = new ContentInfo(CMSObjectIdentifiers.signedData, sigData);
 
-        cert = (X509Certificate)cf.generateCertificate(new ByteArrayInputStream(info.getEncoded()));
-        if (cert != null)
+        try
         {
-            fail("PKCS7 cert present");
+            cf.generateCertificate(new ByteArrayInputStream(info.getEncoded()));
+            fail("PKCS7 cert: absent-certs SignedData did not throw CertificateException");
         }
-        crl = (X509CRL)cf.generateCRL(new ByteArrayInputStream(info.getEncoded()));
-        if (crl != null)
+        catch (CertificateException e)
         {
-            fail("PKCS7 crl present");
+            // expected
+        }
+        try
+        {
+            cf.generateCRL(new ByteArrayInputStream(info.getEncoded()));
+            fail("PKCS7 crl: absent-crls SignedData did not throw CRLException");
+        }
+        catch (CRLException e)
+        {
+            // expected
         }
 
         //
@@ -1623,6 +1657,94 @@ public class CertTest
 //        {
 //            fail("BC/Sun hashCode test failed");
 //        }
+    }
+
+    /**
+     * Regression test for github #457: {@code generateCertificate} /
+     * {@code generateCRL} must throw {@code CertificateException} /
+     * {@code CRLException} on empty or unparseable input, per the
+     * {@link java.security.cert.CertificateFactory} contract. The collection-
+     * returning {@code generateCertificates} / {@code generateCRLs} must
+     * still return a (possibly-empty) {@code Collection} for empty input.
+     */
+    private void testInvalidInputThrows()
+        throws Exception
+    {
+        CertificateFactory fact = CertificateFactory.getInstance("X.509", "BC");
+
+        // (a) empty stream — single-cert path throws.
+        try
+        {
+            fact.generateCertificate(new ByteArrayInputStream(new byte[0]));
+            fail("no exception for empty stream (generateCertificate)");
+        }
+        catch (CertificateException e)
+        {
+            // expected
+        }
+
+        // (b) garbage binary that isn't DER and isn't valid PEM.
+        try
+        {
+            fact.generateCertificate(new ByteArrayInputStream(new byte[] { 0x31, 0x11, 0x12, 0x13, 0x14 }));
+            fail("no exception for garbage binary (generateCertificate)");
+        }
+        catch (CertificateException e)
+        {
+            // expected
+        }
+
+        // (c) plain garbage text.
+        try
+        {
+            fact.generateCertificate(new ByteArrayInputStream("Hello world\n".getBytes()));
+            fail("no exception for garbage text (generateCertificate)");
+        }
+        catch (CertificateException e)
+        {
+            // expected
+        }
+
+        // (d) generateCertificates on the same garbage paths.
+        // For empty input the collection method must still return an empty
+        // Collection (the documented "possibly empty" return shape).
+        if (!fact.generateCertificates(new ByteArrayInputStream(new byte[0])).isEmpty())
+        {
+            fail("generateCertificates(emptyStream) returned non-empty collection");
+        }
+
+        // (e) parallel coverage for CRLs.
+        try
+        {
+            fact.generateCRL(new ByteArrayInputStream(new byte[0]));
+            fail("no exception for empty stream (generateCRL)");
+        }
+        catch (CRLException e)
+        {
+            // expected
+        }
+
+        try
+        {
+            fact.generateCRL(new ByteArrayInputStream("Hello world\n".getBytes()));
+            fail("no exception for garbage text (generateCRL)");
+        }
+        catch (CRLException e)
+        {
+            // expected
+        }
+
+        if (!fact.generateCRLs(new ByteArrayInputStream(new byte[0])).isEmpty())
+        {
+            fail("generateCRLs(emptyStream) returned non-empty collection");
+        }
+
+        // (f) sanity: a real, valid cert still parses fine.
+        Certificate cert = fact.generateCertificate(new ByteArrayInputStream(cert1));
+        if (cert == null)
+        {
+            fail("valid cert returned null");
+        }
     }
 
     private void testV1CRL()
@@ -1747,6 +1869,19 @@ public class CertTest
         {
             // ignore
         }
+
+        // github #2321: the malformed GeneralizedTime in thisUpdate must fail
+        // the parse rather than producing a CRL with a nonsensical date.
+        try
+        {
+            certFact.generateCRL(new ByteArrayInputStream(gentimeCRL));
+            fail("malformed GeneralizedTime crl - no exception");
+        }
+        catch (CRLException e)
+        {
+            isTrue("wrong cause: " + e.getMessage(),
+                e.getMessage().indexOf("invalid GeneralizedTime format") >= 0);
+        }
     }
 
     private void pemFileTestWithNl()
@@ -1783,10 +1918,111 @@ public class CertTest
         isTrue("collection not empty", certs2.isEmpty());
     }
 
+    /**
+     * GM/T 0010-2012 SM2 SignedData ContentType (1.2.156.10197.6.1.4.2.2)
+     * shares the SignedData ASN.1 structure with PKCS#7 SignedData, so
+     * CertificateFactory.generateCertificate{s} / generateCRL{s} must extract
+     * embedded certificates and CRLs from it just like a PKCS#7 wrapper
+     * (github #1355).
+     */
+    private void sm2SignedDataTestIssue1355()
+        throws Exception
+    {
+        ASN1EncodableVector certs = new ASN1EncodableVector();
+        certs.add(new ASN1InputStream(CertPathTest.rootCertBin).readObject());
+
+        ASN1EncodableVector crls = new ASN1EncodableVector();
+        crls.add(new ASN1InputStream(CertPathTest.rootCrlBin).readObject());
+
+        // Inner content type uses the GM/T 0010 SM2 data OID (parallel to PKCS#7 data).
+        SignedData sigData = new SignedData(new DERSet(),
+            new ContentInfo(GMObjectIdentifiers.sm2_pkcs7_data, null),
+            new DERSet(certs), new DERSet(crls), new DERSet());
+
+        // Outer ContentInfo carries the SM2 SignedData ContentType.
+        ContentInfo info = new ContentInfo(GMObjectIdentifiers.sm2_pkcs7_signedData, sigData);
+
+        CertificateFactory cf = CertificateFactory.getInstance("X.509", "BC");
+
+        X509Certificate cert = (X509Certificate)cf.generateCertificate(new ByteArrayInputStream(info.getEncoded()));
+        if (cert == null || !areEqual(cert.getEncoded(), certs.get(0).toASN1Primitive().getEncoded()))
+        {
+            fail("SM2 SignedData cert not read");
+        }
+        X509CRL crl = (X509CRL)cf.generateCRL(new ByteArrayInputStream(info.getEncoded()));
+        if (crl == null || !areEqual(crl.getEncoded(), crls.get(0).toASN1Primitive().getEncoded()))
+        {
+            fail("SM2 SignedData crl not read");
+        }
+
+        Collection col = cf.generateCertificates(new ByteArrayInputStream(info.getEncoded()));
+        if (col.size() != 1 || !col.contains(cert))
+        {
+            fail("SM2 SignedData cert collection not right");
+        }
+        col = cf.generateCRLs(new ByteArrayInputStream(info.getEncoded()));
+        if (col.size() != 1 || !col.contains(crl))
+        {
+            fail("SM2 SignedData crl collection not right");
+        }
+    }
+
+    /**
+     * RFC 5280 sec. 4.2.1.12 permits extendedKeyUsage to be marked critical.
+     * Loading a cert with critical EKU through the BC CertificateFactory
+     * must report hasUnsupportedCriticalExtension() == false (matching the
+     * JDK provider), since the BC X509Certificate fully implements
+     * getExtendedKeyUsage() (github #1796).
+     */
+    private void testCriticalEkuIssue1796()
+        throws Exception
+    {
+        byte[] criticalEkuCert = Base64.decode(
+            "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");
+
+        CertificateFactory fact = CertificateFactory.getInstance("X.509", "BC");
+        X509Certificate cert = (X509Certificate)fact.generateCertificate(
+            new ByteArrayInputStream(criticalEkuCert));
+
+        isTrue("EKU not in critical OIDs",
+            cert.getCriticalExtensionOIDs().contains(Extension.extendedKeyUsage.getId()));
+        isTrue("critical EKU must be reported as supported",
+            !cert.hasUnsupportedCriticalExtension());
+    }
+
     public void performTest()
         throws Exception
     {
         testV1CRL();
+        testInvalidInputThrows();
 
         checkCertificate(1, cert1);
         checkCertificate(2, cert2);
@@ -1872,6 +2108,10 @@ public class CertTest
         checkCertificate(18, emptyDNCert);
 
         testCertPathEncAvailableTest();
+
+        testCriticalEkuIssue1796();
+
+        sm2SignedDataTestIssue1355();
     }
 
     public static void main(

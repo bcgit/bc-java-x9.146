@@ -56,7 +56,8 @@ public class
         org.bouncycastle.util.test.Test[] tests = new org.bouncycastle.util.test.Test[]
         {
             new WriterTest(),
-            new ParserTest()
+            new ParserTest(),
+            new JcaPrivateKeyReaderTest()
         };
 
         for (int i = 0; i != tests.length; i++)
@@ -84,9 +85,12 @@ public class
 
         PrivateKey key = kpGen.generateKeyPair().getPrivate();
 
+        encryptedTestNew(key, PKCS8Generator.AES_128_CBC);
+        encryptedTestNew(key, PKCS8Generator.AES_192_CBC);
         encryptedTestNew(key, PKCS8Generator.AES_256_CBC);
         encryptedTestNew(key, PKCS8Generator.DES3_CBC);
         encryptedTestNew(key, PKCS8Generator.PBE_SHA1_3DES);
+        encryptedTestNew(key, PKCS8Generator.SM4_CBC);
 
         encryptedTestNew(key, PKCS8Generator.AES_256_CBC, PKCS8Generator.PRF_HMACSHA1);
         encryptedTestNew(key, PKCS8Generator.AES_256_CBC, PKCS8Generator.PRF_HMACSHA224);
@@ -98,6 +102,12 @@ public class
         encryptedTestNew(key, PKCS8Generator.AES_256_CBC, PKCS8Generator.PRF_HMACSHA3_384);
         encryptedTestNew(key, PKCS8Generator.AES_256_CBC, PKCS8Generator.PRF_HMACSHA3_512);
         encryptedTestNew(key, PKCS8Generator.AES_256_CBC, PKCS8Generator.PRF_HMACGOST3411);
+
+        encryptedTestNew(key, PKCS8Generator.SM4_CBC, PKCS8Generator.PRF_HMACSHA1);
+        encryptedTestNew(key, PKCS8Generator.SM4_CBC, PKCS8Generator.PRF_HMACSHA256);
+        encryptedTestNew(key, PKCS8Generator.SM4_CBC, PKCS8Generator.PRF_HMACSHA512);
+        encryptedTestNew(key, PKCS8Generator.SM4_CBC, PKCS8Generator.PRF_HMACSM3);
+        encryptedTestNew(key, PKCS8Generator.AES_256_CBC, PKCS8Generator.PRF_HMACSM3);
     }
 
     private void encryptedTestNew(PrivateKey key, ASN1ObjectIdentifier algorithm)
@@ -178,6 +188,47 @@ public class
         rdKey = new JcaPEMKeyConverter().setProvider("BC").getPrivateKey(encInfo.decryptPrivateKeyInfo(new JceOpenSSLPKCS8DecryptorProviderBuilder().setProvider("BC").build("hello".toCharArray())));
 
         TestCase.assertEquals(key, rdKey);
+    }
+
+    /**
+     * github #400: OpenSSL 1.1+ "openssl pkcs8 -topk8 -scrypt" emits a PBES2
+     * EncryptedPrivateKeyInfo whose key-derivation function is scrypt
+     * (RFC 7914) rather than PBKDF2. JceOpenSSLPKCS8DecryptorProviderBuilder
+     * previously cast the KDF parameters blind to PBKDF2Params and threw
+     * "DLSequence cannot be cast to PBKDF2Params". The builder now recognises
+     * id-scrypt inside PBES2 and derives the key via the provider's SCRYPT
+     * SecretKeyFactory.
+     *
+     * Fixture from RFC 7914 sec. 7.2 (password "Rabbit").
+     */
+    public void testScryptOpenSSLDecryptorIssue400()
+        throws Exception
+    {
+        if (Security.getProvider("BC") == null)
+        {
+            Security.addProvider(new BouncyCastleProvider());
+        }
+
+        byte[] pkcs8Scrypt = Base64.decode(
+            "MIHiME0GCSqGSIb3DQEFDTBAMB8GCSsGAQQB2kcECzASBAVNb3VzZQIDEAAAAgEI" +
+            "AgEBMB0GCWCGSAFlAwQBKgQQyYmguHMsOwzGMPoyObk/JgSBkJb47EWd5iAqJlyy" +
+            "+ni5ftd6gZgOPaLQClL7mEZc2KQay0VhjZm/7MbBUNbqOAXNM6OGebXxVp6sHUAL" +
+            "iBGY/Dls7B1TsWeGObE0sS1MXEpuREuloZjcsNVcNXWPlLdZtkSH6uwWzR0PyG/Z" +
+            "+ZXfNodZtd/voKlvLOw5B3opGIFaLkbtLZQwMiGtl42AS89lZg==");
+
+        byte[] expected = Base64.decode(
+            "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg4RaNK5CuHY3CXr9f" +
+            "/CdVgOhEurMohrQmWbbLZK4ZInyhRANCAARs2WMV6UMlLjLaoc0Dsdnj4Vlffc9T" +
+            "t48lJU0RiCzXc280Vg/H5fm1xAP1B7UnIVcBqgDHDcfqWm1h/xSeCHXS");
+
+        PKCS8EncryptedPrivateKeyInfo info = new PKCS8EncryptedPrivateKeyInfo(pkcs8Scrypt);
+
+        PrivateKeyInfo pkInfo = info.decryptPrivateKeyInfo(
+            new JceOpenSSLPKCS8DecryptorProviderBuilder()
+                .setProvider("BC")
+                .build("Rabbit".toCharArray()));
+
+        assertTrue(org.bouncycastle.util.Arrays.areEqual(expected, pkInfo.getEncoded()));
     }
 
     public void testPKCS8PlainNew()
