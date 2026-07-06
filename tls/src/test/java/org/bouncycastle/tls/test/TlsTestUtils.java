@@ -34,6 +34,7 @@ import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.BasicTlsPSKIdentity;
 import org.bouncycastle.tls.Certificate;
 import org.bouncycastle.tls.CertificateEntry;
+import org.bouncycastle.tls.CertificateKeySelection;
 import org.bouncycastle.tls.CertificateKeySelectionType;
 import org.bouncycastle.tls.ProtocolVersion;
 import org.bouncycastle.tls.SignatureAlgorithm;
@@ -801,7 +802,7 @@ public class TlsTestUtils
         }
         return null;
     }
-    static TlsCertificate[] getTrustedCertPath(TlsCrypto crypto, TlsCertificate cert, String[] resources, short cksCode)
+    static TlsCertificate[] getTrustedCertPath(TlsCrypto crypto, TlsCertificate cert, String[] resources, CertificateKeySelection cks)
         throws IOException
     {
         for (int i = 0; i < resources.length; ++i)
@@ -809,21 +810,23 @@ public class TlsTestUtils
             String eeCertResource = resources[i];
             TlsCertificate eeCert = loadCertificateResource(crypto, eeCertResource);
 
-            switch (cksCode)
-            {
-                case CertificateKeySelectionType.cks_native:
-                case CertificateKeySelectionType.cks_default:
-                    break;
-                case CertificateKeySelectionType.cks_alternate:
-                case CertificateKeySelectionType.cks_both:
-                    //TODO[X9.146]: do i need to modify certs to check?
-                    break;
-
-                case CertificateKeySelectionType.cks_external:
-                default:
-                    throw new RuntimeException("Unknown Certificate Key Selection Code: " + cksCode);
-
-            }
+            //TODO[x9.146]: Determine how to process trusred cert path chains!
+            // should cks change this?
+//            switch (cks.getSignatureIdentifier())
+//            {
+//                case CertificateKeySelectionType.cks_native:
+//                case CertificateKeySelectionType.cks_default:
+//                    break;
+//                case CertificateKeySelectionType.cks_alternate:
+//                case CertificateKeySelectionType.cks_both:
+//                    //TODO[X9.146]: do i need to modify certs to check?
+//                    break;
+//
+//                case CertificateKeySelectionType.cks_external:
+//                default:
+//                    throw new RuntimeException("Unknown Certificate Key Selection Code: " + cksCode);
+//
+//            }
 
 
 

@@ -423,14 +423,19 @@ public class TlsServerProtocol
 
         TlsUtils.establish13PhaseSecrets(tlsServerContext, pskEarlySecret, sharedSecret);
 
-        // X9.146 Add CKS extension to serverHelloExt
-        short[] cksCode = TlsExtensionsUtils.getCertificationKeySelection(clientHelloExtensions);
-        //TODO[x9147]: This throws an error for wolfssl client!
-//        if (cksCode != 0)
-//        {
-//            TlsExtensionsUtils.addCertificationKeySelection(serverHelloExtensions, cksCode);
-//            TlsExtensionsUtils.addCertificationKeySelections(serverHelloExtensions, new byte[] {3, 2, 1});
-//        }
+        // X9.146: CKS negotiation
+        int[] clientCksList = TlsExtensionsUtils.getCertificateKeySelectionList(clientHelloExtensions);
+        int[] serverCksList = TlsExtensionsUtils.getCertificateKeySelectionList(serverEncryptedExtensions);
+        if (clientCksList != null && serverCksList != null)
+        {
+            int selectedCks = TlsUtils.getCommonCKS(clientCksList, serverCksList);
+            securityParameters.cksCode = (short)selectedCks;
+
+            TlsExtensionsUtils.addCertificateKeySelectionList(serverHelloExtensions, serverCksList);
+
+            serverEncryptedExtensions.remove(TlsExtensionsUtils.EXT_certificate_key_selection);
+            TlsExtensionsUtils.addCertificateKeySelectionValue(serverEncryptedExtensions, selectedCks);
+        }
 
         this.serverExtensions = serverEncryptedExtensions;
 
@@ -1589,13 +1594,6 @@ public class TlsServerProtocol
     protected void send13ServerHelloCoda(ServerHello serverHello, boolean afterHelloRetryRequest) throws IOException
     {
         final SecurityParameters securityParameters = tlsServerContext.getSecurityParametersHandshake();
-        // TODO[x9.146]: should ckscode be stored in securityParameters or somewhere else?
-        short cksCode = TlsUtils.getCommonCKS(
-                TlsExtensionsUtils.getCertificationKeySelection(clientExtensions),
-                TlsExtensionsUtils.getCertificationKeySelection(serverExtensions)
-        );
-
-        securityParameters.cksCode = cksCode;
 
         byte[] serverHelloTranscriptHash = TlsUtils.getCurrentPRFHash(handshakeHash);
 
@@ -1658,24 +1656,6 @@ public class TlsServerProtocol
     
             // CertificateVerify
             {
-                //TODO: add alt verify
-                /*
-                 * X9.146 Change serverCredentials according to the certificate key selection code (cksCode)
-                 * TODO[x9.146]: Could this be handled somewhere else?
-                 *  Can I avoid making BcTlsSigner class
-                 *  Maybe change getCredentials() from MockServer class?
-                 */
-
-                //TODO[x9.146]: How do we select which cksCode to use if multiple is sent?
-                // (find first mutual cksCode supported by both client and server?)
-
-                //TODO[x9.146]: new extension, need more testing/publishing
-//                HybridSchemeSignature hybridSchemeSignature = TlsUtils.generateHybridSchemeSignature(tlsServerContext, serverCredentials, handshakeHash);
-//                TlsExtensionsUtils.addHybridSchemeSignature(serverExtensions, hybridSchemeSignature);
-
-//                send13EncryptedExtensionsMessage(serverExtensions);
-//                this.connection_state = CS_SERVER_ENCRYPTED_EXTENSIONS;
-
                 DigitallySigned certificateVerify = TlsUtils.generate13CertificateVerify(tlsServerContext,
                     serverCredentials, handshakeHash);
                 send13CertificateVerifyMessage(certificateVerify);

@@ -48,7 +48,6 @@ public class TlsExtensionsUtils
     public static final Integer EXT_trusted_ca_keys = Integers.valueOf(ExtensionType.trusted_ca_keys);
     public static final Integer EXT_certificate_key_selection = Integers.valueOf(ExtensionType.certificate_key_selection);
     public static final Integer EXT_hybrid_scheme_list = Integers.valueOf(ExtensionType.hybrid_scheme_list);
-    public static final Integer EXT_hybrid_scheme_signature = Integers.valueOf(ExtensionType.hybrid_scheme_signature);
 
     public static Hashtable ensureExtensionsInitialised(Hashtable extensions)
     {
@@ -291,25 +290,27 @@ public class TlsExtensionsUtils
     }
 
     public static void addHybridSchemeList(Hashtable extensions, Vector hybridSchemeList)
-            throws IOException
+        throws IOException
     {
         extensions.put(EXT_hybrid_scheme_list, createHybridSchemeList(hybridSchemeList));
     }
 
-    //TODO[x9.146]: new extension, need more testing/publishing
-//    public static void addHybridSchemeSignature(Hashtable extensions, HybridSchemeSignature hybridSchemeSignature)
-//            throws IOException
-//    {
-//        extensions.put(EXT_hybrid_scheme_signature, createHybridSchemeSignature(hybridSchemeSignature));
-//    }
-    public static void addCertificationKeySelections(Hashtable extensions, byte[] cksCodes) throws IOException
+    public static void addCertificateKeySelectionList(Hashtable extensions, Vector certificateKeySelection)
+        throws IOException
     {
-        //TODO[x9.146]: change use createCKS
-        extensions.put(EXT_certificate_key_selection, cksCodes);
+        extensions.put(EXT_certificate_key_selection, createCertificateKeySelectionList(certificateKeySelection));
     }
-    public static void addCertificationKeySelection(Hashtable extensions, short cksCode) throws IOException
+
+    public static void addCertificateKeySelectionList(Hashtable extensions, int[] certificateKeySelection)
+        throws IOException
     {
-        extensions.put(EXT_certificate_key_selection, createCertificateKeySelection(cksCode));
+        extensions.put(EXT_certificate_key_selection, TlsUtils.encodeUint16ArrayWithUint16Length(certificateKeySelection));
+    }
+
+    public static void addCertificateKeySelectionValue(Hashtable extensions, int selectedCks)
+        throws IOException
+    {
+        extensions.put(EXT_certificate_key_selection, createCertificateKeySelectionValue(selectedCks));
     }
 
     /**
@@ -552,25 +553,25 @@ public class TlsExtensionsUtils
         return extensionData == null ? null : readTrustedCAKeysExtensionClient(extensionData);
     }
 
-    public static short[] getCertificationKeySelection(Hashtable extensions) throws IOException
+    public static int[] getCertificateKeySelectionList(Hashtable extensions) throws IOException
     {
-        byte[] cksCodeData = TlsUtils.getExtensionData(extensions, EXT_certificate_key_selection);
-        return cksCodeData == null ? new short[]{0} : readCertificationKeySelection(cksCodeData);
+        byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_certificate_key_selection);
+        return extensionData == null ? null : readCertificateKeySelectionList(extensionData);
     }
 
-    //TODO[x9.146]: new extension, need more testing/publishing
-//    public static HybridSchemeSignature getHybridSchemeSignature(Hashtable extensions) throws IOException
-//    {
-//        byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_hybrid_scheme_signature);
-//        return extensionData == null ? null : readHybridSchemeSignature(extensionData);
-//    }
+    public static int getCertificateKeySelectionValue(Hashtable extensions) throws IOException
+    {
+        byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_certificate_key_selection);
+        return extensionData == null ? -1 : readCertificateKeySelectionValue(extensionData);
+    }
+
     public static int[] getHybridSchemeList(Hashtable extensions) throws IOException
     {
         byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_hybrid_scheme_list);
         return extensionData == null ? null : readHybridSchemeList(extensionData);
     }
 
-    public static boolean hasCertificationKeySelections(Hashtable extensions) throws IOException
+    public static boolean hasCertificateKeySelection(Hashtable extensions) throws IOException
     {
         byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_certificate_key_selection);
         return extensionData != null;
@@ -1061,6 +1062,7 @@ public class TlsExtensionsUtils
 
         return patchOpaque16(buf);
     }
+
     public static byte[] createHybridSchemeList(Vector hybridSchemeList)
         throws IOException
     {
@@ -1068,44 +1070,34 @@ public class TlsExtensionsUtils
         int[] values = new int[count];
         for (int i = 0; i < count; ++i)
         {
-            values[i] = ((Integer)hybridSchemeList.elementAt(i)).intValue();
+            values[i] = ((HybridSchemeList.HybridScheme)hybridSchemeList.elementAt(i)).getValue();
         }
 
         return TlsUtils.encodeUint16ArrayWithUint16Length(values);
     }
 
-    //TODO[x9.146]: new extension, need more testing/publishing
-//    public static byte[] createHybridSchemeSignature(HybridSchemeSignature hybridSchemeSignature) throws IOException
-//    {
-//        ByteArrayOutputStream buf = new ByteArrayOutputStream();
-//
-//        TlsUtils.writeUint16(0, buf);
-//
-//        int hybridIdentifier = hybridSchemeSignature.getHybridIdentifier();
-//        TlsUtils.checkUint16(hybridIdentifier);
-//        TlsUtils.writeUint16(hybridIdentifier, buf);
-//
-//        int signatureSchemeAlg = hybridSchemeSignature.getAlgorithm();
-//        TlsUtils.checkUint16(signatureSchemeAlg);
-//        TlsUtils.writeUint16(signatureSchemeAlg, buf);
-//
-//        byte[] signature = hybridSchemeSignature.getSignature();
-//        TlsUtils.checkUint16(signature.length);
-//        TlsUtils.writeUint16(signature.length, buf);
-//        buf.write(signature);
-//
-//        return patchOpaque16(buf);
-//    }
+    public static byte[] createCertificateKeySelectionList(Vector certificateKeySelectionList)
+        throws IOException
+    {
+        int count = certificateKeySelectionList.size();
+        int[] values = new int[count];
+        for (int i = 0; i < count; ++i)
+        {
+            values[i] = ((Integer)certificateKeySelectionList.elementAt(i)).intValue();
+        }
+
+        return TlsUtils.encodeUint16ArrayWithUint16Length(values);
+    }
+
+    public static byte[] createCertificateKeySelectionValue(int value)
+        throws IOException
+    {
+        return TlsUtils.encodeUint16(value);
+    }
 
     public static byte[] createTrustedCAKeysExtensionServer()
     {
         return createEmptyExtensionData();
-    }
-
-    public static byte[] createCertificateKeySelection(short cksCode) throws IOException
-    {
-        TlsUtils.checkUint8(cksCode);
-        return TlsUtils.encodeUint8(cksCode);
     }
 
     private static boolean readEmptyExtensionData(byte[] extensionData) throws IOException
@@ -1642,20 +1634,31 @@ public class TlsExtensionsUtils
         return readEmptyExtensionData(extensionData);
     }
 
-    public static short[] readCertificationKeySelection(byte[] cksCodeData) throws IOException
+    public static int[] readCertificateKeySelectionList(byte[] extensionData) throws IOException
     {
-        if (cksCodeData == null)
+        if (extensionData == null)
         {
-            throw new IllegalArgumentException("'cksCodeData' cannot be null");
+            throw new IllegalArgumentException("'extensionData' cannot be null");
         }
 
-        short[] cksCodeList = new short[cksCodeData.length];
-        for (int i = 0; i < cksCodeData.length; i++)
+        ByteArrayInputStream buf = new ByteArrayInputStream(extensionData);
+
+        int length = TlsUtils.readUint16(buf);
+        if (length < 2 || (length & 1) != 0)
         {
-            cksCodeList[i] = cksCodeData[i];
+            throw new TlsFatalAlert(AlertDescription.decode_error);
         }
 
-        return cksCodeList;
+        int[] cksList = TlsUtils.readUint16Array(length / 2, buf);
+
+        TlsProtocol.assertEmpty(buf);
+
+        return cksList;
+    }
+
+    public static int readCertificateKeySelectionValue(byte[] extensionData) throws IOException
+    {
+        return TlsUtils.decodeUint16(extensionData);
     }
 
     public static int[] readHybridSchemeList(byte[] extensionData) throws IOException
@@ -1679,35 +1682,6 @@ public class TlsExtensionsUtils
 
         return hybridSchemeList;
     }
-
-    //TODO[x9.146]: new extension, need more testing/publishing
-//    public static HybridSchemeSignature readHybridSchemeSignature(byte[] extensionData) throws IOException
-//    {
-//        if (extensionData == null)
-//        {
-//            throw new IllegalArgumentException("'extensionData' cannot be null");
-//        }
-//
-//        ByteArrayInputStream buf = new ByteArrayInputStream(extensionData);
-//
-//        int length = TlsUtils.readUint16(buf);
-//        if (length < 2 || (length & 1) != 0)
-//        {
-//            throw new TlsFatalAlert(AlertDescription.decode_error);
-//        }
-//
-//        int hybridIdentifier = TlsUtils.readUint16(buf);
-//
-//        int signatureSchemeAlg = TlsUtils.readUint16(buf);
-//
-//        int sigLen = TlsUtils.readUint16(buf);
-//        byte[] signature = new byte[sigLen];
-//        buf.read(signature, 0, sigLen);
-//
-//        TlsProtocol.assertEmpty(buf);
-//
-//        return new HybridSchemeSignature(hybridIdentifier, signatureSchemeAlg, signature);
-//    }
 
     private static byte[] patchOpaque16(ByteArrayOutputStream buf) throws IOException
     {

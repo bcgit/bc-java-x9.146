@@ -7,6 +7,8 @@ import java.util.Vector;
 
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.AlertLevel;
+import org.bouncycastle.tls.CertificateKeySelection;
+import org.bouncycastle.tls.KeySelection;
 import org.bouncycastle.tls.CertificateRequest;
 import org.bouncycastle.tls.ChannelBinding;
 import org.bouncycastle.tls.ClientCertificateType;
@@ -26,6 +28,7 @@ import org.bouncycastle.tls.TlsUtils;
 import org.bouncycastle.tls.crypto.TlsCertificate;
 import org.bouncycastle.tls.crypto.impl.bc.BcTlsCrypto;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Integers;
 import org.bouncycastle.util.encoders.Hex;
 
 class MockX9146TlsClient
@@ -34,9 +37,15 @@ class MockX9146TlsClient
     TlsSession session;
 
     short cksCode = 0;
+    org.bouncycastle.tls.CertificateKeySelection CKS = null;
     int[] selectedCipherSuites = null;
 
-    boolean DEBUG = false;
+    boolean DEBUG = true;
+
+    public void setCKS(CertificateKeySelection CKS)
+    {
+        this.CKS = CKS;
+    }
 
     public void setSelectedCipherSuites(int[] selectedCipherSuites)
     {
@@ -159,10 +168,15 @@ class MockX9146TlsClient
             TlsExtensionsUtils.addMaxFragmentLengthExtension(clientExtensions, MaxFragmentLength.pow2_9);
             TlsExtensionsUtils.addPaddingExtension(clientExtensions, context.getCrypto().getSecureRandom().nextInt(16));
             TlsExtensionsUtils.addTruncatedHMacExtension(clientExtensions);
-            //TODO: why does adding the CKS extension break the tls connection with wolfssl?
-            if (cksCode != 0)
+
+            if (CKS != null)
             {
-                TlsExtensionsUtils.addCertificationKeySelection(clientExtensions, cksCode);
+                Vector cksValues = new Vector();
+                for (int i = 0; i < CKS.getSignatureIdentifier().size(); i++)
+                {
+                    cksValues.add(Integers.valueOf(((KeySelection)CKS.getSignatureIdentifier().elementAt(i)).getValue()));
+                }
+                TlsExtensionsUtils.addCertificateKeySelectionList(clientExtensions, cksValues);
             }
 
         }

@@ -275,9 +275,6 @@ public class TlsClientProtocol
                         DigitallySigned certificateVerify = TlsUtils.generate13CertificateVerify(tlsClientContext,
                             clientCredentials, handshakeHash);
 
-//                        TODO is this server extension?
-//                        TlsExtensionsUtils.addHybridSchemeSignature(serverExtensions, hybridSchemeSignature);
-
                         send13CertificateVerifyMessage(certificateVerify);
                         this.connection_state = CS_CLIENT_CERTIFICATE_VERIFY;
                     }
@@ -1112,6 +1109,13 @@ public class TlsClientProtocol
 
         TlsUtils.establish13PhaseSecrets(tlsClientContext, pskEarlySecret, sharedSecret);
 
+        // X9.146: Read server's CKS list from ServerHello
+        int[] serverCksList = TlsExtensionsUtils.getCertificateKeySelectionList(extensions);
+        if (serverCksList != null)
+        {
+            securityParameters.serverCksList = serverCksList;
+        }
+
         invalidateSession();
         this.tlsSession = TlsUtils.importSession(securityParameters.getSessionID(), null);
     }
@@ -1568,6 +1572,13 @@ public class TlsClientProtocol
         securityParameters.applicationProtocol = TlsExtensionsUtils.getALPNExtensionServer(serverExtensions);
         securityParameters.applicationProtocolSet = true;
 
+        // X9.146: Read server's selected CKS from EncryptedExtensions
+        int selectedCks = TlsExtensionsUtils.getCertificateKeySelectionValue(serverExtensions);
+        if (selectedCks >= 0)
+        {
+            securityParameters.cksCode = (short)selectedCks;
+        }
+
         Hashtable sessionClientExtensions = clientExtensions, sessionServerExtensions = serverExtensions;
         if (securityParameters.isResumedSession())
         {
@@ -1662,26 +1673,9 @@ public class TlsClientProtocol
 
 
 
-        //TODO: 1.3.2
-        // check server extension if alternative algorithm is supported or not
-        // if supported and hybrid scheme was not sent throw an error
-
-        short cksCode = TlsUtils.getCommonCKS(
-                TlsExtensionsUtils.getCertificationKeySelection(clientExtensions),
-                TlsExtensionsUtils.getCertificationKeySelection(serverExtensions)
-        );
-
-        // TODO: Throw error if server cks != client cks (check if native == default)
+        short cksCode = tlsClientContext.getSecurityParametersHandshake().cksCode;
 
         TlsUtils.verify13CertificateVerifyServer(tlsClientContext, handshakeHash, certificateVerify, cksCode);
-
-        //TODO[x9.146]: new extension, need more testing/publishing
-//        HybridSchemeSignature hybridSchemeSignature = TlsExtensionsUtils.getHybridSchemeSignature(serverExtensions);
-//        if (hybridSchemeSignature != null)
-//        {
-//            //TODO: should i make a function for server and client separate
-//            TlsUtils.verifyHybridSchemeSignatureServer(tlsClientContext, handshakeHash, hybridSchemeSignature);
-//        }
     }
 
     protected void receive13ServerFinished(ByteArrayInputStream buf)
@@ -1934,8 +1928,7 @@ public class TlsClientProtocol
 
         securityParameters.clientSupportedGroups = TlsExtensionsUtils.getSupportedGroupsExtension(clientExtensions);
 
-        //TODO: check when to add them
-        securityParameters.hybridSchemeList = TlsExtensionsUtils.getHybridSchemeList(clientExtensions);
+        // CKS list is in clientExtensions, will be read during negotiation
 
         this.clientBinders = TlsUtils.addPreSharedKeyToClientHello(tlsClientContext, tlsClient, clientExtensions,
             offeredCipherSuites);

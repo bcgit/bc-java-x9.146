@@ -3,7 +3,9 @@ package org.bouncycastle.tls.test;
 import org.bouncycastle.asn1.x509.Certificate;
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.AlertLevel;
+import org.bouncycastle.tls.CertificateKeySelection;
 import org.bouncycastle.tls.CertificateRequest;
+import org.bouncycastle.tls.KeySelection;
 import org.bouncycastle.tls.ChannelBinding;
 import org.bouncycastle.tls.DefaultTlsServer;
 import org.bouncycastle.tls.ProtocolName;
@@ -18,6 +20,7 @@ import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.TlsUtils;
 import org.bouncycastle.tls.crypto.TlsCertificate;
 import org.bouncycastle.tls.crypto.impl.bc.BcTlsCrypto;
+import org.bouncycastle.util.Integers;
 import org.bouncycastle.util.encoders.Hex;
 
 import java.io.IOException;
@@ -41,9 +44,8 @@ class MockX9146TlsServer
     HybridExample selectedHybridTest = HybridExample.mldsa44p256;
     int[] selectedCipherSuites = null;
 
-    // Change this to manipulate server cks choice
-    byte[] SUPPORTED_CKSCODE = new byte[] {3, 2, 1, 0};
-    boolean DEBUG = false;
+    CertificateKeySelection CKS = null;
+    boolean DEBUG = true;
 
     public void setSelectedHybridTest(HybridExample target)
     {
@@ -54,13 +56,9 @@ class MockX9146TlsServer
         this.selectedCipherSuites = selectedCipherSuites;
     }
 
-    public void setSupportedCksCode(int cksCode)
+    public void setCKS(CertificateKeySelection CKS)
     {
-        SUPPORTED_CKSCODE = new byte[]{(byte)cksCode};
-        if (cksCode == 0)
-        {
-            SUPPORTED_CKSCODE = null;
-        }
+        this.CKS = CKS;
     }
 
     MockX9146TlsServer()
@@ -183,11 +181,11 @@ class MockX9146TlsServer
                 "x9146/ca-rsa3072-mldsa44-cert.pem"
         };
 
-        //TODO[X9.146] process the trusted cert resource via provided cks code
-        short cksCode = context.getSecurityParameters().getCertificateKeySelectionCode();
+        //TODO[X9.146] Process the trusted cert resource via provided cks code
+        CertificateKeySelection cks = context.getSecurityParameters().getCertificateKeySelection();
 
         TlsCertificate[] certPath = TlsTestUtils.getTrustedCertPath(context.getCrypto(), chain[0],
-            trustedCertResources, cksCode);
+            trustedCertResources, cks);
 
         if (null == certPath)
         {
@@ -245,10 +243,14 @@ class MockX9146TlsServer
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
 
-        // Don't add CKS extension if it is cks_default
-        if (SUPPORTED_CKSCODE != null && TlsExtensionsUtils.hasCertificationKeySelections(clientExtensions))
+        if (CKS != null)
         {
-            TlsExtensionsUtils.addCertificationKeySelections(serverExtensions, SUPPORTED_CKSCODE);
+            Vector cksValues = new Vector();
+            for (int i = 0; i < CKS.getSignatureIdentifier().size(); i++)
+            {
+                cksValues.add(Integers.valueOf(((KeySelection)CKS.getSignatureIdentifier().elementAt(i)).getValue()));
+            }
+            TlsExtensionsUtils.addCertificateKeySelectionList(serverExtensions, cksValues);
         }
 
         return super.getServerExtensions();

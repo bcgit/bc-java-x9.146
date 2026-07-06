@@ -2496,6 +2496,7 @@ public class TlsUtils
         TlsHandshakeHash handshakeHash) throws IOException
     {
         short cksCode = context.getSecurityParameters().cksCode;
+
         SignatureAndHashAlgorithm signatureAndHashAlgorithm = credentialedSigner.getSignatureAndHashAlgorithm();
         SignatureAndHashAlgorithm altSignatureAndHashAlgorithm = credentialedSigner.getAltSignatureAndHashAlgorithm();
 
@@ -2778,6 +2779,7 @@ public class TlsUtils
         TlsHandshakeHash handshakeHash, TlsCertificate certificate, CertificateVerify certificateVerify, short cksCode)
         throws IOException
     {
+        System.out.println("In CertificateVerify-cks: " + cksCode);
         // Verify the CertificateVerify message contains a correct signature.
         boolean verified = true;
         if (cksCode == CertificateKeySelectionType.cks_external)
@@ -2991,19 +2993,59 @@ public class TlsUtils
         return v;
     }
 
-    public static short getCommonCKS(short[] clientCKS, short[] serverCKS)
+    public static short getCommonCKS(short[] clientCks, short[] serverCks)
+    {
+
+
+        if (clientCks == null || serverCks == null)
+        {
+            return 0;
+        }
+        for (short client : clientCks)
+        {
+            for (short server : serverCks)
+            {
+                if (client == server)
+                {
+                    return client;
+                }
+            }
+        }
+        return 0;
+    }
+
+    public static int getCommonHSL(int[] clientHSL, int[] serverHSL)
+    {
+        if (clientHSL == null || serverHSL == null)
+        {
+            return 0;
+        }
+        for (int client : clientHSL)
+        {
+            for (int server : serverHSL)
+            {
+                if (client == server)
+                {
+                    return client;
+                }
+            }
+        }
+        return 0;
+    }
+
+    public static int getCommonCKS(int[] clientCKS, int[] serverCKS)
     {
         if (clientCKS == null || serverCKS == null)
         {
             return 0;
         }
-        for (short client : clientCKS)
+        for (int server : serverCKS)
         {
-            for (short server : serverCKS)
+            for (int client : clientCKS)
             {
-                if (client == server)
+                if (server == client)
                 {
-                    return client;
+                    return server;
                 }
             }
         }
@@ -5248,12 +5290,12 @@ public class TlsUtils
     {
         SecurityParameters securityParameters = clientContext.getSecurityParametersHandshake();
         boolean isTLSv13 = isTLSv13(securityParameters.getNegotiatedVersion());
-        short cksCode = TlsUtils.getCommonCKS(
-                TlsExtensionsUtils.getCertificationKeySelection(clientExtensions),
-                TlsExtensionsUtils.getCertificationKeySelection(serverExtensions)
+        int hsl = TlsUtils.getCommonHSL(
+                TlsExtensionsUtils.getHybridSchemeList(clientExtensions),
+                TlsExtensionsUtils.getHybridSchemeList(serverExtensions)
         );
 
-        boolean usingAltCerts = cksCode > 1;
+        boolean usingAltCerts = hsl > 1;
 
         if (null == clientAuthentication)
         {

@@ -1,7 +1,9 @@
 package org.bouncycastle.tls.test;
 
 import junit.framework.TestCase;
+import org.bouncycastle.tls.CertificateKeySelection;
 import org.bouncycastle.tls.CertificateKeySelectionType;
+import org.bouncycastle.tls.KeySelection;
 import org.bouncycastle.tls.TlsClient;
 import org.bouncycastle.tls.TlsClientProtocol;
 import org.bouncycastle.tls.TlsServerProtocol;
@@ -16,6 +18,7 @@ import java.io.OutputStream;
 import java.io.PipedInputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Vector;
 
 import static java.lang.Thread.sleep;
 
@@ -65,7 +68,14 @@ public class TlsX9146InteroptTest
         PipedInputStream serverRead = TlsTestUtils.createPipedInputStream();
 
         MockX9146TlsClient client = new MockX9146TlsClient(null);
-        client.setCksCode(CKS_TYPE);
+        //TODO[x9.146]: change to cks preference (list)
+        client.setCKS(
+            new CertificateKeySelection( new Vector<KeySelection>()
+            {{
+                add(KeySelection.Chimera_Hybrid);
+                add(KeySelection.Chimera_Alternative);
+            }})
+        );
 
         TlsClientProtocol clientProtocol = openTlsConnection("127.0.0.1", 11111, client);
 
@@ -124,7 +134,14 @@ public class TlsX9146InteroptTest
         // sig:   0xA0 (160)
 
         MockX9146TlsClient client = new MockX9146TlsClient(null);
-        client.setCksCode(CKS_TYPE);
+        //TODO[x9.146]: change to cks preference (list)
+        client.setCKS(
+            new CertificateKeySelection( new Vector<KeySelection>()
+            {{
+                add(KeySelection.Chimera_Hybrid);
+                add(KeySelection.Chimera_Alternative);
+            }})
+        );
 
         TlsClientProtocol clientProtocol = openTlsConnection("127.0.0.1", 11111, client);
 
@@ -161,7 +178,15 @@ public class TlsX9146InteroptTest
             {
                 tlsServerProtocol = new TlsServerProtocol(s.getInputStream(), s.getOutputStream());
                 MockX9146TlsServer server = new MockX9146TlsServer();
-                server.setSupportedCksCode(CKS_TYPE);
+                //TODO[x9.146]: change to cks supported (list)
+                server.setCKS(
+                    new CertificateKeySelection( new Vector<KeySelection>()
+                    {{
+                        add(KeySelection.Chimera_Hybrid);
+                        add(KeySelection.Chimera_Alternative);
+                        add(KeySelection.Chimera_Native);
+                    }})
+                );
                 server.setSelectedHybridTest(DEMO);
 
                 tlsServerProtocol.accept(server);
@@ -325,7 +350,14 @@ public class TlsX9146InteroptTest
             {
                 tlsServerProtocol = new TlsServerProtocol(s.getInputStream(), s.getOutputStream());
                 MockX9146TlsServer bcServer = new MockX9146TlsServer();
-                bcServer.setSupportedCksCode(CKS_TYPE);
+                bcServer.setCKS(
+                    new CertificateKeySelection( new Vector<KeySelection>()
+                    {{
+                        add(KeySelection.Chimera_Hybrid);
+                        add(KeySelection.Chimera_Alternative);
+                        add(KeySelection.Chimera_Native);
+                    }})
+                );
                 bcServer.setSelectedHybridTest(DEMO);
 
                 tlsServerProtocol.accept(bcServer);

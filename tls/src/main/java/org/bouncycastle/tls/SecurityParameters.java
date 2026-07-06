@@ -21,7 +21,8 @@ public class SecurityParameters
     int prfHashLength = -1;
     int verifyDataLength = -1;
     short cksCode = 0;
-    int[] hybridSchemeList = null;
+    CertificateKeySelection cks;
+    int[] serverCksList = null;
 
     TlsSecret baseKeyClient = null;
     TlsSecret baseKeyServer = null;
@@ -84,9 +85,8 @@ public class SecurityParameters
         this.serverSigAlgs = null;
         this.serverSigAlgsCert = null;
         this.serverSupportedGroups = null;
-        this.hybridSchemeList = null;
+        this.serverCksList = null;
         this.statusRequestVersion = 0;
-        this.cksCode = 0;
 
         this.baseKeyClient = clearSecret(baseKeyClient);
         this.baseKeyServer = clearSecret(baseKeyServer);
@@ -120,10 +120,6 @@ public class SecurityParameters
         return secureRenegotiation;
     }
 
-    public short getCertificateKeySelectionCode()
-    {
-        return cksCode;
-    }
 
     /**
      * @return {@link CipherSuite}
@@ -157,9 +153,15 @@ public class SecurityParameters
     {
         return clientSupportedGroups;
     }
-    public int[] getHybridSchemeList()
+
+    public int[] getServerCksList()
     {
-        return hybridSchemeList;
+        return serverCksList;
+    }
+
+    public CertificateKeySelection getCertificateKeySelection()
+    {
+        return cks;
     }
 
     public byte[] getConnectionIDLocal()
