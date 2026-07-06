@@ -289,12 +289,6 @@ public class TlsExtensionsUtils
         extensions.put(EXT_trusted_ca_keys, createTrustedCAKeysExtensionServer());
     }
 
-    public static void addHybridSchemeList(Hashtable extensions, Vector hybridSchemeList)
-        throws IOException
-    {
-        extensions.put(EXT_hybrid_scheme_list, createHybridSchemeList(hybridSchemeList));
-    }
-
     public static void addCertificateKeySelectionList(Hashtable extensions, Vector certificateKeySelection)
         throws IOException
     {
@@ -1061,19 +1055,6 @@ public class TlsExtensionsUtils
         }
 
         return patchOpaque16(buf);
-    }
-
-    public static byte[] createHybridSchemeList(Vector hybridSchemeList)
-        throws IOException
-    {
-        int count = hybridSchemeList.size();
-        int[] values = new int[count];
-        for (int i = 0; i < count; ++i)
-        {
-            values[i] = ((HybridSchemeList.HybridScheme)hybridSchemeList.elementAt(i)).getValue();
-        }
-
-        return TlsUtils.encodeUint16ArrayWithUint16Length(values);
     }
 
     public static byte[] createCertificateKeySelectionList(Vector certificateKeySelectionList)
