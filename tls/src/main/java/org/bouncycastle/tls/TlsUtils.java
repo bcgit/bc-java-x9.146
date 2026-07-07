@@ -2776,7 +2776,6 @@ public class TlsUtils
         TlsHandshakeHash handshakeHash, TlsCertificate certificate, CertificateVerify certificateVerify, short cksCode)
         throws IOException
     {
-        System.out.println("In CertificateVerify-cks: " + cksCode);
         // Verify the CertificateVerify message contains a correct signature.
         boolean verified = true;
         if (cksCode == CertificateKeySelectionType.cks_external)
@@ -5328,10 +5327,16 @@ public class TlsUtils
         }
 
         //TODO: check if CKS is provided, if so validate using CKS Scheme
-        TlsCertificate serverCert = serverCertificate.getCertificateAt(0);
-        TBSCertificate tbsCert = ((BcTlsCertificate)serverCert).getCertificate().getTBSCertificate();
         if (usingAltCerts)
         {
+            TlsCertificate serverCert = serverCertificate.getCertificateAt(0);
+            if (!(serverCert instanceof BcTlsCertificate))
+            {
+                // TODO: X9.146 alternative-certificate processing is only implemented for the BC lightweight crypto
+                throw new TlsFatalAlert(AlertDescription.internal_error,
+                    "X9.146 alternative certificates require BC crypto");
+            }
+            TBSCertificate tbsCert = ((BcTlsCertificate)serverCert).getCertificate().getTBSCertificate();
             SubjectAltPublicKeyInfo subjectAltPublicKeyInfo = SubjectAltPublicKeyInfo.fromExtensions(tbsCert.getExtensions());
             AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(tbsCert.getExtensions());
             AltSignatureValue altSignatureValue = AltSignatureValue.fromExtensions(tbsCert.getExtensions());

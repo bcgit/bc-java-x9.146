@@ -9,6 +9,7 @@ import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.tls.crypto.TlsCertificate;
 import org.bouncycastle.tls.crypto.TlsEncryptor;
 import org.bouncycastle.tls.crypto.TlsVerifier;
@@ -137,6 +138,18 @@ public class CheckTlsFeaturesExtensionTest
             throw new UnsupportedOperationException();
         }
 
+        public Tls13Verifier createAltVerifier(SubjectPublicKeyInfo altKeyInfo, int signatureScheme)
+            throws IOException
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        public Tls13Verifier createAltVerifier(int signatureScheme)
+            throws IOException
+        {
+            throw new UnsupportedOperationException();
+        }
+
         public byte[] getEncoded()
             throws IOException
         {
@@ -154,6 +167,17 @@ public class CheckTlsFeaturesExtensionTest
         }
 
         public ASN1Encodable getSigAlgParams()
+            throws IOException
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        public String getAltSigAlgOID()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        public ASN1Encodable getAltSigAlgParams()
             throws IOException
         {
             throw new UnsupportedOperationException();

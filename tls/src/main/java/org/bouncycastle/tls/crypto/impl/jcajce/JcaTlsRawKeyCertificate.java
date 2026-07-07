@@ -166,6 +166,18 @@ public class JcaTlsRawKeyCertificate
         }
     }
 
+    public Tls13Verifier createAltVerifier(SubjectPublicKeyInfo altKeyInfo, int signatureScheme) throws IOException
+    {
+        //TODO
+        return null;
+    }
+
+    public Tls13Verifier createAltVerifier(int signatureScheme) throws IOException
+    {
+        //TODO
+        return null;
+    }
+
     public Tls13Verifier createVerifier(int signatureScheme) throws IOException
     {
         validateKeyUsageBit(KU_DIGITAL_SIGNATURE);
@@ -309,6 +321,16 @@ public class JcaTlsRawKeyCertificate
     }
 
     public ASN1Encodable getSigAlgParams() throws IOException
+    {
+        return null;
+    }
+
+    public String getAltSigAlgOID()
+    {
+        return null;
+    }
+
+    public ASN1Encodable getAltSigAlgParams() throws IOException
     {
         return null;
     }

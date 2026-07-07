@@ -31,20 +31,30 @@ public class TlsX9146ProtocolTest
         MockX9146TlsServer.HybridExample.mldsa44rsa3072
     };
 
-//    public void testAll()
-//        throws Exception
-//    {
-//        for (MockX9146TlsServer.HybridExample demo : DEMOS)
-//        {
-//            for (short cks : CKS_TYPES)
-//            {
-//                System.out.println("running: " + demo + " cks: " + cks);
-//                runClientServer(cks, demo);
-//            }
-//        }
-//    }
+    public void testAll()
+        throws Exception
+    {
+        for (MockX9146TlsServer.HybridExample demo : DEMOS)
+        {
+            for (short cks : CKS_TYPES)
+            {
+                runClientServer(cks, demo,
+                    new CertificateKeySelection(new Vector<KeySelection>()
+                    {{
+                        add(KeySelection.Default);
+                        add(KeySelection.Chimera_Native);
+                        add(KeySelection.Chimera_Alternative);
+                        add(KeySelection.Chimera_Hybrid);
+                    }}
+                    )
+                );
+            }
+        }
+    }
 
-    public void test10000()
+    // Handshake timing benchmark - not named 'test*' so it is not picked up by the AllTests suite;
+    // run manually when needed.
+    public void manualTest10000()
         throws Exception
     {
         double total = 0;

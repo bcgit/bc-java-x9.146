@@ -129,6 +129,20 @@ public class JcaTlsCertificate
         return asn1;
     }
 
+    public String getAltSigAlgOID()
+    {
+//        AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(certificate.getTBSCertificate().getExtensions());
+//        return altSignatureAlgorithm.getAlgorithm().getAlgorithm().getId();
+        return null;
+    }
+
+    public ASN1Encodable getAltSigAlgParams() throws IOException
+    {
+//        AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(certificate.getTBSCertificate().getExtensions());
+//        return altSignatureAlgorithm.getAlgorithm().getParameters();
+        return null;
+    }
+
     public X509Certificate getX509Certificate()
     {
         return certificate;

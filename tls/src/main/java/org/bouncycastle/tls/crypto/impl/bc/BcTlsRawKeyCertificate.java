@@ -639,7 +639,7 @@ public class BcTlsRawKeyCertificate
     {
         try
         {
-            return (MLDSAPublicKeyParameters)getPQCPublicKey(keyInfo);
+            return (MLDSAPublicKeyParameters)getPublicKey(keyInfo);
         }
         catch (ClassCastException e)
         {
