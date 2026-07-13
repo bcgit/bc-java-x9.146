@@ -16,6 +16,7 @@ import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1InputStream;
+import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Set;
@@ -247,6 +248,29 @@ public class CMSSignedData
     public int getVersion()
     {
         return signedData.getVersion().intValueExact();
+    }
+
+    /**
+     * Return a copy of this CMSSignedData with the SignedData version field forced to the given
+     * value, leaving every other field unchanged.
+     * <p>
+     * The version is normally recomputed from the content per RFC 5652 sec. 5.1 (for example, a
+     * non-id-data eContentType implies version 3), including by {@link #replaceSigners} and
+     * {@link #addDigestAlgorithm}. This method lets a producer pin a specific version for interop
+     * with profiles that require one - notably Microsoft Authenticode, whose signatures must carry
+     * version 1 even though their SPC_INDIRECT_DATA eContentType would otherwise compute to 3.
+     *
+     * @param version the CMSVersion value to set.
+     * @return a new CMSSignedData carrying the supplied version.
+     */
+    public CMSSignedData asVersion(int version)
+    {
+        SignedData current = this.signedData;
+        SignedData newContent = new SignedData(new ASN1Integer(version), current.getDigestAlgorithms(),
+            current.getEncapContentInfo(), current.getCertificates(), current.getCRLs(), current.getSignerInfos());
+
+        return new CMSSignedData(this.contentInfo.getContentType(), newContent, this.signedContent,
+            this.signerInfoStore);
     }
 
     /**

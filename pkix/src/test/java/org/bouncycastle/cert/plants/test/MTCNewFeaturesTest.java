@@ -106,6 +106,47 @@ public class MTCNewFeaturesTest
             }
         });
 
+        // Section 3 / 4.1 of draft-ietf-tls-trust-anchor-ids: a trust anchor ID's
+        // binary form is opaque<1..2^8-1>, i.e. 1..255 bytes. Reject an empty caId,
+        // an ID whose encoding would exceed 255 bytes, and an over-long fromDottedDecimal.
+        testException("binary length must be 1..255", "IllegalArgumentException", new TestExceptionOperation()
+        {
+            public void operation()
+            {
+                TrustAnchorIDs.logId(new byte[0], 1);
+            }
+        });
+
+        StringBuilder maxSb = new StringBuilder("1");
+        for (int i = 1; i < TrustAnchorIDs.MAX_ID_LENGTH; i++)
+        {
+            maxSb.append(".1");
+        }
+        final byte[] caId255 = TrustAnchorIDs.fromDottedDecimal(maxSb.toString());
+        isTrue("255-byte trust anchor ID is accepted", caId255.length == TrustAnchorIDs.MAX_ID_LENGTH);
+        testException("binary length must be 1..255", "IllegalArgumentException", new TestExceptionOperation()
+        {
+            public void operation()
+            {
+                // appending the log arc + number tips a 255-byte caId over 255 bytes
+                TrustAnchorIDs.logId(caId255, 1);
+            }
+        });
+
+        StringBuilder overSb = new StringBuilder("1");
+        for (int i = 1; i <= TrustAnchorIDs.MAX_ID_LENGTH; i++)
+        {
+            overSb.append(".1");
+        }
+        final String over255Dotted = overSb.toString();   // 256 single-octet components
+        testException("binary length must be 1..255", "IllegalArgumentException", new TestExceptionOperation()
+        {
+            public void operation()
+            {
+                TrustAnchorIDs.fromDottedDecimal(over255Dotted);
+            }
+        });
+
         // Serial composition per Section 6.1: serial = (log_number << 48) | index,
         // "positive and at most 2^64-1". log_number >= 32768 overflows a signed
         // long shift, so the composition must be done in BigInteger.
@@ -140,7 +181,8 @@ public class MTCNewFeaturesTest
         MTCCertificationAuthority info = new MTCCertificationAuthority(
             new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256),
             new AlgorithmIdentifier(new org.bouncycastle.asn1.ASN1ObjectIdentifier("1.2.840.10045.4.3.2")), // ecdsa-with-SHA256
-            BigInteger.valueOf(1L << 48));   // minSerial: first entry of log 1
+            BigInteger.valueOf(1L << 48),                // minSerial: first entry of log 1
+            BigInteger.valueOf((2L << 48) - 1));         // maxSerial: last entry of log 1
 
         X500Name externalIssuer = new X500Name("CN=External Trust Anchor");
         BigInteger serial = BigInteger.ONE;
@@ -167,6 +209,8 @@ public class MTCNewFeaturesTest
             "1.2.840.10045.4.3.2".equals(decoded.getSigAlg().getAlgorithm().getId()));
         isTrue("minSerial preserved",
             decoded.getMinSerial().equals(BigInteger.valueOf(1L << 48)));
+        isTrue("maxSerial preserved",
+            decoded.getMaxSerial().equals(BigInteger.valueOf((2L << 48) - 1)));
 
         // Required X.509 extensions.
         Extension keyUsageExt = cert.getExtensions().getExtension(Extension.keyUsage);

@@ -2,6 +2,7 @@ package org.bouncycastle.crypto.test;
 
 import java.security.SecureRandom;
 
+import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.InvalidCipherTextException;
 import org.bouncycastle.crypto.engines.DSTU7624Engine;
 import org.bouncycastle.crypto.engines.DSTU7624WrapEngine;
@@ -99,6 +100,116 @@ public class DSTU7624Test
         GCMModeTests();
         testOverlapping();
         kccmKgcmNoUnverifiedPlaintextOnFailure();
+        kgcmReInitClearsAssociatedText();
+        kccmVariableLengthAssociatedTextAndNonce();
+    }
+
+    private void kgcmReInitClearsAssociatedText()
+        throws Exception
+    {
+        // github PR #2349: init() applies AEADParameters.getAssociatedText() to the associatedText
+        // accumulator but did not first clear it, so a re-init carried the previous operation's AAD
+        // (left in the buffer by the prior doFinal's reset()) into the next tag. A re-initialised
+        // cipher must behave exactly like a freshly constructed one.
+        byte[] key = Hex.decode("000102030405060708090A0B0C0D0E0F");
+        byte[] nonce1 = Hex.decode("101112131415161718191A1B1C1D1E1F");
+        byte[] nonce2 = Hex.decode("202122232425262728292A2B2C2D2E2F");
+        byte[] aadA = Hex.decode("A0A1A2A3A4A5A6A7");
+        byte[] aadB = Hex.decode("B0B1B2B3B4B5B6B7");
+        byte[] pt = Hex.decode("303132333435363738393A3B3C3D3E3F");
+
+        // (1) AEADParameters branch: re-init with a different AAD must match a fresh cipher.
+        KGCMBlockCipher reused = new KGCMBlockCipher(new DSTU7624Engine(128));
+        kgcmEncrypt(reused, new AEADParameters(new KeyParameter(key), 128, nonce1, aadA), pt);
+        byte[] viaReuse = kgcmEncrypt(reused, new AEADParameters(new KeyParameter(key), 128, nonce2, aadB), pt);
+
+        byte[] viaFresh = kgcmEncrypt(new KGCMBlockCipher(new DSTU7624Engine(128)),
+            new AEADParameters(new KeyParameter(key), 128, nonce2, aadB), pt);
+
+        if (!Arrays.areEqual(viaReuse, viaFresh))
+        {
+            fail("KGCM re-init did not clear stale associated text (AEADParameters)");
+        }
+
+        // (2) ParametersWithIV branch: re-init with no AAD must match a fresh no-AAD cipher.
+        KGCMBlockCipher reused2 = new KGCMBlockCipher(new DSTU7624Engine(128));
+        kgcmEncrypt(reused2, new AEADParameters(new KeyParameter(key), 128, nonce1, aadA), pt);
+        byte[] viaReuse2 = kgcmEncrypt(reused2, new ParametersWithIV(new KeyParameter(key), nonce2), pt);
+
+        byte[] viaFresh2 = kgcmEncrypt(new KGCMBlockCipher(new DSTU7624Engine(128)),
+            new ParametersWithIV(new KeyParameter(key), nonce2), pt);
+
+        if (!Arrays.areEqual(viaReuse2, viaFresh2))
+        {
+            fail("KGCM re-init did not clear stale associated text (ParametersWithIV)");
+        }
+    }
+
+    private byte[] kgcmEncrypt(KGCMBlockCipher cipher, CipherParameters params, byte[] pt)
+        throws Exception
+    {
+        cipher.init(true, params);
+        byte[] out = new byte[cipher.getOutputSize(pt.length)];
+        int len = cipher.processBytes(pt, 0, pt.length, out, 0);
+        cipher.doFinal(out, len);
+        return out;
+    }
+
+    private void kccmVariableLengthAssociatedTextAndNonce()
+        throws Exception
+    {
+        // github PR #2350: KCCM (DSTU 7624 CCM) init now zero-extends a short nonce to the block
+        // size, and processAssociatedText handles associated data whose length is not a multiple of
+        // the block size (the "padding not supported" restriction was dropped) instead of rejecting
+        // it. The associated-data MAC loop must still authenticate every block, including the case of
+        // multi-block associated data whose length IS a multiple of the block size.
+        byte[] key = Hex.decode("000102030405060708090A0B0C0D0E0F");
+        byte[] iv = Hex.decode("101112131415161718191A1B1C1D1E1F");
+        byte[] pt = Hex.decode("303132333435363738393A3B3C3D3E3F");
+
+        // (1) Two-block associated data at a 16-byte block size. This was already legal (32 % 16 == 0)
+        // and its MAC must not change: the value below is the pre-PR result. An off-by-block error in
+        // the AAD loop (only the first block authenticated) yields a different MAC here.
+        byte[] aad2 = Hex.decode("202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F");
+        KCCMBlockCipher ccm = new KCCMBlockCipher(new DSTU7624Engine(128));
+        ccm.init(true, new AEADParameters(new KeyParameter(key), 128, iv));
+        ccm.processAADBytes(aad2, 0, aad2.length);
+        byte[] out = new byte[ccm.getOutputSize(pt.length)];
+        ccm.doFinal(out, ccm.processBytes(pt, 0, pt.length, out, 0));
+        if (!Arrays.areEqual(ccm.getMac(), Hex.decode("85bf5ebb03647d30f57adf94b6904461")))
+        {
+            fail("KCCM multi-block associated-text MAC changed: got " + Hex.toHexString(ccm.getMac()));
+        }
+
+        // (2) Associated data whose length is not a multiple of the block size (20 bytes at bs 16)
+        // must now round-trip rather than throwing "padding not supported".
+        byte[] aadPartial = Hex.decode("A0A1A2A3A4A5A6A7A8A9AAABACADAEAFB0B1B2B3");
+        kccmCheckRoundtrip("partial AAD", new DSTU7624Engine(128), key, iv, aadPartial, pt);
+
+        // (3) A nonce shorter than the block size must be accepted (zero-extended) and round-trip.
+        byte[] shortNonce = Hex.decode("101112131415161718191A1B");
+        kccmCheckRoundtrip("short nonce", new DSTU7624Engine(128), key, shortNonce, aadPartial, pt);
+    }
+
+    private void kccmCheckRoundtrip(String label, DSTU7624Engine engine, byte[] key, byte[] nonce, byte[] aad, byte[] pt)
+        throws Exception
+    {
+        KCCMBlockCipher enc = new KCCMBlockCipher(engine);
+        enc.init(true, new AEADParameters(new KeyParameter(key), 128, nonce));
+        enc.processAADBytes(aad, 0, aad.length);
+        byte[] ct = new byte[enc.getOutputSize(pt.length)];
+        enc.doFinal(ct, enc.processBytes(pt, 0, pt.length, ct, 0));
+
+        KCCMBlockCipher dec = new KCCMBlockCipher(engine);
+        dec.init(false, new AEADParameters(new KeyParameter(key), 128, nonce));
+        dec.processAADBytes(aad, 0, aad.length);
+        byte[] recovered = new byte[dec.getOutputSize(ct.length)];
+        dec.doFinal(recovered, dec.processBytes(ct, 0, ct.length, recovered, 0));
+
+        if (!Arrays.areEqual(recovered, pt))
+        {
+            fail("KCCM " + label + " round-trip failed: got " + Hex.toHexString(recovered));
+        }
     }
 
     private void kccmKgcmNoUnverifiedPlaintextOnFailure()
