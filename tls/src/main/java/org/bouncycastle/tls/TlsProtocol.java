@@ -1814,6 +1814,16 @@ public abstract class TlsProtocol
         message.send(this);
     }
 
+    protected void send13ExtendedCertificateVerifyMessage(ExtendedCertificateVerify extendedCertificateVerify)
+        throws IOException
+    {
+        // X9.146 QTLS sec. 6.4: the ExtendedCertificateVerify body replaces CertificateVerify's under
+        // handshake type certificate_verify(15) when the negotiated CKS value is 3 or 5.
+        HandshakeMessageOutput message = new HandshakeMessageOutput(HandshakeType.certificate_verify);
+        extendedCertificateVerify.encode(message);
+        message.send(this);
+    }
+
     protected void sendChangeCipherSpec()
         throws IOException
     {

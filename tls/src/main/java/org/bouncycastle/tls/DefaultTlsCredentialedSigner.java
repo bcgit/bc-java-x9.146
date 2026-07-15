@@ -61,6 +61,17 @@ public class DefaultTlsCredentialedSigner
         return signer.generateRawSignature(getEffectiveAlgorithm(), hash);
     }
 
+    public byte[] generateRawAltSignature(byte[] hash)
+        throws IOException
+    {
+        if (altSigner == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error,
+                new IllegalStateException("no alternate signer for X9.146 alternate signature"));
+        }
+        return altSigner.generateRawSignature(getAltEffectiveAlgorithm(), hash);
+    }
+
     public SignatureAndHashAlgorithm getSignatureAndHashAlgorithm()
     {
         return signatureAndHashAlgorithm;
@@ -76,6 +87,11 @@ public class DefaultTlsCredentialedSigner
     }
     public TlsStreamSigner getAltStreamSigner() throws IOException
     {
+        if (altSigner == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error,
+                new IllegalStateException("no alternate signer for X9.146 alternate signature"));
+        }
         return altSigner.getStreamSigner(getAltEffectiveAlgorithm());
     }
 

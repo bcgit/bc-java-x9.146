@@ -21,6 +21,18 @@ public interface TlsCredentialedSigner
         throws IOException;
 
     /**
+     * Generate a signature against the passed in hash using the <em>alternate</em> (X9.146 chimera)
+     * private credentials. Only meaningful for a hybrid credential that carries a second key; an
+     * implementation with no alternate key MUST fail rather than fall back to the native key.
+     *
+     * @param hash a message digest calculated across the message the signature is to apply to.
+     * @return an encoded signature.
+     * @throws IOException if there is no alternate credential, or the hash cannot be processed.
+     */
+    byte[] generateRawAltSignature(byte[] hash)
+        throws IOException;
+
+    /**
      * Return the algorithm IDs for the signature algorithm and the associated hash it uses.
      *
      * @return the full algorithm details for the signature.

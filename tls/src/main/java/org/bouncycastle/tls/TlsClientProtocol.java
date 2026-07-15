@@ -268,15 +268,44 @@ public class TlsClientProtocol
                         clientCertificate = Certificate.EMPTY_CHAIN_TLS13;
                     }
 
+                    /*
+                     * X9.146 QTLS sec. 6.1/8.6: when authenticating with a certificate, select the CKS value
+                     * from the client's own advertised list, the server's advertised list (CertificateRequest)
+                     * and the server's signature_algorithms, and signal the used value in the client Certificate.
+                     */
+                    SecurityParameters securityParameters = tlsClientContext.getSecurityParametersHandshake();
+                    if (null != clientCredentials)
+                    {
+                        int[] clientCksList = TlsExtensionsUtils.getCertificateKeySelectionList(clientExtensions);
+                        int selectedCks = TlsUtils.selectCertificateKeySelection(clientCredentials,
+                            securityParameters.getServerSigAlgs(), clientCksList,
+                            certificateRequest.getCertificateKeySelection(), securityParameters.certWithExternPSK);
+                        if (selectedCks >= 0)
+                        {
+                            securityParameters.clientCksCode = (short)selectedCks;
+                            clientCertificate =
+                                TlsUtils.addCertificateKeySelectionToFirstEntry(clientCertificate, selectedCks);
+                        }
+                    }
+
                     send13CertificateMessage(clientCertificate);
                     this.connection_state = CS_CLIENT_CERTIFICATE;
 
                     if (null != clientCredentials)
                     {
-                        DigitallySigned certificateVerify = TlsUtils.generate13CertificateVerify(tlsClientContext,
-                            clientCredentials, handshakeHash);
-
-                        send13CertificateVerifyMessage(certificateVerify);
+                        if (TlsUtils.cksUsesExtendedCertificateVerify(securityParameters.clientCksCode))
+                        {
+                            ExtendedCertificateVerify extendedCertificateVerify =
+                                TlsUtils.generate13ExtendedCertificateVerify(tlsClientContext, clientCredentials,
+                                    handshakeHash);
+                            send13ExtendedCertificateVerifyMessage(extendedCertificateVerify);
+                        }
+                        else
+                        {
+                            DigitallySigned certificateVerify = TlsUtils.generate13CertificateVerify(tlsClientContext,
+                                clientCredentials, handshakeHash);
+                            send13CertificateVerifyMessage(certificateVerify);
+                        }
                         this.connection_state = CS_CLIENT_CERTIFICATE_VERIFY;
                     }
                 }
@@ -1514,12 +1543,14 @@ public class TlsClientProtocol
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
 
-        /* 
+        /*
          * RFC 8446 4.3.2. A server which is authenticating with a certificate MAY optionally
          * request a certificate from the client.
          */
 
-        if (selectedPSK13)
+        // A selected PSK normally precludes certificate messages; RFC 8773 tls_cert_with_extern_psk (X9.146
+        // CKS 6) is the exception -- the server authenticates with a certificate alongside the external PSK.
+        if (selectedPSK13 && !tlsClientContext.getSecurityParametersHandshake().certWithExternPSK)
         {
             throw new TlsFatalAlert(AlertDescription.unexpected_message);
         }
@@ -1574,12 +1605,17 @@ public class TlsClientProtocol
         securityParameters.applicationProtocol = TlsExtensionsUtils.getALPNExtensionServer(serverExtensions);
         securityParameters.applicationProtocolSet = true;
 
-        // X9.146: Read server's selected CKS from EncryptedExtensions
-        int selectedCks = TlsExtensionsUtils.getCertificateKeySelectionValue(serverExtensions);
-        if (selectedCks >= 0)
+        // X9.146 QTLS sec. 10 / RFC 8773: if the server echoed tls_cert_with_extern_psk, certificate
+        // authentication is combined with the external PSK (CKS 6) -- the client then expects the server's
+        // Certificate/CertificateVerify despite the selected PSK (see the selectedPSK13 guards).
+        if (TlsExtensionsUtils.hasCertWithExternPSKExtension(serverExtensions))
         {
-            securityParameters.cksCode = (short)selectedCks;
+            securityParameters.certWithExternPSK = true;
         }
+
+        // X9.146 QTLS sec. 6.1: the server's used CKS value is signalled in the Certificate message's
+        // first CertificateEntry, not in EncryptedExtensions (WI-10, decisions D1/D2). It is read and
+        // validated in receive13ServerCertificate.
 
         Hashtable sessionClientExtensions = clientExtensions, sessionServerExtensions = serverExtensions;
         if (securityParameters.isResumedSession())
@@ -1650,12 +1686,23 @@ public class TlsClientProtocol
     protected void receive13ServerCertificate(ByteArrayInputStream buf)
         throws IOException
     {
-        if (selectedPSK13)
+        // A selected PSK normally precludes a server Certificate; RFC 8773 / X9.146 CKS 6 is the exception.
+        if (selectedPSK13 && !tlsClientContext.getSecurityParametersHandshake().certWithExternPSK)
         {
             throw new TlsFatalAlert(AlertDescription.unexpected_message);
         }
 
         this.authentication = TlsUtils.receive13ServerCertificate(tlsClientContext, tlsClient, buf);
+
+        /*
+         * X9.146 QTLS sec. 6.1 / 8.5: read the server's used CKS value from the Certificate message's
+         * first CertificateEntry and validate it against what this client advertised. An unadvertised or
+         * undefined value is fatal (unsupported_cks_value). Absent extension means Default(0).
+         */
+        SecurityParameters securityParameters = tlsClientContext.getSecurityParametersHandshake();
+        int[] advertisedCks = TlsExtensionsUtils.getCertificateKeySelectionList(clientExtensions);
+        securityParameters.cksCode =
+            TlsUtils.receiveCertificateKeySelection(securityParameters.getPeerCertificate(), advertisedCks);
 
         // NOTE: In TLS 1.3 we don't have to wait for a possible CertificateStatus message.
         handleServerCertificate();
@@ -1670,15 +1717,27 @@ public class TlsClientProtocol
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
 
-        CertificateVerify certificateVerify = CertificateVerify.parse(tlsClientContext, buf);
-
-        assertEmpty(buf);
-
-
-
         short cksCode = tlsClientContext.getSecurityParametersHandshake().cksCode;
 
-        TlsUtils.verify13CertificateVerifyServer(tlsClientContext, handshakeHash, certificateVerify, cksCode);
+        if (TlsUtils.cksUsesExtendedCertificateVerify(cksCode))
+        {
+            // X9.146 QTLS sec. 6.4: dual-signature CKS values (3/5) carry an ExtendedCertificateVerify.
+            ExtendedCertificateVerify extendedCertificateVerify =
+                ExtendedCertificateVerify.parse(tlsClientContext, buf);
+
+            assertEmpty(buf);
+
+            TlsUtils.verify13ExtendedCertificateVerifyServer(tlsClientContext, handshakeHash,
+                extendedCertificateVerify, cksCode);
+        }
+        else
+        {
+            CertificateVerify certificateVerify = CertificateVerify.parse(tlsClientContext, buf);
+
+            assertEmpty(buf);
+
+            TlsUtils.verify13CertificateVerifyServer(tlsClientContext, handshakeHash, certificateVerify, cksCode);
+        }
     }
 
     protected void receive13ServerFinished(ByteArrayInputStream buf)
@@ -2049,7 +2108,9 @@ public class TlsClientProtocol
     protected void skip13ServerCertificate()
         throws IOException
     {
-        if (!selectedPSK13)
+        // Only PSK-only handshakes skip the server Certificate. RFC 8773 / X9.146 CKS 6 requires the
+        // certificate despite the selected PSK, so skipping it then is a protocol violation.
+        if (!selectedPSK13 || tlsClientContext.getSecurityParametersHandshake().certWithExternPSK)
         {
             throw new TlsFatalAlert(AlertDescription.unexpected_message);
         }

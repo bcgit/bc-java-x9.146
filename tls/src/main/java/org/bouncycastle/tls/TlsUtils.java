@@ -38,12 +38,14 @@ import org.bouncycastle.asn1.x509.AltSignatureAlgorithm;
 import org.bouncycastle.asn1.x509.AltSignatureValue;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.Extensions;
+import org.bouncycastle.asn1.x509.RelatedCertificate;
 import org.bouncycastle.asn1.x509.SubjectAltPublicKeyInfo;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x509.TBSCertificate;
 import org.bouncycastle.asn1.x509.V3TBSCertificateGenerator;
 import org.bouncycastle.asn1.x509.X509ObjectIdentifiers;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
+import org.bouncycastle.tls.crypto.CryptoHashAlgorithm;
 import org.bouncycastle.tls.crypto.Tls13Verifier;
 import org.bouncycastle.tls.crypto.TlsAgreement;
 import org.bouncycastle.tls.crypto.TlsCertificate;
@@ -2489,13 +2491,34 @@ public class TlsUtils
 //        return hybridSchemeSignature;
 //    }
 
+    /**
+     * X9.146 QTLS sec. 6.4: {@code cks_both(3)} and {@code cks_related_certificates_pair_hybrid(5)}
+     * carry two signatures in an {@link ExtendedCertificateVerify}; every other CKS value carries a
+     * single signature in a {@link CertificateVerify}.
+     */
+    static boolean cksUsesExtendedCertificateVerify(short cksCode)
+    {
+        return cksCode == CertificateKeySelectionType.cks_both
+            || cksCode == CertificateKeySelectionType.cks_related_certificates_pair_hybrid;
+    }
+
+    /**
+     * The CKS value governing the CertificateVerify this endpoint generates for its own authentication:
+     * the server-authentication {@code cksCode} on the server, the client-authentication {@code clientCksCode}
+     * on the client. Each endpoint only ever generates a CertificateVerify for its own certificate.
+     */
+    private static short generatorCksCode(TlsContext context)
+    {
+        SecurityParameters securityParameters = context.getSecurityParameters();
+        return context.isServer() ? securityParameters.cksCode : securityParameters.clientCksCode;
+    }
+
     static DigitallySigned generate13CertificateVerify(TlsContext context, TlsCredentialedSigner credentialedSigner,
         TlsHandshakeHash handshakeHash) throws IOException
     {
-        short cksCode = context.getSecurityParameters().cksCode;
+        short cksCode = generatorCksCode(context);
 
         SignatureAndHashAlgorithm signatureAndHashAlgorithm = credentialedSigner.getSignatureAndHashAlgorithm();
-        SignatureAndHashAlgorithm altSignatureAndHashAlgorithm = credentialedSigner.getAltSignatureAndHashAlgorithm();
 
         if (null == signatureAndHashAlgorithm)
         {
@@ -2506,92 +2529,112 @@ public class TlsUtils
             ? "TLS 1.3, server CertificateVerify"
             : "TLS 1.3, client CertificateVerify";
 
-        byte[] signature;
-
-        byte[] nativeSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
-            handshakeHash, signatureAndHashAlgorithm, CertificateKeySelectionType.cks_native);
-
-        if (cksCode == CertificateKeySelectionType.cks_default || cksCode == CertificateKeySelectionType.cks_native)
+        switch (cksCode)
         {
+        case CertificateKeySelectionType.cks_default:
+        case CertificateKeySelectionType.cks_native:
+        case CertificateKeySelectionType.cks_composite_hybrid:
+        case CertificateKeySelectionType.cks_psk_with_certificate_validation:
+        {
+            /*
+             * Single signature over the native SubjectPublicKeyInfo key. Composite(4) signs with the
+             * one composite key; PSK-with-cert(6) is a plain certificate signature whose PSK-hybrid
+             * binding lives in the key schedule, not this message.
+             */
+            byte[] nativeSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner,
+                contextString, handshakeHash, signatureAndHashAlgorithm, CertificateKeySelectionType.cks_native);
             return new DigitallySigned(signatureAndHashAlgorithm, nativeSignature);
         }
-
-        byte[] altSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
-                handshakeHash, altSignatureAndHashAlgorithm, CertificateKeySelectionType.cks_alternate);
-
-        if(cksCode == CertificateKeySelectionType.cks_alternate)
+        case CertificateKeySelectionType.cks_alternate:
         {
+            SignatureAndHashAlgorithm altSignatureAndHashAlgorithm =
+                credentialedSigner.getAltSignatureAndHashAlgorithm();
+            if (null == altSignatureAndHashAlgorithm)
+            {
+                throw new TlsFatalAlert(AlertDescription.internal_error);
+            }
+            byte[] altSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner,
+                contextString, handshakeHash, altSignatureAndHashAlgorithm, CertificateKeySelectionType.cks_alternate);
             return new DigitallySigned(altSignatureAndHashAlgorithm, altSignature);
         }
-        else if (cksCode == CertificateKeySelectionType.cks_both)
-        {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            TlsUtils.writeOpaque16(nativeSignature, out);
-            TlsUtils.writeOpaque16(altSignature, out);
-            return new DigitallySigned(
-                    SignatureAndHashAlgorithm.getHybrid(signatureAndHashAlgorithm, altSignatureAndHashAlgorithm),
-                    out.toByteArray());
+        default:
+            /*
+             * cks_both(3) and cks_related_certificates_pair_hybrid(5) carry two signatures and MUST be
+             * emitted through generate13ExtendedCertificateVerify; Reserved(254)/External(255)/unknown
+             * are fatal.
+             */
+            throw new TlsFatalAlert(AlertDescription.internal_error);
         }
-        else
+    }
+
+    static ExtendedCertificateVerify generate13ExtendedCertificateVerify(TlsContext context,
+        TlsCredentialedSigner credentialedSigner, TlsHandshakeHash handshakeHash) throws IOException
+    {
+        short cksCode = generatorCksCode(context);
+
+        if (!cksUsesExtendedCertificateVerify(cksCode))
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
+
+        SignatureAndHashAlgorithm signatureAndHashAlgorithm = credentialedSigner.getSignatureAndHashAlgorithm();
+        SignatureAndHashAlgorithm altSignatureAndHashAlgorithm = credentialedSigner.getAltSignatureAndHashAlgorithm();
+
+        if (null == signatureAndHashAlgorithm || null == altSignatureAndHashAlgorithm)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        String contextString = context.isServer()
+            ? "TLS 1.3, server CertificateVerify"
+            : "TLS 1.3, client CertificateVerify";
+
+        byte[] nativeSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
+            handshakeHash, signatureAndHashAlgorithm, CertificateKeySelectionType.cks_native);
+        byte[] altSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
+            handshakeHash, altSignatureAndHashAlgorithm, CertificateKeySelectionType.cks_alternate);
+
+        int primaryScheme = SignatureScheme.from(signatureAndHashAlgorithm);
+        int altScheme = SignatureScheme.from(altSignatureAndHashAlgorithm);
+
+        return new ExtendedCertificateVerify(primaryScheme, nativeSignature, altScheme, altSignature);
     }
 
     private static byte[] generate13CertificateVerify(TlsCrypto crypto, TlsCredentialedSigner credentialedSigner,
         String contextString, TlsHandshakeHash handshakeHash, SignatureAndHashAlgorithm signatureAndHashAlgorithm, short cksCode)
             throws IOException
     {
-        byte[] hash = new byte[0];
+        /*
+         * The public overload calls this once with cks_native (native signature) and, for a hybrid
+         * credential, once with cks_alternate (alternate signature). Route each to the matching key:
+         * the alternate signature MUST be produced by the alternate signer, never by falling back to
+         * the native key (the pre-2026 bug when the alternate signer had no stream signer).
+         */
+        boolean alternate = (cksCode == CertificateKeySelectionType.cks_alternate);
 
-        if (cksCode == CertificateKeySelectionType.cks_default ||
-            cksCode == CertificateKeySelectionType.cks_native ||
-            cksCode == CertificateKeySelectionType.cks_both)
+        TlsStreamSigner streamSigner = alternate
+            ? credentialedSigner.getAltStreamSigner()
+            : credentialedSigner.getStreamSigner();
+
+        byte[] header = getCertificateVerifyHeader(contextString);
+        byte[] prfHash = getCurrentPRFHash(handshakeHash);
+
+        if (null != streamSigner)
         {
-            TlsStreamSigner streamSigner = credentialedSigner.getStreamSigner();
-
-            byte[] header = getCertificateVerifyHeader(contextString);
-            byte[] prfHash = getCurrentPRFHash(handshakeHash);
-
-            if (null != streamSigner)
-            {
-                OutputStream output = streamSigner.getOutputStream();
-                output.write(header, 0, header.length);
-                output.write(prfHash, 0, prfHash.length);
-                return streamSigner.getSignature();
-            }
-
-            TlsHash tlsHash = createHash(crypto, signatureAndHashAlgorithm);
-            tlsHash.update(header, 0, header.length);
-            tlsHash.update(prfHash, 0, prfHash.length);
-            hash = tlsHash.calculateHash();
+            OutputStream output = streamSigner.getOutputStream();
+            output.write(header, 0, header.length);
+            output.write(prfHash, 0, prfHash.length);
+            return streamSigner.getSignature();
         }
 
-        if (cksCode == CertificateKeySelectionType.cks_alternate ||
-            cksCode == CertificateKeySelectionType.cks_both)
-        {
-            TlsStreamSigner streamSigner = credentialedSigner.getAltStreamSigner();
+        TlsHash tlsHash = createHash(crypto, signatureAndHashAlgorithm);
+        tlsHash.update(header, 0, header.length);
+        tlsHash.update(prfHash, 0, prfHash.length);
+        byte[] hash = tlsHash.calculateHash();
 
-            byte[] header = getCertificateVerifyHeader(contextString);
-            byte[] prfHash = getCurrentPRFHash(handshakeHash);
-
-            if (null != streamSigner)
-            {
-                OutputStream output = streamSigner.getOutputStream();
-                output.write(header, 0, header.length);
-                output.write(prfHash, 0, prfHash.length);
-                return streamSigner.getSignature();
-            }
-
-            TlsHash tlsHash = createHash(crypto, signatureAndHashAlgorithm);
-            tlsHash.update(header, 0, header.length);
-            tlsHash.update(prfHash, 0, prfHash.length);
-            hash = tlsHash.calculateHash();
-        }
-
-
-
-        return credentialedSigner.generateRawSignature(hash);
+        return alternate
+            ? credentialedSigner.generateRawAltSignature(hash)
+            : credentialedSigner.generateRawSignature(hash);
     }
 
     static void verifyCertificateVerifyClient(TlsServerContext serverContext, CertificateRequest certificateRequest,
@@ -2673,8 +2716,10 @@ public class TlsUtils
         Vector supportedAlgorithms = securityParameters.getServerSigAlgs();
         TlsCertificate certificate = securityParameters.getPeerCertificate().getCertificateAt(0);
 
+        // X9.146: verify against the CKS the client asserted for its own authentication, not a hardcoded
+        // Default -- a client that signed with cks_native(1) / cks_alternate(2) must be verified accordingly.
         verify13CertificateVerify(supportedAlgorithms, "TLS 1.3, client CertificateVerify", handshakeHash, certificate,
-            certificateVerify, CertificateKeySelectionType.cks_default);
+            certificateVerify, securityParameters.clientCksCode);
     }
 
     static void verify13CertificateVerifyServer(TlsClientContext clientContext, TlsHandshakeHash handshakeHash,
@@ -2776,12 +2821,18 @@ public class TlsUtils
         TlsHandshakeHash handshakeHash, TlsCertificate certificate, CertificateVerify certificateVerify, short cksCode)
         throws IOException
     {
-        // Verify the CertificateVerify message contains a correct signature.
-        boolean verified = true;
-        if (cksCode == CertificateKeySelectionType.cks_external)
-        {
-            verified = false;
-        }
+        /*
+         * X9.146 QTLS sec. 6.2 / 8.5 / 8.7: dispatch on the negotiated CKS value. This verification is
+         * FAIL-CLOSED: 'verified' starts false and is set true only when the branch matching cksCode
+         * runs to completion with a valid signature. Any unhandled value (Reserved(254), External(255),
+         * or an out-of-range code) leaves it false and the handshake aborts, closing the pre-2026
+         * bypass where cksCode >= 5 skipped every branch and the message was accepted unchecked.
+         *
+         * NOTE: cks_both(3) and cks_related_certificates_pair_hybrid(5) carry two signatures. Those are
+         * transported in an ExtendedCertificateVerify message; see verify13ExtendedCertificateVerify.
+         * When routed through this (single-signature) CertificateVerify path they are rejected.
+         */
+        boolean verified = false;
 
         try
         {
@@ -2791,20 +2842,19 @@ public class TlsUtils
             verifySupportedSignatureAlgorithm(supportedAlgorithms, algorithm, AlertDescription.illegal_parameter);
 
             byte[] signature = certificateVerify.getSignature();
-            byte[] nativeSignature = signature;
-            byte[] altSignature = signature;
-            if (cksCode == CertificateKeySelectionType.cks_both)
-            {
-                ByteArrayInputStream buf = new ByteArrayInputStream(signature);
-                nativeSignature = readOpaque16(buf);
-                altSignature = readOpaque16(buf);
-            }
 
-
-            if (cksCode == CertificateKeySelectionType.cks_default ||
-                cksCode == CertificateKeySelectionType.cks_native ||
-                cksCode == CertificateKeySelectionType.cks_both)
+            switch (cksCode)
             {
+            case CertificateKeySelectionType.cks_default:
+            case CertificateKeySelectionType.cks_native:
+            case CertificateKeySelectionType.cks_composite_hybrid:
+            case CertificateKeySelectionType.cks_psk_with_certificate_validation:
+            {
+                /*
+                 * Single native/composite signature over the SubjectPublicKeyInfo key. Composite(4)
+                 * verifies the whole composite key; PSK-with-cert(6) is a plain certificate signature
+                 * whose PSK-hybrid binding lives in the key schedule, not this message.
+                 */
                 Tls13Verifier verifier = certificate.createVerifier(signatureScheme);
 
                 byte[] header = getCertificateVerifyHeader(contextString);
@@ -2813,11 +2863,10 @@ public class TlsUtils
                 OutputStream output = verifier.getOutputStream();
                 output.write(header, 0, header.length);
                 output.write(prfHash, 0, prfHash.length);
-                verified &= verifier.verifySignature(nativeSignature);
+                verified = verifier.verifySignature(signature);
+                break;
             }
-
-            if (cksCode == CertificateKeySelectionType.cks_alternate ||
-                cksCode == CertificateKeySelectionType.cks_both)
+            case CertificateKeySelectionType.cks_alternate:
             {
                 Tls13Verifier altVerifier = certificate.createAltVerifier(signatureScheme);
 
@@ -2827,8 +2876,14 @@ public class TlsUtils
                 OutputStream output = altVerifier.getOutputStream();
                 output.write(header, 0, header.length);
                 output.write(prfHash, 0, prfHash.length);
-
-                verified &= altVerifier.verifySignature(altSignature);
+                verified = altVerifier.verifySignature(signature);
+                break;
+            }
+            default:
+                // Reserved(254), External(255), an out-of-range code, or a dual-signature code
+                // (cks_both(3) / cks_related_certificates_pair_hybrid(5)) that belongs in
+                // ExtendedCertificateVerify (see verify13ExtendedCertificateVerify): reject.
+                verified = false;
             }
         }
         catch (TlsFatalAlert e)
@@ -2844,6 +2899,197 @@ public class TlsUtils
         {
             throw new TlsFatalAlert(AlertDescription.decrypt_error);
         }
+    }
+
+    static void verify13ExtendedCertificateVerifyServer(TlsClientContext clientContext,
+        TlsHandshakeHash handshakeHash, ExtendedCertificateVerify extendedCertificateVerify, short cksCode)
+        throws IOException
+    {
+        SecurityParameters securityParameters = clientContext.getSecurityParametersHandshake();
+
+        Vector supportedAlgorithms = securityParameters.getClientSigAlgs();
+        Certificate peerCertificate = securityParameters.getPeerCertificate();
+
+        verify13ExtendedCertificateVerify(clientContext, supportedAlgorithms, "TLS 1.3, server CertificateVerify",
+            handshakeHash, peerCertificate, extendedCertificateVerify, cksCode);
+    }
+
+    static void verify13ExtendedCertificateVerifyClient(TlsServerContext serverContext,
+        TlsHandshakeHash handshakeHash, ExtendedCertificateVerify extendedCertificateVerify, short cksCode)
+        throws IOException
+    {
+        SecurityParameters securityParameters = serverContext.getSecurityParametersHandshake();
+
+        Vector supportedAlgorithms = securityParameters.getServerSigAlgs();
+        Certificate peerCertificate = securityParameters.getPeerCertificate();
+
+        verify13ExtendedCertificateVerify(serverContext, supportedAlgorithms, "TLS 1.3, client CertificateVerify",
+            handshakeHash, peerCertificate, extendedCertificateVerify, cksCode);
+    }
+
+    private static void verify13ExtendedCertificateVerify(TlsContext context, Vector supportedAlgorithms,
+        String contextString, TlsHandshakeHash handshakeHash, Certificate peerCertificate,
+        ExtendedCertificateVerify extendedCertificateVerify, short cksCode) throws IOException
+    {
+        /*
+         * X9.146 QTLS sec. 6.4: two independently-signalled signatures, used if and only if the CKS
+         * value is cks_both(3) or cks_related_certificates_pair_hybrid(5). FAIL-CLOSED: 'verified'
+         * starts false and BOTH signatures must verify (each against its own explicitly-signalled
+         * scheme and the local signature_algorithms) or the handshake aborts.
+         *
+         * cks_both(3): both signatures come from the one end-entity certificate -- primary via
+         * createVerifier (native SPKI key), alternate via createAltVerifier (the SubjectAltPublicKeyInfo
+         * extension key).
+         *
+         * cks_related_certificates_pair_hybrid(5) (sec. 9.5): the two signatures come from two distinct
+         * end-entity certificates. cert[0] is the Related certificate (primary/first chain); the Main
+         * certificate (second chain) is the entry carrying the RFC 9763 RelatedCertificate extension,
+         * whose digest MUST match the Related certificate (else unrelated_certificates). The primary
+         * signature is verified with the Related certificate's key, the alternate with the Main
+         * certificate's key.
+         */
+        if (!cksUsesExtendedCertificateVerify(cksCode))
+        {
+            throw new TlsFatalAlert(AlertDescription.decrypt_error);
+        }
+
+        boolean verified = false;
+
+        try
+        {
+            SignatureAndHashAlgorithm primaryAlgorithm =
+                SignatureScheme.getSignatureAndHashAlgorithm(extendedCertificateVerify.getPrimaryAlgorithm());
+            SignatureAndHashAlgorithm altAlgorithm =
+                SignatureScheme.getSignatureAndHashAlgorithm(extendedCertificateVerify.getAltAlgorithm());
+
+            verifySupportedSignatureAlgorithm(supportedAlgorithms, primaryAlgorithm, AlertDescription.illegal_parameter);
+            verifySupportedSignatureAlgorithm(supportedAlgorithms, altAlgorithm, AlertDescription.illegal_parameter);
+
+            int primaryScheme = SignatureScheme.from(primaryAlgorithm);
+            int altScheme = SignatureScheme.from(altAlgorithm);
+
+            byte[] header = getCertificateVerifyHeader(contextString);
+            byte[] prfHash = getCurrentPRFHash(handshakeHash);
+
+            TlsCertificate primaryCertificate = peerCertificate.getCertificateAt(0);
+
+            Tls13Verifier verifier = primaryCertificate.createVerifier(primaryScheme);
+            OutputStream output = verifier.getOutputStream();
+            output.write(header, 0, header.length);
+            output.write(prfHash, 0, prfHash.length);
+            boolean primaryVerified = verifier.verifySignature(extendedCertificateVerify.getPrimarySignature());
+
+            Tls13Verifier altVerifier;
+            if (cksCode == CertificateKeySelectionType.cks_related_certificates_pair_hybrid)
+            {
+                TlsCertificate mainCertificate = findRelatedMainCertificate(peerCertificate);
+                checkRelatedCertificate(context.getCrypto(), mainCertificate, primaryCertificate);
+                altVerifier = mainCertificate.createVerifier(altScheme);
+            }
+            else
+            {
+                altVerifier = primaryCertificate.createAltVerifier(altScheme);
+            }
+            OutputStream altOutput = altVerifier.getOutputStream();
+            altOutput.write(header, 0, header.length);
+            altOutput.write(prfHash, 0, prfHash.length);
+            boolean altVerified = altVerifier.verifySignature(extendedCertificateVerify.getAltSignature());
+
+            verified = primaryVerified && altVerified;
+        }
+        catch (TlsFatalAlert e)
+        {
+            throw e;
+        }
+        catch (Exception e)
+        {
+            throw new TlsFatalAlert(AlertDescription.decrypt_error, e);
+        }
+
+        if (!verified)
+        {
+            throw new TlsFatalAlert(AlertDescription.decrypt_error);
+        }
+    }
+
+    /**
+     * X9.146 QTLS sec. 6.3 / RFC 9763: locate the Main certificate of a Related Certificates Pair in a
+     * received Certificate message -- the single end-entity that carries the {@code RelatedCertificate}
+     * extension. Exactly one entry must carry it, else the pair is malformed.
+     */
+    private static TlsCertificate findRelatedMainCertificate(Certificate peerCertificate) throws IOException
+    {
+        TlsCertificate mainCertificate = null;
+        int length = peerCertificate.getLength();
+        for (int i = 0; i < length; ++i)
+        {
+            TlsCertificate candidate = peerCertificate.getCertificateAt(i);
+            if (null != candidate.getExtension(Extension.relatedCertificate))
+            {
+                if (null != mainCertificate)
+                {
+                    // More than one Main certificate: malformed Related Certificates Pair.
+                    throw new TlsFatalAlert(AlertDescription.unrelated_certificates);
+                }
+                mainCertificate = candidate;
+            }
+        }
+        if (null == mainCertificate)
+        {
+            throw new TlsFatalAlert(AlertDescription.unrelated_certificates);
+        }
+        return mainCertificate;
+    }
+
+    /**
+     * X9.146 QTLS sec. 9 / RFC 9763 sec. 3: verify that the Main certificate's {@code RelatedCertificate}
+     * extension digest matches the DER encoding of the Related certificate. Mismatch -&gt; fatal
+     * {@code unrelated_certificates}.
+     */
+    private static void checkRelatedCertificate(TlsCrypto crypto, TlsCertificate mainCertificate,
+        TlsCertificate relatedCertificate) throws IOException
+    {
+        byte[] extensionData = mainCertificate.getExtension(Extension.relatedCertificate);
+        if (null == extensionData)
+        {
+            throw new TlsFatalAlert(AlertDescription.unrelated_certificates);
+        }
+
+        RelatedCertificate relatedCertExt = RelatedCertificate.getInstance(readASN1Object(extensionData));
+
+        int cryptoHashAlgorithm = getCryptoHashAlgorithmForOID(relatedCertExt.getHashAlgorithm().getAlgorithm());
+
+        TlsHash hash = crypto.createHash(cryptoHashAlgorithm);
+        byte[] relatedEncoding = relatedCertificate.getEncoded();
+        hash.update(relatedEncoding, 0, relatedEncoding.length);
+        byte[] computed = hash.calculateHash();
+
+        if (!Arrays.constantTimeAreEqual(computed, relatedCertExt.getHashValue().getOctets()))
+        {
+            throw new TlsFatalAlert(AlertDescription.unrelated_certificates);
+        }
+    }
+
+    private static int getCryptoHashAlgorithmForOID(ASN1ObjectIdentifier hashOID) throws IOException
+    {
+        if (NISTObjectIdentifiers.id_sha256.equals(hashOID))
+        {
+            return CryptoHashAlgorithm.sha256;
+        }
+        if (NISTObjectIdentifiers.id_sha384.equals(hashOID))
+        {
+            return CryptoHashAlgorithm.sha384;
+        }
+        if (NISTObjectIdentifiers.id_sha512.equals(hashOID))
+        {
+            return CryptoHashAlgorithm.sha512;
+        }
+        if (NISTObjectIdentifiers.id_sha224.equals(hashOID))
+        {
+            return CryptoHashAlgorithm.sha224;
+        }
+        throw new TlsFatalAlert(AlertDescription.unrelated_certificates,
+            "unsupported RelatedCertificate hash algorithm: " + hashOID);
     }
 
     private static byte[] getCertificateVerifyHeader(String contextString)
@@ -2989,25 +3235,244 @@ public class TlsUtils
         return v;
     }
 
-    public static short getCommonCKS(short[] clientCks, short[] serverCks)
+    /**
+     * X9.146 QTLS sec. 6.2 unified CKS selection (Figure 2 setup + Figure 3 selection).
+     * <p>
+     * Runs at authentication time, where both the authenticating credential and the peer's
+     * {@code signature_algorithms} are known. The result is the <em>deterministic</em> Figure 3 output for
+     * the credential's certificate type and the peer's signature-algorithm support -- not a list-order
+     * choice: a Chimera credential yields {@code cks_both(3)} when the peer supports both algorithms,
+     * {@code cks_alternate(2)} when only the alternate is supported, and {@code cks_native(1)} when only the
+     * native is supported; a Standard credential yields {@code cks_default(0)}.
+     * <p>
+     * Precedence when the deterministic result and the advertised list order disagree (draft ambiguity #12,
+     * flagged to the X9F5 editors): the Figure 3 result wins. The advertised lists act only as accept/reject
+     * gates -- the result must appear in both the peer's advertised list and the local supported list, else
+     * this returns {@code -1} and the caller omits the extension, falling back to standard RFC 8446
+     * processing. The lists are never used to pick a value other than Figure 3's.
+     * <p>
+     * PSK-hybrid (CKS 6), Composite (CKS 4) and Related-pair (CKS 5) certificate types are not yet detectable
+     * here, so only the Standard and Chimera branches of Figure 2/3 are implemented (WI-13/WI-15/WI-14).
+     *
+     * @param credential     the authenticating credential; its native/alternate signers give ALG_1/ALG_2.
+     * @param peerSigAlgs    the peer's {@code signature_algorithms} (SIG_ALGS in Figure 3); may be null.
+     * @param localSupported the selector's own supported KeySelection values (also the X9.146 opt-in flag).
+     * @param peerAdvertised the KeySelection values the peer advertised.
+     * @return the selected KeySelection value, or {@code -1} to omit the extension (standard processing).
+     */
+    static int selectCertificateKeySelection(TlsCredentialedSigner credential, Vector peerSigAlgs,
+        int[] localSupported, int[] peerAdvertised, boolean usePskHybrid) throws IOException
     {
-
-
-        if (clientCks == null || serverCks == null)
+        if (credential == null || localSupported == null || peerAdvertised == null)
         {
-            return 0;
+            // One side did not offer the certificate_key_selection extension: no X9.146 negotiation.
+            return -1;
         }
-        for (short client : clientCks)
+
+        SignatureAndHashAlgorithm alg1 = credential.getSignatureAndHashAlgorithm();      // ALG_1 (native/primary)
+        SignatureAndHashAlgorithm alg2 = credential.getAltSignatureAndHashAlgorithm();   // ALG_2 (alternate) or null
+
+        if (alg1 == null)
         {
-            for (short server : serverCks)
+            return -1;
+        }
+
+        boolean alg1InSigAlgs = containsSignatureAlgorithm(peerSigAlgs, alg1);
+        boolean alg2InSigAlgs = (alg2 != null) && containsSignatureAlgorithm(peerSigAlgs, alg2);
+
+        int selected;
+        if (usePskHybrid)
+        {
+            /*
+             * Figure 2/3 CKS 6 (PSK with Certificate Validation, RFC 8773): the certificate contributes a
+             * single signature with its primary/native key and the external PSK is the second hybrid
+             * component (Table 3: alternate is "OOB - PSK"), bound via the key schedule. So only ALG_1
+             * participates in the CertificateVerify, and it must be acceptable to the peer. This branch is
+             * evaluated before the chimera downgrade so a negotiated PSK hybrid is never rewritten to 1/2/3.
+             */
+            selected = alg1InSigAlgs ? CertificateKeySelectionType.cks_psk_with_certificate_validation : -1;
+        }
+        else if (credentialIsRelatedPair(credential))
+        {
+            /*
+             * Figure 2/3 CKS 5: Related Certificates Pair (sec. 9). STRICT -- both the Related (ALG_1, first
+             * chain) and Main (ALG_2, second chain) certificate algorithms must be acceptable to the peer;
+             * there is no single-key downgrade. Draft Figure 3 raises inappropriate_fallback when either is
+             * missing; here that maps to -1 (omit), so a Related credential the peer can't fully support
+             * falls back to standard processing rather than aborting.
+             */
+            selected = (alg1InSigAlgs && alg2InSigAlgs)
+                ? CertificateKeySelectionType.cks_related_certificates_pair_hybrid : -1;
+        }
+        else if (SignatureScheme.isComposite(SignatureScheme.from(alg1)))
+        {
+            /*
+             * Figure 2/3 CKS 4: Composite certificate (sec. 11). One composite key in the SPKI, one
+             * composite signature -- the composite semantics live entirely in the SignatureScheme codepoint,
+             * so this routes through the single-signature CertificateVerify path (ALG_2 is NULL from the
+             * selection algorithm's perspective). ALG_1 must be acceptable to the peer.
+             *
+             * NOTE: end-to-end verification of a composite signature is not yet supported by the TLS crypto
+             * layer (see SignatureScheme.isComposite) -- this branch performs the negotiation/routing only.
+             */
+            selected = alg1InSigAlgs ? CertificateKeySelectionType.cks_composite_hybrid : -1;
+        }
+        else if (alg2 == null)
+        {
+            // Figure 2: Standard certificate (ALG_2 == NULL). Figure 3: single-algorithm path.
+            selected = alg1InSigAlgs ? CertificateKeySelectionType.cks_default : -1;
+        }
+        else
+        {
+            // Figure 2: Chimera certificate (base CKS 3). Figure 3 dual-algorithm selection: prefer both,
+            // then alternate-only, then native-only; neither supported means Figure 3's fatal
+            // unsupported_algorithm, mapped here to omit (-> standard, which the normal path then rejects).
+            if (alg1InSigAlgs && alg2InSigAlgs)
             {
-                if (client == server)
+                selected = CertificateKeySelectionType.cks_both;        // 3 -> ExtendedCertificateVerify
+            }
+            else if (alg2InSigAlgs)
+            {
+                selected = CertificateKeySelectionType.cks_alternate;   // 2 -> CertificateVerify(ALG_2)
+            }
+            else if (alg1InSigAlgs)
+            {
+                selected = CertificateKeySelectionType.cks_native;      // 1 -> CertificateVerify(ALG_1)
+            }
+            else
+            {
+                selected = -1;
+            }
+        }
+
+        if (selected < 0)
+        {
+            return -1;
+        }
+
+        // Fig-3 result wins; the lists only gate acceptance (peer must support it; local policy must allow it).
+        if (containsInt(peerAdvertised, selected) && containsInt(localSupported, selected))
+        {
+            return selected;
+        }
+
+        return -1;
+    }
+
+    /**
+     * X9.146 QTLS sec. 9 setup-phase cert_type detection: a Related Certificates Pair credential carries
+     * two end-entity chains, and the Main end-entity certificate holds the RFC 9763 RelatedCertificate
+     * extension. Detect it by the presence of that extension anywhere in the credential's certificate list.
+     */
+    private static boolean credentialIsRelatedPair(TlsCredentialedSigner credential) throws IOException
+    {
+        Certificate certificate = credential.getCertificate();
+        if (null == certificate)
+        {
+            return false;
+        }
+        int length = certificate.getLength();
+        for (int i = 0; i < length; ++i)
+        {
+            if (null != certificate.getCertificateAt(i).getExtension(Extension.relatedCertificate))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsInt(int[] values, int value)
+    {
+        if (values != null)
+        {
+            for (int i = 0; i < values.length; ++i)
+            {
+                if (values[i] == value)
                 {
-                    return client;
+                    return true;
                 }
             }
         }
-        return 0;
+        return false;
+    }
+
+    /**
+     * Return a copy of {@code certificate} whose first {@link CertificateEntry} carries the
+     * {@code certificate_key_selection} extension set to the single used value (X9.146 QTLS sec. 6.1,
+     * one-element vector). Other entries are unchanged. Used to signal the selected CKS in the server's
+     * (or client's) Certificate message.
+     */
+    static Certificate addCertificateKeySelectionToFirstEntry(Certificate certificate, int selectedCks)
+        throws IOException
+    {
+        CertificateEntry[] entries = certificate.getCertificateEntryList();
+        if (entries.length == 0)
+        {
+            return certificate;
+        }
+
+        CertificateEntry first = entries[0];
+        Hashtable extensions = first.getExtensions();
+        extensions = (null == extensions) ? new Hashtable() : new Hashtable(extensions);
+        TlsExtensionsUtils.addCertificateKeySelectionValue(extensions, selectedCks);
+
+        entries[0] = new CertificateEntry(first.getCertificate(), extensions);
+
+        return new Certificate(certificate.getCertificateType(), certificate.getCertificateRequestContext(), entries);
+    }
+
+    /**
+     * Read the used {@code certificate_key_selection} value from the first {@link CertificateEntry} of a
+     * received Certificate message and validate it (X9.146 QTLS sec. 6.1 / 8.5): the value must be one
+     * the local endpoint advertised, and a defined KeySelection code. Returns {@code 0} (Default) when no
+     * CKS extension is present. A violation is fatal with {@code unsupported_cks_value}.
+     *
+     * @param certificate    the received peer Certificate.
+     * @param advertised     the KeySelection values the local endpoint advertised (its own list); may be
+     *                       null when the local endpoint did not offer the extension.
+     */
+    static short receiveCertificateKeySelection(Certificate certificate, int[] advertised) throws IOException
+    {
+        if (certificate == null || certificate.isEmpty())
+        {
+            return CertificateKeySelectionType.cks_default;
+        }
+
+        Hashtable extensions = certificate.getCertificateEntryAt(0).getExtensions();
+        if (null == extensions)
+        {
+            return CertificateKeySelectionType.cks_default;
+        }
+
+        int selectedCks = TlsExtensionsUtils.getCertificateKeySelectionValue(extensions);
+        if (selectedCks < 0)
+        {
+            return CertificateKeySelectionType.cks_default;
+        }
+
+        // Must be a value the local endpoint advertised (draft 8.5).
+        if (advertised == null || !containsInt(advertised, selectedCks))
+        {
+            throw new TlsFatalAlert(AlertDescription.unsupported_cks_value);
+        }
+
+        // Must be a defined KeySelection code (reject Reserved(254)/External(255)/unknown).
+        switch (selectedCks)
+        {
+        case CertificateKeySelectionType.cks_default:
+        case CertificateKeySelectionType.cks_native:
+        case CertificateKeySelectionType.cks_alternate:
+        case CertificateKeySelectionType.cks_both:
+        case CertificateKeySelectionType.cks_composite_hybrid:
+        case CertificateKeySelectionType.cks_related_certificates_pair_hybrid:
+        case CertificateKeySelectionType.cks_psk_with_certificate_validation:
+            break;
+        default:
+            throw new TlsFatalAlert(AlertDescription.unsupported_cks_value);
+        }
+
+        return (short)selectedCks;
     }
 
     public static int getCommonHSL(int[] clientHSL, int[] serverHSL)
@@ -3029,24 +3494,6 @@ public class TlsUtils
         return 0;
     }
 
-    public static int getCommonCKS(int[] clientCKS, int[] serverCKS)
-    {
-        if (clientCKS == null || serverCKS == null)
-        {
-            return 0;
-        }
-        for (int server : serverCKS)
-        {
-            for (int client : clientCKS)
-            {
-                if (server == client)
-                {
-                    return server;
-                }
-            }
-        }
-        return 0;
-    }
 
     public static int getCipherType(int cipherSuite)
     {
@@ -5111,85 +5558,95 @@ public class TlsUtils
                 valid = containsSignatureAlgorithm(clientSigAlgsCert, sigAndHashAlg)
                     || (null != clientSigAlgs && containsSignatureAlgorithm(clientSigAlgs, sigAndHashAlg));
             }
-            if (securityParameters.cksCode != 0)
+            /*
+             * X9.146 QTLS sec. 8.8 + draft-truskovsky-lamps-pq-hybrid-x509-02 sec. 4.2: for a hybrid
+             * (Chimera) chain, additionally verify each certificate's native signature with the issuer's
+             * native key and, where BOTH certificates carry the alternate extensions, its alternate
+             * signature with the issuer's alternate key. Which signatures participate is governed by the
+             * negotiated CKS: cks_native(1) uses only the native (alternate extensions are ignored),
+             * cks_alternate(2) uses only the alternate (native ignored), cks_both(3) uses both. cks_default(0)
+             * runs no hybrid-specific check (standard RFC 8446 chain validation applies).
+             *
+             * All certificate access goes through the TlsCertificate interface (DER via getEncoded()) so
+             * this works on any crypto backend rather than casting to BcTlsCertificate, and the alternate
+             * pass is driven by each link's own extensions -- a classical issuer/intermediate that lacks
+             * the alternate extensions is skipped rather than dereferencing a null (the pre-2026 NPE).
+             */
+            short cksCode = securityParameters.cksCode;
+            boolean checkNative = (cksCode == CertificateKeySelectionType.cks_native
+                || cksCode == CertificateKeySelectionType.cks_both);
+            boolean checkAlt = (cksCode == CertificateKeySelectionType.cks_alternate
+                || cksCode == CertificateKeySelectionType.cks_both);
+
+            if (checkNative || checkAlt)
             {
-                // Do the validation
+                org.bouncycastle.asn1.x509.Certificate subjectX509 =
+                    org.bouncycastle.asn1.x509.Certificate.getInstance(subjectCert.getEncoded());
+                TBSCertificate subjectTbs = subjectX509.getTBSCertificate();
 
-                // NATIVE
-                TBSCertificate subjectTbs = ((BcTlsCertificate)subjectCert).getCertificate().getTBSCertificate();
-                Tls13Verifier verifier = issuerCert.createVerifier(SignatureScheme.from(sigAndHashAlg));
-                OutputStream output = verifier.getOutputStream();
-                output.write(subjectTbs.getEncoded());
-                boolean nativeVerify = verifier.verifySignature(((BcTlsCertificate)subjectCert).getCertificate().getSignature().getBytes());
-                if(!nativeVerify)
+                if (checkNative && null != sigAndHashAlg)
                 {
-                    throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed native");
-                }
-
-                // ALTERNATIVE
-                // draft-truskovsky-lamps-pq-hybrid-x509-02
-                //  4.2 Verifying Multiple Public-Key Algorithm Certificates
-                //       a) ASN.1 DER decode the tbsCertificate field of the certificate to get a TBSCertificate object.
-                V3TBSCertificateGenerator tbsBuilder = new V3TBSCertificateGenerator();
-                tbsBuilder.setSerialNumber(subjectTbs.getSerialNumber());
-                tbsBuilder.setIssuer(subjectTbs.getIssuer());
-                tbsBuilder.setSubject(subjectTbs.getSubject());
-                tbsBuilder.setStartDate(subjectTbs.getStartDate());
-                tbsBuilder.setEndDate(subjectTbs.getEndDate());
-                tbsBuilder.setSubjectPublicKeyInfo(subjectTbs.getSubjectPublicKeyInfo());
-
-                //       b) Remove the AltSignatureValueExt extension from the TBSCertificate object and set aside the alternative signature.
-
-                Extensions exts = subjectTbs.getExtensions();
-
-
-
-                ASN1Sequence extSeq = ASN1Sequence.getInstance(subjectTbs.getExtensions().toASN1Primitive());
-                ASN1EncodableVector extV = new ASN1EncodableVector();
-                for (int j = 0; j != extSeq.size(); j++)
-                {
-                    ASN1Sequence ext = ASN1Sequence.getInstance(extSeq.getObjectAt(j));
-                    Extension extension = Extension.getInstance(ext);
-                    if (extension.getExtnId().toString().equals("1.2.3.4.5"))
+                    Tls13Verifier verifier = issuerCert.createVerifier(SignatureScheme.from(sigAndHashAlg));
+                    OutputStream output = verifier.getOutputStream();
+                    output.write(subjectTbs.getEncoded());
+                    if (!verifier.verifySignature(subjectX509.getSignature().getBytes()))
                     {
-                        continue;
-                    }
-
-                    if (!Extension.altSignatureValue.equals(ext.getObjectAt(0)))
-                    {
-                        extV.add(ext);
+                        throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed native");
                     }
                 }
-                tbsBuilder.setExtensions(Extensions.getInstance((new DERSequence(extV)).toASN1Primitive()));
-                AltSignatureValue altSignatureValue = AltSignatureValue.fromExtensions(subjectTbs.getExtensions());
 
-                //       c) Remove the signature field from the TBSCertificate object, converting it to a PreTBSCertificate object.
-                tbsBuilder.setSignature(null);
+                if (checkAlt)
+                {
+                    org.bouncycastle.asn1.x509.Certificate issuerX509 =
+                        org.bouncycastle.asn1.x509.Certificate.getInstance(issuerCert.getEncoded());
 
-                //       d) ASN.1 DER encode the PreTBSCertificate object.
-                byte[] altTbs = tbsBuilder.generatePreTBSCertificate().getEncoded();
+                    AltSignatureValue altSignatureValue =
+                        AltSignatureValue.fromExtensions(subjectTbs.getExtensions());
+                    SubjectAltPublicKeyInfo issuerAltPublicKeyInfo =
+                        SubjectAltPublicKeyInfo.fromExtensions(issuerX509.getTBSCertificate().getExtensions());
 
+                    if (null != altSignatureValue && null != issuerAltPublicKeyInfo)
+                    {
+                        /*
+                         * Reconstruct the PreTBSCertificate (draft-truskovsky 4.2 a-d): drop the
+                         * altSignatureValue extension and the outer signature field; retain every other
+                         * extension, then DER-encode.
+                         */
+                        V3TBSCertificateGenerator tbsBuilder = new V3TBSCertificateGenerator();
+                        tbsBuilder.setSerialNumber(subjectTbs.getSerialNumber());
+                        tbsBuilder.setIssuer(subjectTbs.getIssuer());
+                        tbsBuilder.setSubject(subjectTbs.getSubject());
+                        tbsBuilder.setStartDate(subjectTbs.getStartDate());
+                        tbsBuilder.setEndDate(subjectTbs.getEndDate());
+                        tbsBuilder.setSubjectPublicKeyInfo(subjectTbs.getSubjectPublicKeyInfo());
 
-                //       e) Using the algorithm specified in the AltSignatureAlgorithmExt extension of the PreTBSCertificate,
-                //       the alternative public key from the Issuer's SubjectAltPublicKeyInfoExt extension
-                //       and the ASN.1 DER encoded PreTBSCertificate, verify the alternative signature from (b)
-                SignatureAndHashAlgorithm altSigAndHashAlg = getCertAltSigAndHashAlg(subjectCert, issuerCert);
-                TBSCertificate issuerTbs = ((BcTlsCertificate)issuerCert).getCertificate().getTBSCertificate();
-                SubjectAltPublicKeyInfo issuerAltPublicKeyInfo = SubjectAltPublicKeyInfo.fromExtensions(issuerTbs.getExtensions());
-                Tls13Verifier altVerifier = issuerCert.createAltVerifier(
-                        new SubjectPublicKeyInfo(
+                        ASN1Sequence extSeq = ASN1Sequence.getInstance(subjectTbs.getExtensions().toASN1Primitive());
+                        ASN1EncodableVector extV = new ASN1EncodableVector();
+                        for (int j = 0; j != extSeq.size(); j++)
+                        {
+                            ASN1Sequence ext = ASN1Sequence.getInstance(extSeq.getObjectAt(j));
+                            if (!Extension.altSignatureValue.equals(ext.getObjectAt(0)))
+                            {
+                                extV.add(ext);
+                            }
+                        }
+                        tbsBuilder.setExtensions(Extensions.getInstance(new DERSequence(extV).toASN1Primitive()));
+                        tbsBuilder.setSignature(null);
+                        byte[] altTbs = tbsBuilder.generatePreTBSCertificate().getEncoded();
+
+                        SignatureAndHashAlgorithm altSigAndHashAlg = getCertAltSigAndHashAlg(subjectCert, issuerCert);
+                        Tls13Verifier altVerifier = issuerCert.createAltVerifier(
+                            new SubjectPublicKeyInfo(
                                 issuerAltPublicKeyInfo.getAlgorithm(),
-                                issuerAltPublicKeyInfo.getSubjectAltPublicKey()
-                        ),
-                        SignatureScheme.from(altSigAndHashAlg)
-                );
-                OutputStream altOutput = altVerifier.getOutputStream();
-
-                altOutput.write(altTbs);
-                boolean alternativeVerify = altVerifier.verifySignature(altSignatureValue.getSignature().getBytes());
-                if(!alternativeVerify)
-                {
-                    throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed alternative");
+                                issuerAltPublicKeyInfo.getSubjectAltPublicKey()),
+                            SignatureScheme.from(altSigAndHashAlg));
+                        OutputStream altOutput = altVerifier.getOutputStream();
+                        altOutput.write(altTbs);
+                        if (!altVerifier.verifySignature(altSignatureValue.getSignature().getBytes()))
+                        {
+                            throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed alternative");
+                        }
+                    }
                 }
             }
 
@@ -5293,12 +5750,6 @@ public class TlsUtils
     {
         SecurityParameters securityParameters = clientContext.getSecurityParametersHandshake();
         boolean isTLSv13 = isTLSv13(securityParameters.getNegotiatedVersion());
-        int hsl = TlsUtils.getCommonHSL(
-                TlsExtensionsUtils.getHybridSchemeList(clientExtensions),
-                TlsExtensionsUtils.getHybridSchemeList(serverExtensions)
-        );
-
-        boolean usingAltCerts = hsl > 1;
 
         if (null == clientAuthentication)
         {
@@ -5326,34 +5777,15 @@ public class TlsUtils
             keyExchange.processServerCertificate(serverCertificate);
         }
 
-        //TODO: check if CKS is provided, if so validate using CKS Scheme
-        if (usingAltCerts)
-        {
-            TlsCertificate serverCert = serverCertificate.getCertificateAt(0);
-            if (!(serverCert instanceof BcTlsCertificate))
-            {
-                // TODO: X9.146 alternative-certificate processing is only implemented for the BC lightweight crypto
-                throw new TlsFatalAlert(AlertDescription.internal_error,
-                    "X9.146 alternative certificates require BC crypto");
-            }
-            TBSCertificate tbsCert = ((BcTlsCertificate)serverCert).getCertificate().getTBSCertificate();
-            SubjectAltPublicKeyInfo subjectAltPublicKeyInfo = SubjectAltPublicKeyInfo.fromExtensions(tbsCert.getExtensions());
-            AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(tbsCert.getExtensions());
-            AltSignatureValue altSignatureValue = AltSignatureValue.fromExtensions(tbsCert.getExtensions());
-            //TODO: replace or find where validation is done and implement validation using these...
-
-            // TODO: I made these values public to test it out, might have to reconstruct the cert!
-            // Replacing with alt values
-            tbsCert.subjectPublicKeyInfo = new SubjectPublicKeyInfo(subjectAltPublicKeyInfo.getAlgorithm(), subjectAltPublicKeyInfo.getSubjectAltPublicKey());
-            tbsCert.signature = altSignatureAlgorithm.getAlgorithm();
-
-            // TODO: maybe change sigAlgId in serverCert
-            ((BcTlsCertificate) serverCert).getCertificate().sig =  altSignatureValue.getSignature();
-            ((BcTlsCertificate) serverCert).getCertificate().sigAlgId =  altSignatureAlgorithm.getAlgorithm();
-
-        }
-
-
+        /*
+         * X9.146 alternate-certificate validation is handled by the CKS machinery: the alternate chain
+         * signatures are verified in checkSigAlgOfServerCerts and the alternate CertificateVerify signature
+         * via createAltVerifier, both without mutating the parsed certificate. The pre-2026 code here
+         * overwrote the peer certificate's native subjectPublicKeyInfo / signature / sig / sigAlgId in place
+         * with the alternate values (gated on the legacy hybrid_scheme_list extension) so a single verifier
+         * would pick up the alternate key; that destructive in-place mutation of shared core objects has
+         * been removed in favour of the CKS path.
+         */
         clientAuthentication.notifyServerCertificate(new TlsServerCertificateImpl(serverCertificate, serverCertificateStatus));
     }
 
@@ -6380,7 +6812,9 @@ public class TlsUtils
         case ExtensionType.application_layer_protocol_negotiation:
         case ExtensionType.client_certificate_type:
         case ExtensionType.server_certificate_type:
+        case ExtensionType.tls_cert_with_extern_psk:
         {
+            // RFC 8773: offered in ClientHello, echoed in EncryptedExtensions.
             switch (handshakeType)
             {
             case HandshakeType.client_hello:
@@ -6488,13 +6922,18 @@ public class TlsUtils
         }
         case ExtensionType.certificate_key_selection:
         {
+            /*
+             * X9.146 QTLS sec. 6.1: the certificate_key_selection extension carries the supported
+             * KeySelection list in ClientHello / CertificateRequest and the single used value in the
+             * Certificate message. It is not permitted in ServerHello or EncryptedExtensions (the
+             * pre-2026 code carried the selected value in EncryptedExtensions; that signalling moved to
+             * the Certificate message, see WI-10 / decisions D1/D2).
+             */
             switch (handshakeType)
             {
                 case HandshakeType.client_hello:
-                case HandshakeType.server_hello:
                 case HandshakeType.certificate_request:
                 case HandshakeType.certificate:
-                case HandshakeType.encrypted_extensions: //TODO SHOULD CKS BE HERE?
                     return true;
                 default:
                     return false;

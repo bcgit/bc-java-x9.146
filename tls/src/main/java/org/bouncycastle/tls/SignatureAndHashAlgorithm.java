@@ -100,7 +100,16 @@ public class SignatureAndHashAlgorithm
     public static final SignatureAndHashAlgorithm slhdsa_shake_256f = create(SignatureScheme.DRAFT_slhdsa_shake_256f);
     public static final SignatureAndHashAlgorithm sm2sig_sm3 = create(SignatureScheme.sm2sig_sm3);
 
-//TODO[x9145]: No hash algorithm, find another way
+    /**
+     * Map a (native, alternate) algorithm pair to one of the combined wolfSSL hybrid codepoints.
+     *
+     * @deprecated Superseded by {@link ExtendedCertificateVerify} (X9.146 QTLS sec. 6.4), which carries
+     *             the native and alternate signatures under two explicit {@link SignatureScheme} fields
+     *             rather than folding the pair into a single combined codepoint. Retained only for the
+     *             wolfSSL-interop path and the four hard-coded pairs it recognises; returns {@code null}
+     *             for any other pair.
+     */
+    @Deprecated
     public static SignatureAndHashAlgorithm getHybrid(SignatureAndHashAlgorithm nativeAlg, SignatureAndHashAlgorithm altAlg)
     {
         if (nativeAlg.equals(create(SignatureScheme.ecdsa_secp256r1_sha256)) && altAlg.equals(SignatureAndHashAlgorithm.DRAFT_mldsa44))
