@@ -43,11 +43,11 @@ public class TBSCertificate
 
     ASN1Integer             version;
     ASN1Integer             serialNumber;
-    public AlgorithmIdentifier     signature;
+    AlgorithmIdentifier     signature;
     X500Name                issuer;
     Validity                validity;
     X500Name                subject;
-    public SubjectPublicKeyInfo    subjectPublicKeyInfo;
+    SubjectPublicKeyInfo    subjectPublicKeyInfo;
     ASN1BitString           issuerUniqueId;
     ASN1BitString           subjectUniqueId;
     Extensions              extensions;

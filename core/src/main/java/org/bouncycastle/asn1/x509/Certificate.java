@@ -25,8 +25,8 @@ public class Certificate
 {
     ASN1Sequence  seq;
     TBSCertificate tbsCert;
-    public AlgorithmIdentifier     sigAlgId;
-    public ASN1BitString            sig;
+    AlgorithmIdentifier     sigAlgId;
+    ASN1BitString            sig;
 
     public static Certificate getInstance(
         ASN1TaggedObject obj,
