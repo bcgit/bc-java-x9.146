@@ -48,6 +48,7 @@ public class TlsExtensionsUtils
     public static final Integer EXT_trusted_ca_keys = Integers.valueOf(ExtensionType.trusted_ca_keys);
     public static final Integer EXT_certificate_key_selection = Integers.valueOf(ExtensionType.certificate_key_selection);
     public static final Integer EXT_hybrid_scheme_list = Integers.valueOf(ExtensionType.hybrid_scheme_list);
+    public static final Integer EXT_tls_cert_with_extern_psk = Integers.valueOf(ExtensionType.tls_cert_with_extern_psk);
 
     public static Hashtable ensureExtensionsInitialised(Hashtable extensions)
     {
@@ -122,6 +123,15 @@ public class TlsExtensionsUtils
     public static void addEncryptThenMACExtension(Hashtable extensions)
     {
         extensions.put(EXT_encrypt_then_mac, createEncryptThenMACExtension());
+    }
+
+    /**
+     * Add the RFC 8773 {@code tls_cert_with_extern_psk} extension (empty extension_data), signalling the
+     * intent to combine certificate-based authentication with an external PSK (X9.146 QTLS CKS 6).
+     */
+    public static void addCertWithExternPSKExtension(Hashtable extensions)
+    {
+        addEmptyExtensionData(extensions, EXT_tls_cert_with_extern_psk);
     }
 
     public static void addExtendedMasterSecretExtension(Hashtable extensions)
@@ -298,7 +308,7 @@ public class TlsExtensionsUtils
     public static void addCertificateKeySelectionList(Hashtable extensions, int[] certificateKeySelection)
         throws IOException
     {
-        extensions.put(EXT_certificate_key_selection, TlsUtils.encodeUint16ArrayWithUint16Length(certificateKeySelection));
+        extensions.put(EXT_certificate_key_selection, createCertificateKeySelectionList(certificateKeySelection));
     }
 
     public static void addCertificateKeySelectionValue(Hashtable extensions, int selectedCks)
@@ -586,6 +596,12 @@ public class TlsExtensionsUtils
     {
         byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_encrypt_then_mac);
         return extensionData == null ? false : readEncryptThenMACExtension(extensionData);
+    }
+
+    public static boolean hasCertWithExternPSKExtension(Hashtable extensions) throws IOException
+    {
+        byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_tls_cert_with_extern_psk);
+        return extensionData == null ? false : readEmptyExtensionData(extensionData);
     }
 
     public static boolean hasExtendedMasterSecretExtension(Hashtable extensions) throws IOException
@@ -1067,13 +1083,34 @@ public class TlsExtensionsUtils
             values[i] = ((Integer)certificateKeySelectionList.elementAt(i)).intValue();
         }
 
-        return TlsUtils.encodeUint16ArrayWithUint16Length(values);
+        return createCertificateKeySelectionList(values);
     }
 
+    /*
+     * X9.146 sec. 6.1: KeySelection signature_identifier<2..2^16-1>. KeySelection is a one-octet enum
+     * (max defined value 255), so the vector is a uint16 length prefix over one octet per value.
+     */
+    public static byte[] createCertificateKeySelectionList(int[] certificateKeySelectionList)
+        throws IOException
+    {
+        byte[] values = new byte[certificateKeySelectionList.length];
+        for (int i = 0; i < values.length; ++i)
+        {
+            TlsUtils.checkUint8(certificateKeySelectionList[i]);
+            values[i] = (byte)certificateKeySelectionList[i];
+        }
+
+        return TlsUtils.encodeOpaque16(values);
+    }
+
+    /*
+     * X9.146 sec. 6.1: the "used option" carried in the Certificate message uses the same vector
+     * shape as the advertised list, with exactly one element.
+     */
     public static byte[] createCertificateKeySelectionValue(int value)
         throws IOException
     {
-        return TlsUtils.encodeUint16(value);
+        return createCertificateKeySelectionList(new int[]{ value });
     }
 
     public static byte[] createTrustedCAKeysExtensionServer()
@@ -1624,22 +1661,37 @@ public class TlsExtensionsUtils
 
         ByteArrayInputStream buf = new ByteArrayInputStream(extensionData);
 
+        /*
+         * X9.146 sec. 6.1: KeySelection signature_identifier<2..2^16-1>, one octet per value.
+         * (The <2..> floor conflicts with the one-element "used option" form; parse both leniently.)
+         */
         int length = TlsUtils.readUint16(buf);
-        if (length < 2 || (length & 1) != 0)
+        if (length < 1)
         {
             throw new TlsFatalAlert(AlertDescription.decode_error);
         }
 
-        int[] cksList = TlsUtils.readUint16Array(length / 2, buf);
+        short[] octets = TlsUtils.readUint8Array(length, buf);
 
         TlsProtocol.assertEmpty(buf);
+
+        int[] cksList = new int[octets.length];
+        for (int i = 0; i < octets.length; ++i)
+        {
+            cksList[i] = octets[i] & 0xFF;
+        }
 
         return cksList;
     }
 
     public static int readCertificateKeySelectionValue(byte[] extensionData) throws IOException
     {
-        return TlsUtils.decodeUint16(extensionData);
+        int[] cksList = readCertificateKeySelectionList(extensionData);
+        if (cksList.length != 1)
+        {
+            throw new TlsFatalAlert(AlertDescription.decode_error);
+        }
+        return cksList[0];
     }
 
     public static int[] readHybridSchemeList(byte[] extensionData) throws IOException

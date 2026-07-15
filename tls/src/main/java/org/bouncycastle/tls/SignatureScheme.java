@@ -413,6 +413,41 @@ public class SignatureScheme
         }
     }
 
+    /**
+     * The draft-reddy-tls-composite-mldsa composite signature schemes (a single composite public key and a
+     * single composite signature combining an ML-DSA component with a classical component). Used by the
+     * X9.146 QTLS setup phase to classify a credential as Composite (CKS 4).
+     * <p>
+     * NOTE: recognising the codepoint is not the same as being able to <em>verify</em> a composite
+     * signature. Real composite verification is not yet wired into the TLS crypto layer (BC's composite
+     * signatures live in the JCA provider, {@code org.bouncycastle.jcajce.provider.asymmetric.CompositeSignatures},
+     * and are not bridged into {@code BcTlsCertificate}/{@code JcaTlsCertificate.createVerifier}); the
+     * lightweight {@code createVerifier}/{@code createAltVerifier} mapping for these codepoints currently
+     * splits them into a single component for the interim Chimera scheme, which is NOT composite
+     * verification. End-to-end CKS-4 composite authentication therefore depends on a crypto-layer follow-up.
+     */
+    public static boolean isComposite(int signatureScheme)
+    {
+        switch (signatureScheme)
+        {
+        case mldsa44_ecdsa_secp256r1_sha256:
+        case mldsa65_ecdsa_secp384r1_sha384:
+        case mldsa87_ecdsa_secp521r1_sha51:
+        case mldsa44_ed25519:
+        case mldsa65_ed25519:
+        case mldsa44_rsa2048_pkcs1_sha256:
+        case mldsa65_rsa3072_pkcs1_sha256:
+        case mldsa65_rsa4096_pkcs1_sha384:
+        case mldsa44_rsa2048_pss_pss_sha256:
+        case mldsa65_rsa3072_pss_pss_sha256:
+        case mldsa65_rsa4096_pss_pss_sha384:
+        case mldsa87_ed448:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     public static boolean isMLDSA(int signatureScheme)
     {
         switch (signatureScheme)

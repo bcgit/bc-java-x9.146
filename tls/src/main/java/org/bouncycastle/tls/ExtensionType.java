@@ -139,6 +139,12 @@ public class ExtensionType
     public static final int connection_id = 54;
 
     /*
+     * RFC 8773 (TLS 1.3 certificate-based authentication with an external PSK). Used by X9.146 QTLS
+     * for the CKS = 6 "PSK with Certificate Validation" hybrid mode.
+     */
+    public static final int tls_cert_with_extern_psk = 33;
+
+    /*
      * RFC 5746 3.2.
      */
     public static final int renegotiation_info = 0xff01;
@@ -146,6 +152,9 @@ public class ExtensionType
     /*
      * X9.146
      */
+    // ANSI X9.146 QTLS sec. 6.1.1 states 0xFFFF, but that is a pre-IANA placeholder and collides
+    // with hybrid_scheme_list below; BC deliberately uses wolfSSL's shipped value 0xff92 for interop.
+    // Revisit once IANA assigns a real code point to the CKS extension.
     public static final int certificate_key_selection = 0xff92; // wolfSSL extension value
     public static final int hybrid_scheme_list = 0xffff; // X9.146
     //Note: The presence of this extension in a ClientHello or ServerHello indicates that
@@ -243,9 +252,11 @@ public class ExtensionType
             return "key_share";
         case connection_id:
             return "connection_id";
+        case tls_cert_with_extern_psk:
+            return "tls_cert_with_extern_psk";
         case renegotiation_info:
             return "renegotiation_info";
-            case certificate_key_selection:
+        case certificate_key_selection:
             return "certificate_key_selection";
         default:
             return "UNKNOWN";
@@ -301,6 +312,7 @@ public class ExtensionType
         case signature_algorithms_cert:
         case key_share:
         case connection_id:
+        case tls_cert_with_extern_psk:
         case renegotiation_info:
         case certificate_key_selection:
             return true;

@@ -10,7 +10,8 @@ public enum KeySelection
     Chimera_Alternative(2),              // Chimera Alternate Key’s Signature
     Chimera_Hybrid(3),                   // Chimera Concatenated Signatures
     Composite_Hybrid(4),                 // Composite Hybrid Signature
-    Related_Certificates_Pair_Hybrid(5), // RFC 7924, Concatenated Signatures
+    Related_Certificates_Pair_Hybrid(5), // Related Certificates Pair (RFC 9763; draft enum text cites RFC 7924)
+    PSK_with_Certificate_Validation(6),  // PSK with Certificate Validation (RFC 8773)
     Reserved(254),                       // Reserved for future use
     External(255);                       // Codes external to TLS
 

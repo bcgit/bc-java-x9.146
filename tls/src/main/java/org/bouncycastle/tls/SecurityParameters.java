@@ -21,8 +21,10 @@ public class SecurityParameters
     int prfHashLength = -1;
     int verifyDataLength = -1;
     short cksCode = 0;
+    short clientCksCode = 0;
     CertificateKeySelection cks;
     int[] serverCksList = null;
+    boolean certWithExternPSK = false;
 
     TlsSecret baseKeyClient = null;
     TlsSecret baseKeyServer = null;
@@ -162,6 +164,35 @@ public class SecurityParameters
     public CertificateKeySelection getCertificateKeySelection()
     {
         return cks;
+    }
+
+    /**
+     * @return the negotiated X9.146 QTLS CKS value in effect for this connection (a
+     *         {@link CertificateKeySelectionType} constant); {@code cks_default(0)} when no CKS was
+     *         negotiated.
+     */
+    public short getCertificateKeySelectionCode()
+    {
+        return cksCode;
+    }
+
+    /**
+     * @return the negotiated X9.146 QTLS CKS value in effect for <em>client</em> authentication on this
+     *         connection (a {@link CertificateKeySelectionType} constant); {@code cks_default(0)} when no
+     *         client-authentication CKS was negotiated.
+     */
+    public short getClientCertificateKeySelectionCode()
+    {
+        return clientCksCode;
+    }
+
+    /**
+     * @return {@code true} if the RFC 8773 {@code tls_cert_with_extern_psk} extension was negotiated, i.e.
+     *         this connection combines certificate authentication with an external PSK (X9.146 QTLS CKS 6).
+     */
+    public boolean isCertWithExternPSK()
+    {
+        return certWithExternPSK;
     }
 
     public byte[] getConnectionIDLocal()

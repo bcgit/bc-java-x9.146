@@ -56,6 +56,9 @@ public class CertificateRequest
     protected final Vector supportedSignatureAlgorithms;
     protected final Vector supportedSignatureAlgorithmsCert;
     protected final Vector certificateAuthorities;
+    // X9.146 QTLS sec. 6.1: the KeySelection values the server supports for client authentication
+    // (TLS 1.3 certificate_request_key_selection); null when the extension is absent.
+    protected final int[] certificateKeySelection;
 
     /**
      * @param certificateTypes       see {@link ClientCertificateType} for valid constants.
@@ -64,12 +67,24 @@ public class CertificateRequest
     public CertificateRequest(short[] certificateTypes, Vector supportedSignatureAlgorithms,
         Vector certificateAuthorities)
     {
-        this(null, certificateTypes, supportedSignatureAlgorithms, null, certificateAuthorities);
+        this(null, certificateTypes, supportedSignatureAlgorithms, null, certificateAuthorities, null);
     }
 
-    // TODO[tls13] Prefer to manage the certificateRequestContext internally only? 
+    // TODO[tls13] Prefer to manage the certificateRequestContext internally only?
     public CertificateRequest(byte[] certificateRequestContext, Vector supportedSignatureAlgorithms,
         Vector supportedSignatureAlgorithmsCert, Vector certificateAuthorities) throws IOException
+    {
+        this(certificateRequestContext, supportedSignatureAlgorithms, supportedSignatureAlgorithmsCert,
+            certificateAuthorities, null);
+    }
+
+    /**
+     * X9.146 QTLS TLS 1.3 constructor carrying the server's supported {@link KeySelection} list for client
+     * authentication.
+     */
+    public CertificateRequest(byte[] certificateRequestContext, Vector supportedSignatureAlgorithms,
+        Vector supportedSignatureAlgorithmsCert, Vector certificateAuthorities, int[] certificateKeySelection)
+        throws IOException
     {
         /*
          * TODO[tls13] Removed certificateTypes, added certificate_request_context, added extensions
@@ -79,11 +94,11 @@ public class CertificateRequest
 
         this(certificateRequestContext, null,
             checkSupportedSignatureAlgorithms(supportedSignatureAlgorithms, AlertDescription.internal_error),
-            supportedSignatureAlgorithmsCert, certificateAuthorities);
+            supportedSignatureAlgorithmsCert, certificateAuthorities, certificateKeySelection);
     }
 
     private CertificateRequest(byte[] certificateRequestContext, short[] certificateTypes, Vector supportedSignatureAlgorithms,
-        Vector supportedSignatureAlgorithmsCert, Vector certificateAuthorities)
+        Vector supportedSignatureAlgorithmsCert, Vector certificateAuthorities, int[] certificateKeySelection)
     {
         if (null != certificateRequestContext && !TlsUtils.isValidUint8(certificateRequestContext.length))
         {
@@ -100,6 +115,7 @@ public class CertificateRequest
         this.supportedSignatureAlgorithms = supportedSignatureAlgorithms;
         this.supportedSignatureAlgorithmsCert = supportedSignatureAlgorithmsCert;
         this.certificateAuthorities = certificateAuthorities;
+        this.certificateKeySelection = certificateKeySelection;
     }
 
     public byte[] getCertificateRequestContext()
@@ -139,6 +155,15 @@ public class CertificateRequest
     public Vector getCertificateAuthorities()
     {
         return certificateAuthorities;
+    }
+
+    /**
+     * @return the server's supported X9.146 {@link KeySelection} values for client authentication, or
+     *         {@code null} when the {@code certificate_key_selection} extension was absent.
+     */
+    public int[] getCertificateKeySelection()
+    {
+        return certificateKeySelection;
     }
 
     public boolean hasCertificateRequestContext(byte[] certificateRequestContext)
@@ -184,6 +209,12 @@ public class CertificateRequest
             if (null != certificateAuthorities)
             {
                 TlsExtensionsUtils.addCertificateAuthoritiesExtension(extensions, certificateAuthorities);
+            }
+
+            if (null != certificateKeySelection)
+            {
+                // X9.146 QTLS sec. 6.1: advertise the KeySelection values supported for client authentication.
+                TlsExtensionsUtils.addCertificateKeySelectionList(extensions, certificateKeySelection);
             }
 
             byte[] extEncoding = TlsProtocol.writeExtensionsData(extensions);
@@ -262,9 +293,10 @@ public class CertificateRequest
             Vector supportedSignatureAlgorithmsCert = TlsExtensionsUtils
                 .getSignatureAlgorithmsCertExtension(extensions);
             Vector certificateAuthorities = TlsExtensionsUtils.getCertificateAuthoritiesExtension(extensions);
+            int[] certificateKeySelection = TlsExtensionsUtils.getCertificateKeySelectionList(extensions);
 
             return new CertificateRequest(certificateRequestContext, supportedSignatureAlgorithms,
-                supportedSignatureAlgorithmsCert, certificateAuthorities);
+                supportedSignatureAlgorithmsCert, certificateAuthorities, certificateKeySelection);
         }
 
         final boolean isTLSv12 = TlsUtils.isTLSv12(negotiatedVersion);

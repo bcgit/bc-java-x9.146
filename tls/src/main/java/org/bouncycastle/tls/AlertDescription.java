@@ -250,6 +250,30 @@ public class AlertDescription
      */
     public static final short certificate_required = 116;
 
+    /*
+     * ANSI X9.146 QTLS (draft 2026-07-07) sec. 6.5.
+     *
+     * PROVISIONAL: the draft lists these as "(XXXX)" pending IANA assignment; the values below are
+     * placeholders in the currently-unassigned high range and MUST be revisited once the "TLS Alerts"
+     * registry assigns real code points. The draft's selection algorithm (Figure 3) also names an
+     * "unsupported_algorithm" alert that has no code point in the draft or the IANA registry; rather
+     * than mint a constant for it, {@link TlsUtils} raises the provisional mapping via a shared helper.
+     */
+
+    /**
+     * ANSI X9.146: sent when a received Certificate Key Selection (CKS) value was not advertised by
+     * the peer, or is inconsistent with the structure of the peer certificate. Always fatal.
+     * PROVISIONAL code point (see note above).
+     */
+    public static final short unsupported_cks_value = 224;
+
+    /**
+     * ANSI X9.146: sent by a relying party when, in Related Certificates Pair mode, the
+     * RelatedCertificate extension is absent or does not validate against the paired certificate.
+     * Always fatal. PROVISIONAL code point (see note above).
+     */
+    public static final short unrelated_certificates = 225;
+
     public static String getName(short alertDescription)
     {
         switch (alertDescription)
@@ -322,6 +346,10 @@ public class AlertDescription
             return "missing_extension";
         case certificate_required:
             return "certificate_required";
+        case unsupported_cks_value:
+            return "unsupported_cks_value";
+        case unrelated_certificates:
+            return "unrelated_certificates";
         default:
             return "UNKNOWN";
         }
