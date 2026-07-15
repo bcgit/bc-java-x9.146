@@ -338,6 +338,11 @@ class TlsTestClientImpl
                         return sig;
                     }
 
+                    public byte[] generateRawAltSignature(byte[] hash) throws IOException
+                    {
+                        return signerCredentials.generateRawAltSignature(hash);
+                    }
+
                     public org.bouncycastle.tls.Certificate getCertificate()
                     {
                         org.bouncycastle.tls.Certificate cert = signerCredentials.getCertificate();

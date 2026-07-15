@@ -44,6 +44,7 @@ public class AllTests
         suite.addTestSuite(TlsSRPProtocolTest.class);
         suite.addTestSuite(TlsUtilsTest.class);
         suite.addTestSuite(TlsX9146ProtocolTest.class);
+        suite.addTestSuite(TlsX9146CompositeVerifierTest.class);
 
         suite.addTest(DTLSTestSuite.suite());
         suite.addTest(TlsTestSuite.suite());

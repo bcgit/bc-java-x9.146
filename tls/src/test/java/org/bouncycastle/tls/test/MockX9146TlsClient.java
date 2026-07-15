@@ -7,6 +7,8 @@ import java.util.Vector;
 
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.AlertLevel;
+import org.bouncycastle.tls.BasicTlsPSKExternal;
+import org.bouncycastle.tls.PRFAlgorithm;
 import org.bouncycastle.tls.CertificateKeySelection;
 import org.bouncycastle.tls.KeySelection;
 import org.bouncycastle.tls.CertificateRequest;
@@ -18,6 +20,7 @@ import org.bouncycastle.tls.ProtocolName;
 import org.bouncycastle.tls.ProtocolVersion;
 import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
+import org.bouncycastle.tls.SignatureScheme;
 import org.bouncycastle.tls.TlsAuthentication;
 import org.bouncycastle.tls.TlsCredentials;
 import org.bouncycastle.tls.TlsExtensionsUtils;
@@ -39,6 +42,79 @@ class MockX9146TlsClient
     short cksCode = 0;
     org.bouncycastle.tls.CertificateKeySelection CKS = null;
     int[] selectedCipherSuites = null;
+
+    // X9.146: the CKS value actually negotiated for server authentication, captured at handshake completion.
+    short negotiatedCksCode = -1;
+    // X9.146: the CKS value this client used for its own (client) authentication, captured likewise.
+    short negotiatedClientCksCode = -1;
+    // X9.146 CKS 6 / RFC 8773: offer an external PSK + the tls_cert_with_extern_psk extension.
+    boolean usePskHybrid = false;
+    boolean negotiatedCertWithExternPSK = false;
+    // X9.146 CKS 5: the server uses a Related Certificates Pair credential (self-signed test certs, so
+    // skip the trust-path check and focus on the CKS-5 ExtendedCertificateVerify + relation-digest check).
+    boolean useRelatedPair = false;
+
+    public void setUsePskHybrid(boolean usePskHybrid)
+    {
+        this.usePskHybrid = usePskHybrid;
+    }
+
+    public void setUseRelatedPair(boolean useRelatedPair)
+    {
+        this.useRelatedPair = useRelatedPair;
+    }
+
+    // X9.146 downgrade tests: a SignatureScheme value to withhold from the CertificateVerify
+    // signature_algorithms (forcing a CKS downgrade), while keeping signature_algorithms_cert full so the
+    // certificate chain still validates. -1 = withhold nothing.
+    int omitCvScheme = -1;
+
+    public void setOmitCvScheme(int omitCvScheme)
+    {
+        this.omitCvScheme = omitCvScheme;
+    }
+
+    protected Vector getSupportedSignatureAlgorithmsCert()
+    {
+        if (omitCvScheme < 0)
+        {
+            return super.getSupportedSignatureAlgorithmsCert();
+        }
+        // Chain-validation algorithms stay complete even though the CertificateVerify set is restricted.
+        Vector certAlgs = TlsUtils.getDefaultSupportedSignatureAlgorithms(context);
+        certAlgs.add(SignatureAndHashAlgorithm.DRAFT_mldsa44);
+        certAlgs.add(SignatureAndHashAlgorithm.DRAFT_mldsa65);
+        certAlgs.add(SignatureAndHashAlgorithm.DRAFT_mldsa87);
+        return certAlgs;
+    }
+
+    public boolean isNegotiatedCertWithExternPSK()
+    {
+        return negotiatedCertWithExternPSK;
+    }
+
+    public Vector getExternalPSKs()
+    {
+        if (!usePskHybrid)
+        {
+            return null;
+        }
+
+        byte[] identity = org.bouncycastle.util.Strings.toUTF8ByteArray("x9146-client");
+        org.bouncycastle.tls.crypto.TlsSecret key =
+            getCrypto().createSecret(new byte[32]);
+        return TlsUtils.vectorOfOne(new BasicTlsPSKExternal(identity, key, PRFAlgorithm.tls13_hkdf_sha256));
+    }
+
+    public short getNegotiatedCksCode()
+    {
+        return negotiatedCksCode;
+    }
+
+    public short getNegotiatedClientCksCode()
+    {
+        return negotiatedClientCksCode;
+    }
 
     boolean DEBUG = true;
 
@@ -120,6 +196,18 @@ class MockX9146TlsClient
         defaultVector.add(SignatureAndHashAlgorithm.DRAFT_mldsa65);
         defaultVector.add(SignatureAndHashAlgorithm.DRAFT_mldsa87);
 
+        if (omitCvScheme >= 0)
+        {
+            // Force a CKS downgrade by withholding one of the credential's algorithms from the CV set.
+            for (int i = defaultVector.size() - 1; i >= 0; --i)
+            {
+                if (SignatureScheme.from((SignatureAndHashAlgorithm)defaultVector.elementAt(i)) == omitCvScheme)
+                {
+                    defaultVector.removeElementAt(i);
+                }
+            }
+        }
+
         //OQS
         defaultVector.add(SignatureAndHashAlgorithm.OQS_CODEPOINT_P256_MLDSA44);
         defaultVector.add(SignatureAndHashAlgorithm.OQS_CODEPOINT_RSA3072_MLDSA44);
@@ -179,6 +267,11 @@ class MockX9146TlsClient
                 TlsExtensionsUtils.addCertificateKeySelectionList(clientExtensions, cksValues);
             }
 
+            if (usePskHybrid)
+            {
+                // RFC 8773 / X9.146 CKS 6: signal willingness to combine certificate auth with the external PSK.
+                TlsExtensionsUtils.addCertWithExternPSKExtension(clientExtensions);
+            }
         }
         return clientExtensions;
     }
@@ -223,6 +316,14 @@ class MockX9146TlsClient
                     throw new TlsFatalAlert(AlertDescription.bad_certificate);
                 }
 
+                if (useRelatedPair)
+                {
+                    // The Related Certificates Pair fixture uses freshly-generated self-signed certs that
+                    // are not in the trusted set; the CKS-5 relation-digest check and the two-certificate
+                    // ExtendedCertificateVerify (in TlsUtils) are what this test exercises.
+                    return;
+                }
+
                 String[] trustedCertResources = new String[]{
                         "x9146/server-P256-mldsa44-cert.pem",
                         "x9146/server-P384-mldsa65-cert.pem",
@@ -243,6 +344,21 @@ class MockX9146TlsClient
 
             public TlsCredentials getClientCredentials(CertificateRequest certificateRequest) throws IOException
             {
+                // X9.146: when the server requests client authentication with a KeySelection list, respond
+                // with a chimera (dual-key) credential so the client-authentication CKS leg is exercised.
+                if (certificateRequest.getCertificateKeySelection() != null)
+                {
+                    // Chimera client credential with FIXED native (ECDSA P-256 / SHA-256) and alternate
+                    // (ML-DSA-44) schemes, so credential loading does not depend on which algorithms the
+                    // server offered -- allowing a test to withhold one algorithm and drive the client-auth
+                    // CKS downgrade (e.g. server offers only ML-DSA -> cks_alternate(2)).
+                    return TlsTestUtils.loadDualSignerCredentials(context,
+                        new String[]{ "x9146/server-P256-mldsa44-cert.pem" },
+                        "x9146/server-P256-key.pem", "x9146/server-mldsa44-key-pq.pem",
+                        SignatureScheme.getSignatureAndHashAlgorithm(SignatureScheme.ecdsa_secp256r1_sha256),
+                        SignatureAndHashAlgorithm.DRAFT_mldsa44);
+                }
+
                 short[] certificateTypes = certificateRequest.getCertificateTypes();
                 if (certificateTypes == null || !Arrays.contains(certificateTypes, ClientCertificateType.rsa_sign))
                 {
@@ -258,6 +374,10 @@ class MockX9146TlsClient
     public void notifyHandshakeComplete() throws IOException
     {
         super.notifyHandshakeComplete();
+
+        this.negotiatedCksCode = context.getSecurityParametersConnection().getCertificateKeySelectionCode();
+        this.negotiatedClientCksCode = context.getSecurityParametersConnection().getClientCertificateKeySelectionCode();
+        this.negotiatedCertWithExternPSK = context.getSecurityParametersConnection().isCertWithExternPSK();
 
         ProtocolName protocolName = context.getSecurityParametersConnection().getApplicationProtocol();
         if (protocolName != null && DEBUG)
