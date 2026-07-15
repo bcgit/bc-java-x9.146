@@ -15,6 +15,7 @@ import javax.crypto.interfaces.DHPublicKey;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.KeyUsage;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
@@ -168,14 +169,17 @@ public class JcaTlsRawKeyCertificate
 
     public Tls13Verifier createAltVerifier(SubjectPublicKeyInfo altKeyInfo, int signatureScheme) throws IOException
     {
-        //TODO
-        return null;
+        // TODO[x9.146]: JCA-stack chimera alternate-key verification is not yet implemented. Fail with a
+        // clean alert rather than returning null (which NPEs downstream). Needs a JCA-crypto X9146 test
+        // before wiring; the BC crypto stack (BcTlsRawKeyCertificate) is the exercised path today.
+        throw new TlsFatalAlert(AlertDescription.internal_error,
+            new UnsupportedOperationException("X9.146 alternate-key verification not supported on the JCA crypto stack"));
     }
 
     public Tls13Verifier createAltVerifier(int signatureScheme) throws IOException
     {
-        //TODO
-        return null;
+        throw new TlsFatalAlert(AlertDescription.internal_error,
+            new UnsupportedOperationException("X9.146 alternate-key verification not supported on the JCA crypto stack"));
     }
 
     public Tls13Verifier createVerifier(int signatureScheme) throws IOException
@@ -293,6 +297,24 @@ public class JcaTlsRawKeyCertificate
             validateSLHDSA(slhDsaAlgOid);
 
             return crypto.createTls13Verifier("SLH-DSA", null, getPubKeySLHDSA());
+        }
+
+        case SignatureScheme.mldsa44_ecdsa_secp256r1_sha256:
+        {
+            /*
+             * X9.146 QTLS CKS 4 (draft-reddy-tls-composite-mldsa): verify the WHOLE composite signature --
+             * both the ML-DSA and the classical (ECDSA P-256 / SHA-256) component -- against the single
+             * composite public key, via BC's JCA composite-signature provider. The TLS codepoint maps to the
+             * draft-ounsworth composite algorithm OID (id_MLDSA44_ECDSA_P256_SHA256), which BC registers as a
+             * Signature and against which getPublicKey() resolves a CompositePublicKey. This is real
+             * composite verification, not the interim single-component split used by the lightweight path.
+             *
+             * NOTE: only mldsa44_ecdsa_secp256r1_sha256 is wired here (its hash matches the ounsworth combo);
+             * the other draft-reddy composite codepoints need per-codepoint OID mapping and are not yet
+             * bridged. Signing a composite CertificateVerify (the credential side) is a separate follow-up.
+             */
+            return crypto.createTls13Verifier(
+                IANAObjectIdentifiers.id_MLDSA44_ECDSA_P256_SHA256.getId(), null, getPublicKey());
         }
 
         default:

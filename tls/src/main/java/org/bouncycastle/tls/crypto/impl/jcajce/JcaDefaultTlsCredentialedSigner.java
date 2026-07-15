@@ -22,6 +22,15 @@ public class JcaDefaultTlsCredentialedSigner
     {
         String algorithm = privateKey.getAlgorithm();
 
+        // X9.146 QTLS CKS 4: a composite credential signs one composite signature with its composite key.
+        // Detect it by the negotiated scheme (the composite private key's getAlgorithm() is a composite name
+        // that does not match the per-algorithm dispatch below).
+        if (signatureAndHashAlgorithm != null
+            && SignatureScheme.isComposite(SignatureScheme.from(signatureAndHashAlgorithm)))
+        {
+            return new JcaTlsCompositeSigner(crypto, privateKey, SignatureScheme.from(signatureAndHashAlgorithm));
+        }
+
         TlsSigner signer;
 
         // TODO We probably want better distinction b/w the rsa_pss_pss and rsa_pss_rsae cases here

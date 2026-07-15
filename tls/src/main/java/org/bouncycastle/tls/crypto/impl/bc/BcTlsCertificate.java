@@ -101,18 +101,24 @@ public class BcTlsCertificate
     }
     public String getAltSigAlgOID()
     {
-        AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(certificate.getTBSCertificate().getExtensions());
-        return altSignatureAlgorithm.getAlgorithm().getAlgorithm().getId();
+        AltSignatureAlgorithm altSignatureAlgorithm = getAltSignatureAlgorithm();
+        return altSignatureAlgorithm == null ? null : altSignatureAlgorithm.getAlgorithm().getAlgorithm().getId();
     }
 
     public ASN1Encodable getSigAlgParams()
     {
-        AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(certificate.getTBSCertificate().getExtensions());
-        return altSignatureAlgorithm.getAlgorithm().getParameters();
+        return certificate.getSignatureAlgorithm().getParameters();
     }
     public ASN1Encodable getAltSigAlgParams()
     {
-        return certificate.getSignatureAlgorithm().getParameters();
+        AltSignatureAlgorithm altSignatureAlgorithm = getAltSignatureAlgorithm();
+        return altSignatureAlgorithm == null ? null : altSignatureAlgorithm.getAlgorithm().getParameters();
+    }
+
+    private AltSignatureAlgorithm getAltSignatureAlgorithm()
+    {
+        Extensions extensions = certificate.getTBSCertificate().getExtensions();
+        return extensions == null ? null : AltSignatureAlgorithm.fromExtensions(extensions);
     }
 
     protected boolean supportsKeyUsage(int keyUsageBit)

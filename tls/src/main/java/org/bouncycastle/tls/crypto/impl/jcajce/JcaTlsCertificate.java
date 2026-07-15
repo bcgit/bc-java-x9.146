@@ -13,7 +13,9 @@ import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.x509.AltSignatureAlgorithm;
 import org.bouncycastle.asn1.x509.Certificate;
+import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.jcajce.util.JcaJceHelper;
 import org.bouncycastle.tls.AlertDescription;
@@ -131,16 +133,34 @@ public class JcaTlsCertificate
 
     public String getAltSigAlgOID()
     {
-//        AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(certificate.getTBSCertificate().getExtensions());
-//        return altSignatureAlgorithm.getAlgorithm().getAlgorithm().getId();
-        return null;
+        try
+        {
+            AltSignatureAlgorithm altSignatureAlgorithm = getAltSignatureAlgorithm();
+            return altSignatureAlgorithm == null ? null : altSignatureAlgorithm.getAlgorithm().getAlgorithm().getId();
+        }
+        catch (IOException e)
+        {
+            throw new IllegalStateException("unable to parse altSignatureAlgorithm extension", e);
+        }
     }
 
     public ASN1Encodable getAltSigAlgParams() throws IOException
     {
-//        AltSignatureAlgorithm altSignatureAlgorithm = AltSignatureAlgorithm.fromExtensions(certificate.getTBSCertificate().getExtensions());
-//        return altSignatureAlgorithm.getAlgorithm().getParameters();
-        return null;
+        AltSignatureAlgorithm altSignatureAlgorithm = getAltSignatureAlgorithm();
+        return altSignatureAlgorithm == null ? null : altSignatureAlgorithm.getAlgorithm().getParameters();
+    }
+
+    private AltSignatureAlgorithm getAltSignatureAlgorithm() throws IOException
+    {
+        // X9.146 chimera: the alternate signature algorithm lives in the id-ce-altSignatureAlgorithm
+        // (2.5.29.73) X.509v3 extension. getExtensionValue returns the DER OCTET STRING wrapper.
+        byte[] wrapped = certificate.getExtensionValue(Extension.altSignatureAlgorithm.getId());
+        if (wrapped == null)
+        {
+            return null;
+        }
+        byte[] extnValue = ASN1OctetString.getInstance(wrapped).getOctets();
+        return AltSignatureAlgorithm.getInstance(TlsUtils.readASN1Object(extnValue));
     }
 
     public X509Certificate getX509Certificate()
