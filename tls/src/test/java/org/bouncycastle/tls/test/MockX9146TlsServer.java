@@ -43,6 +43,9 @@ class MockX9146TlsServer
         mldsa65p384,
         mldsa87p521,
         mldsa44rsa3072,
+        // Composite ML-DSA-44 + ECDSA-P256-SHA256 key in the SPKI (CKS 4/9). Requires JcaTlsCrypto:
+        // composite signing/verifying is only bridged through the JCA crypto layer.
+        composite,
         noPQC
 
     }
@@ -166,7 +169,12 @@ class MockX9146TlsServer
 
     MockX9146TlsServer()
     {
-        super(new BcTlsCrypto());
+        this(new BcTlsCrypto());
+    }
+
+    MockX9146TlsServer(org.bouncycastle.tls.crypto.TlsCrypto crypto)
+    {
+        super(crypto);
         selectedCipherSuites = super.getSupportedCipherSuites();
     }
 
@@ -466,6 +474,17 @@ class MockX9146TlsServer
             SignatureAlgorithm.rsa_pss_rsae_sha256, (short)SignatureScheme.DRAFT_mldsa44,
             "x9146/server-rsa3072-mldsa44-cert.pem",
             "x9146/server-rsa3072-key.pem", "x9146/server-mldsa44-rsa-key-pq.pem");
+        case composite:
+            /*
+             * Composite credential (CKS 4/9): the certificate's SubjectPublicKeyInfo is a composite
+             * ML-DSA-44 + ECDSA-P256-SHA256 key; the CertificateVerify is signed with the whole
+             * composite key (JcaDefaultTlsCredentialedSigner routes composite schemes through
+             * JcaTlsCompositeSigner). The certificate itself is signed by a classic ECDSA CA.
+             */
+            return TlsTestUtils.loadSignerCredentials(context,
+                new String[]{ "x9146/server-composite-mldsa44-p256-cert.pem" },
+                "x9146/server-composite-mldsa44-p256-key.pem",
+                SignatureScheme.getSignatureAndHashAlgorithm(SignatureScheme.mldsa44_ecdsa_secp256r1_sha256));
         case noPQC:
             return getRSASignerCredentials();
         default:

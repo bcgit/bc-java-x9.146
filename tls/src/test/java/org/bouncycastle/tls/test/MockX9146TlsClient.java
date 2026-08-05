@@ -56,6 +56,16 @@ class MockX9146TlsClient
     // X9.146 CKS 5: the server uses a Related Certificates Pair credential (self-signed test certs, so
     // skip the trust-path check and focus on the CKS-5 ExtendedCertificateVerify + relation-digest check).
     boolean useRelatedPair = false;
+    // X9.146 CKS 4/9: the server authenticates with a composite (ML-DSA-44 + ECDSA-P256-SHA256)
+    // certificate; advertise the composite scheme and trust the composite fixture. Gated because the
+    // composite SignatureAndHashAlgorithm's byte pair collides with SignatureAlgorithm-based credential
+    // pickers used elsewhere in the suite.
+    boolean useComposite = false;
+
+    public void setUseComposite(boolean useComposite)
+    {
+        this.useComposite = useComposite;
+    }
 
     public void setUsePskHybrid(boolean usePskHybrid)
     {
@@ -149,7 +159,12 @@ class MockX9146TlsClient
 
     MockX9146TlsClient(TlsSession session)
     {
-        super(new BcTlsCrypto());
+        this(session, new BcTlsCrypto());
+    }
+
+    MockX9146TlsClient(TlsSession session, org.bouncycastle.tls.crypto.TlsCrypto crypto)
+    {
+        super(crypto);
         this.session = session;
         selectedCipherSuites = super.getSupportedCipherSuites();
     }
@@ -228,6 +243,13 @@ class MockX9146TlsClient
         defaultVector.add(SignatureAndHashAlgorithm.WOLFSSL_HYBRID_RSA3072_MLDSA_LEVEL2);
         defaultVector.add(SignatureAndHashAlgorithm.WOLFSSL_HYBRID_P384_MLDSA_LEVEL3);
         defaultVector.add(SignatureAndHashAlgorithm.WOLFSSL_HYBRID_P521_MLDSA_LEVEL5);
+
+        if (useComposite)
+        {
+            // Composite ML-DSA-44 + ECDSA-P256-SHA256 (draft-reddy-tls-composite-mldsa, CKS 4/9).
+            defaultVector.add(
+                SignatureScheme.getSignatureAndHashAlgorithm(SignatureScheme.mldsa44_ecdsa_secp256r1_sha256));
+        }
 
         // Hybrid
         // ecdsa-dilithium
@@ -333,7 +355,9 @@ class MockX9146TlsClient
                     return;
                 }
 
-                String[] trustedCertResources = new String[]{
+                String[] trustedCertResources = useComposite
+                    ? new String[]{ "x9146/server-composite-mldsa44-p256-cert.pem" }
+                    : new String[]{
                         "x9146/server-P256-mldsa44-cert.pem",
                         "x9146/server-P384-mldsa65-cert.pem",
                         "x9146/server-P521-mldsa87-cert.pem",

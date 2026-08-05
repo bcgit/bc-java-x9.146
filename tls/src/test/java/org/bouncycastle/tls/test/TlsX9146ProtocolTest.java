@@ -1,6 +1,7 @@
 package org.bouncycastle.tls.test;
 
 import junit.framework.TestCase;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.CertificateKeySelection;
 import org.bouncycastle.tls.CertificateKeySelectionType;
@@ -11,12 +12,16 @@ import org.bouncycastle.tls.TlsClientProtocol;
 import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.TlsFatalAlertReceived;
 import org.bouncycastle.tls.TlsServerProtocol;
+import org.bouncycastle.tls.crypto.TlsCrypto;
+import org.bouncycastle.tls.crypto.impl.jcajce.JcaTlsCryptoProvider;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.io.Streams;
 
 import java.io.OutputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
+import java.security.SecureRandom;
+import java.security.Security;
 import java.util.Vector;
 
 public class TlsX9146ProtocolTest
@@ -645,6 +650,53 @@ public class TlsX9146ProtocolTest
             CertificateKeySelectionType.cks_default, result.server.getNegotiatedCksCode());
     }
 
+    // X9.146 sec. 10 / draft-reddy-tls-composite-mldsa: a server with a composite
+    // (ML-DSA-44 + ECDSA-P256-SHA256) certificate negotiates cks_composite_hybrid(4) -- a single
+    // CertificateVerify whose signature is the whole composite (both components), verified against the
+    // composite SubjectPublicKeyInfo. Runs on JcaTlsCrypto: the composite sign/verify bridge is JCA-only.
+    public void testComposite()
+        throws Exception
+    {
+        CertificateKeySelection cks = new CertificateKeySelection(new Vector<KeySelection>()
+        {{
+            add(KeySelection.Default);
+            add(KeySelection.Composite_Hybrid);
+        }});
+
+        HandshakeResult result = runX9146Handshake(config(MockX9146TlsServer.HybridExample.composite,
+            cks, cks).withComposite());
+
+        assertEquals("unexpected Composite CKS (client)",
+            CertificateKeySelectionType.cks_composite_hybrid, result.client.getNegotiatedCksCode());
+        assertEquals("unexpected Composite CKS (server)",
+            CertificateKeySelectionType.cks_composite_hybrid, result.server.getNegotiatedCksCode());
+    }
+
+    // X9.146 Fig 2 [17]-[19]: Composite certificate + external PSK negotiates
+    // cks_addpsk_with_composite(9) -- the composite CertificateVerify plus the PSK in the early secret,
+    // the draft's three-way hybrid (PSK + both composite components).
+    public void testCompositePsk()
+        throws Exception
+    {
+        CertificateKeySelection cks = new CertificateKeySelection(new Vector<KeySelection>()
+        {{
+            add(KeySelection.Default);
+            add(KeySelection.Composite_Hybrid);
+            add(KeySelection.AddPSK_with_Default);
+            add(KeySelection.AddPSK_with_Composite);
+        }});
+
+        HandshakeResult result = runX9146Handshake(config(MockX9146TlsServer.HybridExample.composite,
+            cks, cks).withComposite().withPskHybrid());
+
+        assertTrue("client did not negotiate cert+extern-PSK", result.client.isNegotiatedCertWithExternPSK());
+        assertTrue("server did not negotiate cert+extern-PSK", result.server.isNegotiatedCertWithExternPSK());
+        assertEquals("unexpected Composite+PSK CKS (client)",
+            CertificateKeySelectionType.cks_addpsk_with_composite, result.client.getNegotiatedCksCode());
+        assertEquals("unexpected Composite+PSK CKS (server)",
+            CertificateKeySelectionType.cks_addpsk_with_composite, result.server.getNegotiatedCksCode());
+    }
+
     // ---- X9.146 handshake harness ----
 
     private static CertificateKeySelection fullChimeraCks()
@@ -691,11 +743,20 @@ public class TlsX9146ProtocolTest
         boolean corruptRelation;
         boolean standardOnly;
         boolean fixedDualAlgs;
+        // Composite server credential: runs both endpoints on JcaTlsCrypto (the composite sign/verify
+        // bridge is JCA-only) and has the client advertise + trust the composite scheme/fixture.
+        boolean composite;
         int omitCvScheme = -1;
 
         Config withPskHybrid()
         {
             this.pskHybrid = true;
+            return this;
+        }
+
+        Config withComposite()
+        {
+            this.composite = true;
             return this;
         }
 
@@ -830,13 +891,23 @@ public class TlsX9146ProtocolTest
         serverThread.corruptRelation = cfg.corruptRelation;
         serverThread.standardOnly = cfg.standardOnly;
         serverThread.fixedDualAlgs = cfg.fixedDualAlgs;
+        if (cfg.composite)
+        {
+            serverThread.crypto = newJcaCrypto();
+        }
         return serverThread;
     }
 
     private static MockX9146TlsClient newClient(Config cfg)
     {
-        MockX9146TlsClient client = new MockX9146TlsClient(null);
+        MockX9146TlsClient client = cfg.composite
+            ? new MockX9146TlsClient(null, newJcaCrypto())
+            : new MockX9146TlsClient(null);
         client.setCKS(cfg.clientCks);
+        if (cfg.composite)
+        {
+            client.setUseComposite(true);
+        }
         if (cfg.pskHybrid)
         {
             client.setUsePskHybrid(true);
@@ -854,6 +925,18 @@ public class TlsX9146ProtocolTest
             client.setOmitCvScheme(cfg.omitCvScheme);
         }
         return client;
+    }
+
+    private static TlsCrypto newJcaCrypto()
+    {
+        // BC's composite-signature SPI resolves its component algorithms by the "BC" provider name, so
+        // the provider must be registered (not merely passed as an instance).
+        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null)
+        {
+            Security.addProvider(new BouncyCastleProvider());
+        }
+        return new JcaTlsCryptoProvider().setProvider(BouncyCastleProvider.PROVIDER_NAME)
+            .create(new SecureRandom());
     }
 
     public void runClientServer(short cks_code, MockX9146TlsServer.HybridExample demo, CertificateKeySelection serverCKS)
@@ -944,6 +1027,8 @@ public class TlsX9146ProtocolTest
         boolean fixedDualAlgs;
         // When true, the server authenticates with a Standard (single-signer) credential (CKS 0 / 6 rows).
         boolean standardOnly;
+        // Non-null: construct the server on this crypto instead of the default BcTlsCrypto (composite rows).
+        TlsCrypto crypto;
         volatile MockX9146TlsServer server;
         volatile Exception failure;
 
@@ -958,7 +1043,8 @@ public class TlsX9146ProtocolTest
         {
             try
             {
-                MockX9146TlsServer server = new MockX9146TlsServer();
+                MockX9146TlsServer server =
+                    (crypto != null) ? new MockX9146TlsServer(crypto) : new MockX9146TlsServer();
                 this.server = server;
                 server.setSelectedHybridTest(hybridExample);
                 server.setCKS(CKS);
