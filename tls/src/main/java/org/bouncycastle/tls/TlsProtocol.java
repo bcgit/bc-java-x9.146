@@ -726,9 +726,14 @@ public abstract class TlsProtocol
             /*
              * An alert is always 2 bytes. Read the alert.
              */
+            /*
+             * Mask to unsigned: alert descriptions above 127 (e.g. the X9.146 provisional
+             * unsupported_cks_value(224) / unrelated_certificates(225)) would otherwise sign-extend
+             * to negative values and be unmatchable against AlertDescription constants.
+             */
             byte[] alert = alertQueue.removeData(2, 0);
-            short alertLevel = alert[0];
-            short alertDescription = alert[1];
+            short alertLevel = (short)(alert[0] & 0xFF);
+            short alertDescription = (short)(alert[1] & 0xFF);
 
             handleAlertMessage(alertLevel, alertDescription);
         }
