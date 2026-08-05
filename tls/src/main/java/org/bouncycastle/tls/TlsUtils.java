@@ -2479,7 +2479,7 @@ public class TlsUtils
 //
 //        byte[] signature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
 //                handshakeHash, credentialedSigner.getAltSignatureAndHashAlgorithm(),
-//                CertificateKeySelectionType.cks_alternate);
+//                CertificateKeySelectionType.cks_chimera_alternative);
 //
 //        System.out.println(credentialedSigner.getAltSignatureAndHashAlgorithm().toString());
 //        HybridSchemeSignature hybridSchemeSignature = new HybridSchemeSignature(
@@ -2492,14 +2492,14 @@ public class TlsUtils
 //    }
 
     /**
-     * X9.146 QTLS sec. 6.4: {@code cks_both(3)} and {@code cks_related_certificates_pair_hybrid(5)}
+     * X9.146 QTLS sec. 6.4: {@code cks_chimera_hybrid(3)} and {@code cks_related_certs_hybrid(5)}
      * carry two signatures in an {@link ExtendedCertificateVerify}; every other CKS value carries a
      * single signature in a {@link CertificateVerify}.
      */
     static boolean cksUsesExtendedCertificateVerify(short cksCode)
     {
-        return cksCode == CertificateKeySelectionType.cks_both
-            || cksCode == CertificateKeySelectionType.cks_related_certificates_pair_hybrid;
+        return cksCode == CertificateKeySelectionType.cks_chimera_hybrid
+            || cksCode == CertificateKeySelectionType.cks_related_certs_hybrid;
     }
 
     /**
@@ -2532,21 +2532,35 @@ public class TlsUtils
         switch (cksCode)
         {
         case CertificateKeySelectionType.cks_default:
-        case CertificateKeySelectionType.cks_native:
+        case CertificateKeySelectionType.cks_chimera_native:
         case CertificateKeySelectionType.cks_composite_hybrid:
-        case CertificateKeySelectionType.cks_psk_with_certificate_validation:
+        case CertificateKeySelectionType.cks_addpsk_with_default:
+        case CertificateKeySelectionType.cks_addpsk_with_chimera_native:
+        case CertificateKeySelectionType.cks_addpsk_with_composite:
+        case CertificateKeySelectionType.cks_addpsk_with_related_related:
         {
             /*
-             * Single signature over the native SubjectPublicKeyInfo key. Composite(4) signs with the
-             * one composite key; PSK-with-cert(6) is a plain certificate signature whose PSK-hybrid
-             * binding lives in the key schedule, not this message.
+             * Single signature by the credential's primary signer. Composite(4)/addpsk(9) sign with
+             * the one composite key; the addpsk values (6/7/9/11) are plain certificate signatures
+             * whose PSK-hybrid binding lives in the key schedule, not this message.
+             *
+             * NOTE the related-pair inversion: the related-pair credential's PRIMARY signer is the
+             * Related (first-chain) certificate key and its ALT signer the Main key, so
+             * addpsk_with_related_related(11) (Table 3: Related SPKI) signs with the PRIMARY signer
+             * here, while addpsk_with_related_main(10) (Main SPKI) is in the ALT group below.
              */
             byte[] nativeSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner,
-                contextString, handshakeHash, signatureAndHashAlgorithm, CertificateKeySelectionType.cks_native);
+                contextString, handshakeHash, signatureAndHashAlgorithm, false);
             return new DigitallySigned(signatureAndHashAlgorithm, nativeSignature);
         }
-        case CertificateKeySelectionType.cks_alternate:
+        case CertificateKeySelectionType.cks_chimera_alternative:
+        case CertificateKeySelectionType.cks_addpsk_with_chimera_alternative:
+        case CertificateKeySelectionType.cks_addpsk_with_related_main:
         {
+            /*
+             * Single signature by the credential's alternate signer: the Chimera alternate key (2/8)
+             * or -- see the inversion note above -- the related-pair Main certificate key (10).
+             */
             SignatureAndHashAlgorithm altSignatureAndHashAlgorithm =
                 credentialedSigner.getAltSignatureAndHashAlgorithm();
             if (null == altSignatureAndHashAlgorithm)
@@ -2554,12 +2568,12 @@ public class TlsUtils
                 throw new TlsFatalAlert(AlertDescription.internal_error);
             }
             byte[] altSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner,
-                contextString, handshakeHash, altSignatureAndHashAlgorithm, CertificateKeySelectionType.cks_alternate);
+                contextString, handshakeHash, altSignatureAndHashAlgorithm, true);
             return new DigitallySigned(altSignatureAndHashAlgorithm, altSignature);
         }
         default:
             /*
-             * cks_both(3) and cks_related_certificates_pair_hybrid(5) carry two signatures and MUST be
+             * cks_chimera_hybrid(3) and cks_related_certs_hybrid(5) carry two signatures and MUST be
              * emitted through generate13ExtendedCertificateVerify; Reserved(254)/External(255)/unknown
              * are fatal.
              */
@@ -2590,9 +2604,9 @@ public class TlsUtils
             : "TLS 1.3, client CertificateVerify";
 
         byte[] nativeSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
-            handshakeHash, signatureAndHashAlgorithm, CertificateKeySelectionType.cks_native);
+            handshakeHash, signatureAndHashAlgorithm, false);
         byte[] altSignature = generate13CertificateVerify(context.getCrypto(), credentialedSigner, contextString,
-            handshakeHash, altSignatureAndHashAlgorithm, CertificateKeySelectionType.cks_alternate);
+            handshakeHash, altSignatureAndHashAlgorithm, true);
 
         int primaryScheme = SignatureScheme.from(signatureAndHashAlgorithm);
         int altScheme = SignatureScheme.from(altSignatureAndHashAlgorithm);
@@ -2601,17 +2615,14 @@ public class TlsUtils
     }
 
     private static byte[] generate13CertificateVerify(TlsCrypto crypto, TlsCredentialedSigner credentialedSigner,
-        String contextString, TlsHandshakeHash handshakeHash, SignatureAndHashAlgorithm signatureAndHashAlgorithm, short cksCode)
-            throws IOException
+        String contextString, TlsHandshakeHash handshakeHash, SignatureAndHashAlgorithm signatureAndHashAlgorithm,
+        boolean alternate) throws IOException
     {
         /*
-         * The public overload calls this once with cks_native (native signature) and, for a hybrid
-         * credential, once with cks_alternate (alternate signature). Route each to the matching key:
-         * the alternate signature MUST be produced by the alternate signer, never by falling back to
-         * the native key (the pre-2026 bug when the alternate signer had no stream signer).
+         * The package overloads call this once per signature, routing each to the matching key: the
+         * alternate signature MUST be produced by the alternate signer, never by falling back to the
+         * native key (the pre-2026 bug when the alternate signer had no stream signer).
          */
-        boolean alternate = (cksCode == CertificateKeySelectionType.cks_alternate);
-
         TlsStreamSigner streamSigner = alternate
             ? credentialedSigner.getAltStreamSigner()
             : credentialedSigner.getStreamSigner();
@@ -2714,12 +2725,12 @@ public class TlsUtils
         SecurityParameters securityParameters = serverContext.getSecurityParametersHandshake();
 
         Vector supportedAlgorithms = securityParameters.getServerSigAlgs();
-        TlsCertificate certificate = securityParameters.getPeerCertificate().getCertificateAt(0);
 
         // X9.146: verify against the CKS the client asserted for its own authentication, not a hardcoded
-        // Default -- a client that signed with cks_native(1) / cks_alternate(2) must be verified accordingly.
-        verify13CertificateVerify(supportedAlgorithms, "TLS 1.3, client CertificateVerify", handshakeHash, certificate,
-            certificateVerify, securityParameters.clientCksCode);
+        // Default -- a client that signed with cks_chimera_native(1) / cks_chimera_alternative(2) must be verified accordingly.
+        verify13CertificateVerify(serverContext, supportedAlgorithms, "TLS 1.3, client CertificateVerify",
+            handshakeHash, securityParameters.getPeerCertificate(), certificateVerify,
+            securityParameters.clientCksCode);
     }
 
     static void verify13CertificateVerifyServer(TlsClientContext clientContext, TlsHandshakeHash handshakeHash,
@@ -2728,10 +2739,9 @@ public class TlsUtils
         SecurityParameters securityParameters = clientContext.getSecurityParametersHandshake();
 
         Vector supportedAlgorithms = securityParameters.getClientSigAlgs();
-        TlsCertificate certificate = securityParameters.getPeerCertificate().getCertificateAt(0);
 
-        verify13CertificateVerify(supportedAlgorithms, "TLS 1.3, server CertificateVerify", handshakeHash, certificate,
-            certificateVerify, cksCode);
+        verify13CertificateVerify(clientContext, supportedAlgorithms, "TLS 1.3, server CertificateVerify",
+            handshakeHash, securityParameters.getPeerCertificate(), certificateVerify, cksCode);
     }
 
     //TODO[x9.146]: new extension, need more testing/publishing
@@ -2817,22 +2827,43 @@ public class TlsUtils
 //            throw new TlsFatalAlert(AlertDescription.decrypt_error);
 //        }
 //    }
-    private static void verify13CertificateVerify(Vector supportedAlgorithms, String contextString,
-        TlsHandshakeHash handshakeHash, TlsCertificate certificate, CertificateVerify certificateVerify, short cksCode)
-        throws IOException
+    private static void verify13CertificateVerify(TlsContext context, Vector supportedAlgorithms,
+        String contextString, TlsHandshakeHash handshakeHash, Certificate peerCertificate,
+        CertificateVerify certificateVerify, short cksCode) throws IOException
     {
         /*
-         * X9.146 QTLS sec. 6.2 / 8.5 / 8.7: dispatch on the negotiated CKS value. This verification is
+         * X9.146 QTLS sec. 6.2 / 8.5 / 9.5: dispatch on the negotiated CKS value. This verification is
          * FAIL-CLOSED: 'verified' starts false and is set true only when the branch matching cksCode
          * runs to completion with a valid signature. Any unhandled value (Reserved(254), External(255),
          * or an out-of-range code) leaves it false and the handshake aborts, closing the pre-2026
          * bypass where cksCode >= 5 skipped every branch and the message was accepted unchecked.
          *
-         * NOTE: cks_both(3) and cks_related_certificates_pair_hybrid(5) carry two signatures. Those are
+         * Which key verifies (Table 3): 0/1/4/6/7/9 -> the first entry's native (SPKI) key; 2/8 -> the
+         * first entry's alternate (SubjectAltPublicKeyInfo) key; 10 -> the Main certificate of a
+         * Related pair (the entry carrying the RFC 9763 RelatedCertificate extension); 11 -> the
+         * Related certificate (first entry). The related-pair values first validate the RFC 9763
+         * relation itself (sec. 9.5, "with or without PSK") -- without that, the single signature
+         * would authenticate one certificate of an unproven pair.
+         *
+         * NOTE: cks_chimera_hybrid(3) and cks_related_certs_hybrid(5) carry two signatures. Those are
          * transported in an ExtendedCertificateVerify message; see verify13ExtendedCertificateVerify.
          * When routed through this (single-signature) CertificateVerify path they are rejected.
          */
         boolean verified = false;
+
+        /*
+         * sec. 9.5: a Certificate with related-pair structure admits only CKS 5, 10 or 11 (the 0721
+         * text's "(5, 9, or 10)" is a typo, flagged to the editors); any other explicitly-signalled
+         * value is fatal unsupported_cks_value. cks_default(0) is exempt: it is also the no-extension
+         * value, and a Main/Related certificate used alone in a classic handshake must stay valid.
+         */
+        if (cksCode != CertificateKeySelectionType.cks_default
+            && cksCode != CertificateKeySelectionType.cks_addpsk_with_related_main
+            && cksCode != CertificateKeySelectionType.cks_addpsk_with_related_related
+            && certificateContainsRelatedPair(peerCertificate))
+        {
+            throw new TlsFatalAlert(AlertDescription.unsupported_cks_value);
+        }
 
         try
         {
@@ -2843,20 +2874,58 @@ public class TlsUtils
 
             byte[] signature = certificateVerify.getSignature();
 
+            Tls13Verifier verifier;
             switch (cksCode)
             {
             case CertificateKeySelectionType.cks_default:
-            case CertificateKeySelectionType.cks_native:
+            case CertificateKeySelectionType.cks_chimera_native:
             case CertificateKeySelectionType.cks_composite_hybrid:
-            case CertificateKeySelectionType.cks_psk_with_certificate_validation:
+            case CertificateKeySelectionType.cks_addpsk_with_default:
+            case CertificateKeySelectionType.cks_addpsk_with_chimera_native:
+            case CertificateKeySelectionType.cks_addpsk_with_composite:
             {
                 /*
-                 * Single native/composite signature over the SubjectPublicKeyInfo key. Composite(4)
-                 * verifies the whole composite key; PSK-with-cert(6) is a plain certificate signature
-                 * whose PSK-hybrid binding lives in the key schedule, not this message.
+                 * Single native/composite signature over the first entry's SubjectPublicKeyInfo key.
+                 * Composite(4)/addpsk(9) verify the whole composite key; the addpsk values (6/7/9) are
+                 * plain certificate signatures whose PSK-hybrid binding lives in the key schedule, not
+                 * this message.
                  */
-                Tls13Verifier verifier = certificate.createVerifier(signatureScheme);
+                verifier = peerCertificate.getCertificateAt(0).createVerifier(signatureScheme);
+                break;
+            }
+            case CertificateKeySelectionType.cks_chimera_alternative:
+            case CertificateKeySelectionType.cks_addpsk_with_chimera_alternative:
+            {
+                verifier = peerCertificate.getCertificateAt(0).createAltVerifier(signatureScheme);
+                break;
+            }
+            case CertificateKeySelectionType.cks_addpsk_with_related_main:
+            case CertificateKeySelectionType.cks_addpsk_with_related_related:
+            {
+                /*
+                 * sec. 9.5: both chains are present regardless of which key signed (sec. 9.3). Validate
+                 * the RFC 9763 relation (Main = the entry carrying the RelatedCertificate extension,
+                 * whose digest must match the Related certificate at entry 0), then verify the single
+                 * signature with the Main (10) or Related (11) certificate's key.
+                 */
+                TlsCertificate relatedCertificate = peerCertificate.getCertificateAt(0);
+                TlsCertificate mainCertificate = findRelatedMainCertificate(peerCertificate);
+                checkRelatedCertificate(context.getCrypto(), mainCertificate, relatedCertificate);
 
+                verifier = (cksCode == CertificateKeySelectionType.cks_addpsk_with_related_main)
+                    ? mainCertificate.createVerifier(signatureScheme)
+                    : relatedCertificate.createVerifier(signatureScheme);
+                break;
+            }
+            default:
+                // Reserved(254), External(255), an out-of-range code, or a dual-signature code
+                // (cks_chimera_hybrid(3) / cks_related_certs_hybrid(5)) that belongs in
+                // ExtendedCertificateVerify (see verify13ExtendedCertificateVerify): reject.
+                verifier = null;
+            }
+
+            if (null != verifier)
+            {
                 byte[] header = getCertificateVerifyHeader(contextString);
                 byte[] prfHash = getCurrentPRFHash(handshakeHash);
 
@@ -2864,26 +2933,6 @@ public class TlsUtils
                 output.write(header, 0, header.length);
                 output.write(prfHash, 0, prfHash.length);
                 verified = verifier.verifySignature(signature);
-                break;
-            }
-            case CertificateKeySelectionType.cks_alternate:
-            {
-                Tls13Verifier altVerifier = certificate.createAltVerifier(signatureScheme);
-
-                byte[] header = getCertificateVerifyHeader(contextString);
-                byte[] prfHash = getCurrentPRFHash(handshakeHash);
-
-                OutputStream output = altVerifier.getOutputStream();
-                output.write(header, 0, header.length);
-                output.write(prfHash, 0, prfHash.length);
-                verified = altVerifier.verifySignature(signature);
-                break;
-            }
-            default:
-                // Reserved(254), External(255), an out-of-range code, or a dual-signature code
-                // (cks_both(3) / cks_related_certificates_pair_hybrid(5)) that belongs in
-                // ExtendedCertificateVerify (see verify13ExtendedCertificateVerify): reject.
-                verified = false;
             }
         }
         catch (TlsFatalAlert e)
@@ -2933,15 +2982,15 @@ public class TlsUtils
     {
         /*
          * X9.146 QTLS sec. 6.4: two independently-signalled signatures, used if and only if the CKS
-         * value is cks_both(3) or cks_related_certificates_pair_hybrid(5). FAIL-CLOSED: 'verified'
+         * value is cks_chimera_hybrid(3) or cks_related_certs_hybrid(5). FAIL-CLOSED: 'verified'
          * starts false and BOTH signatures must verify (each against its own explicitly-signalled
          * scheme and the local signature_algorithms) or the handshake aborts.
          *
-         * cks_both(3): both signatures come from the one end-entity certificate -- primary via
+         * cks_chimera_hybrid(3): both signatures come from the one end-entity certificate -- primary via
          * createVerifier (native SPKI key), alternate via createAltVerifier (the SubjectAltPublicKeyInfo
          * extension key).
          *
-         * cks_related_certificates_pair_hybrid(5) (sec. 9.5): the two signatures come from two distinct
+         * cks_related_certs_hybrid(5) (sec. 9.5): the two signatures come from two distinct
          * end-entity certificates. cert[0] is the Related certificate (primary/first chain); the Main
          * certificate (second chain) is the entry carrying the RFC 9763 RelatedCertificate extension,
          * whose digest MUST match the Related certificate (else unrelated_certificates). The primary
@@ -2951,6 +3000,14 @@ public class TlsUtils
         if (!cksUsesExtendedCertificateVerify(cksCode))
         {
             throw new TlsFatalAlert(AlertDescription.decrypt_error);
+        }
+
+        // sec. 9.5: a Certificate with related-pair structure admits only CKS 5 (here) or 10/11
+        // (single-signature path) -- a chimera-hybrid(3) ECV over a related pair is fatal.
+        if (cksCode == CertificateKeySelectionType.cks_chimera_hybrid
+            && certificateContainsRelatedPair(peerCertificate))
+        {
+            throw new TlsFatalAlert(AlertDescription.unsupported_cks_value);
         }
 
         boolean verified = false;
@@ -2980,7 +3037,7 @@ public class TlsUtils
             boolean primaryVerified = verifier.verifySignature(extendedCertificateVerify.getPrimarySignature());
 
             Tls13Verifier altVerifier;
-            if (cksCode == CertificateKeySelectionType.cks_related_certificates_pair_hybrid)
+            if (cksCode == CertificateKeySelectionType.cks_related_certs_hybrid)
             {
                 TlsCertificate mainCertificate = findRelatedMainCertificate(peerCertificate);
                 checkRelatedCertificate(context.getCrypto(), mainCertificate, primaryCertificate);
@@ -3236,28 +3293,33 @@ public class TlsUtils
     }
 
     /**
-     * X9.146 QTLS sec. 6.2 unified CKS selection (Figure 2 setup + Figure 3 selection).
+     * X9.146 QTLS sec. 6.2 unified CKS selection (draft 2026-07-21 Figure 2 setup + Figure 3 selection).
      * <p>
      * Runs at authentication time, where both the authenticating credential and the peer's
-     * {@code signature_algorithms} are known. The result is the <em>deterministic</em> Figure 3 output for
-     * the credential's certificate type and the peer's signature-algorithm support -- not a list-order
-     * choice: a Chimera credential yields {@code cks_both(3)} when the peer supports both algorithms,
-     * {@code cks_alternate(2)} when only the alternate is supported, and {@code cks_native(1)} when only the
-     * native is supported; a Standard credential yields {@code cks_default(0)}.
+     * {@code signature_algorithms} are known. Figure 2 derives the initial CKS from the credential's
+     * certificate type -- Standard 0, Composite 4, Chimera 3, Related pair 5, or the per-type PSK-hybrid
+     * variant 6/9/7/10 when {@code usePskHybrid} -- and requires any value outside {3, 7, 10} to be
+     * advertised by the peer (fatal {@code unsupported_cks_value} otherwise). Figure 3 then settles the
+     * final value: PSK hybrids prefer ALG_1 and rewrite 7-&gt;8 / 10-&gt;11 to fall back to ALG_2 (never to a
+     * certificate-only mode); Related pair requires both algorithms; a Chimera credential yields 3 when
+     * the peer advertised it, else downgrades to whichever of {2, 1} appears <em>first in the peer's
+     * advertised list</em> (the list order is the peer's preference, sec. 6.1). Values the peer did not
+     * advertise are fatal ({@code unsupported_cks_value}); an algorithm the peer cannot validate at all is
+     * the draft's {@code unsupported_algorithm} alert, which has no code point (sec. 6.5 defines only
+     * {@code unsupported_cks_value}) and is PROVISIONALLY mapped to {@code handshake_failure}.
      * <p>
-     * Precedence when the deterministic result and the advertised list order disagree (draft ambiguity #12,
-     * flagged to the X9F5 editors): the Figure 3 result wins. The advertised lists act only as accept/reject
-     * gates -- the result must appear in both the peer's advertised list and the local supported list, else
-     * this returns {@code -1} and the caller omits the extension, falling back to standard RFC 8446
-     * processing. The lists are never used to pick a value other than Figure 3's.
-     * <p>
-     * PSK-hybrid (CKS 6), Composite (CKS 4) and Related-pair (CKS 5) certificate types are not yet detectable
-     * here, so only the Standard and Chimera branches of Figure 2/3 are implemented (WI-13/WI-15/WI-14).
+     * {@code -1} (omit the extension, standard RFC 8446 processing) is returned only when X9.146 is not in
+     * play -- no credential, or either endpoint did not offer the extension -- or when local policy
+     * ({@code localSupported}) excludes the selected value: the sender must never use a value it did not
+     * itself advertise (sec. 6.1/8.5 receiver rule; whether rewritten values are exempt is an open editor
+     * question, ED-9), and declining locally is a policy choice, not a peer-interop failure.
      *
      * @param credential     the authenticating credential; its native/alternate signers give ALG_1/ALG_2.
      * @param peerSigAlgs    the peer's {@code signature_algorithms} (SIG_ALGS in Figure 3); may be null.
      * @param localSupported the selector's own supported KeySelection values (also the X9.146 opt-in flag).
-     * @param peerAdvertised the KeySelection values the peer advertised.
+     * @param peerAdvertised the KeySelection values the peer advertised, in the peer's preference order.
+     * @param usePskHybrid   Figure 2's {@code enable_psk_hybrid AND tls_with_pre_shared_key}: an external
+     *                       PSK was negotiated alongside certificate authentication (RFC 8773).
      * @return the selected KeySelection value, or {@code -1} to omit the extension (standard processing).
      */
     static int selectCertificateKeySelection(TlsCredentialedSigner credential, Vector peerSigAlgs,
@@ -3266,6 +3328,7 @@ public class TlsUtils
         if (credential == null || localSupported == null || peerAdvertised == null)
         {
             // One side did not offer the certificate_key_selection extension: no X9.146 negotiation.
+            // The Figure 2 peer-support gate below only applies between endpoints that both opted in.
             return -1;
         }
 
@@ -3280,82 +3343,205 @@ public class TlsUtils
         boolean alg1InSigAlgs = containsSignatureAlgorithm(peerSigAlgs, alg1);
         boolean alg2InSigAlgs = (alg2 != null) && containsSignatureAlgorithm(peerSigAlgs, alg2);
 
-        int selected;
-        if (usePskHybrid)
+        /*
+         * Figure 2 setup: cert_type -> initial CKS. Related pair and Composite are detected from the
+         * credential (RFC 9763 extension / composite SignatureScheme codepoint); Chimera is any other
+         * dual-algorithm credential; Standard is single-algorithm. With a negotiated PSK hybrid the
+         * per-type addpsk variant is used instead: Standard->6, Composite->9, Chimera->7, Related->10.
+         */
+        int cks;
+        boolean relatedPair = credentialIsRelatedPair(credential);
+        if (relatedPair)
         {
             /*
-             * Figure 2/3 CKS 6 (PSK with Certificate Validation, RFC 8773): the certificate contributes a
-             * single signature with its primary/native key and the external PSK is the second hybrid
-             * component (Table 3: alternate is "OOB - PSK"), bound via the key schedule. So only ALG_1
-             * participates in the CertificateVerify, and it must be acceptable to the peer. This branch is
-             * evaluated before the chimera downgrade so a negotiated PSK hybrid is never rewritten to 1/2/3.
+             * Related Certificates Pair (sec. 9): ALG_1 is the Related (first chain) certificate key,
+             * ALG_2 the Main (second chain) certificate key -- see X9146RelatedPairUtil and the sec. 9.5
+             * ECV order (Related verifies the first signature).
              */
-            selected = alg1InSigAlgs ? CertificateKeySelectionType.cks_psk_with_certificate_validation : -1;
-        }
-        else if (credentialIsRelatedPair(credential))
-        {
-            /*
-             * Figure 2/3 CKS 5: Related Certificates Pair (sec. 9). STRICT -- both the Related (ALG_1, first
-             * chain) and Main (ALG_2, second chain) certificate algorithms must be acceptable to the peer;
-             * there is no single-key downgrade. Draft Figure 3 raises inappropriate_fallback when either is
-             * missing; here that maps to -1 (omit), so a Related credential the peer can't fully support
-             * falls back to standard processing rather than aborting.
-             */
-            selected = (alg1InSigAlgs && alg2InSigAlgs)
-                ? CertificateKeySelectionType.cks_related_certificates_pair_hybrid : -1;
+            cks = usePskHybrid ? CertificateKeySelectionType.cks_addpsk_with_related_main
+                : CertificateKeySelectionType.cks_related_certs_hybrid;
         }
         else if (SignatureScheme.isComposite(SignatureScheme.from(alg1)))
         {
             /*
-             * Figure 2/3 CKS 4: Composite certificate (sec. 11). One composite key in the SPKI, one
-             * composite signature -- the composite semantics live entirely in the SignatureScheme codepoint,
-             * so this routes through the single-signature CertificateVerify path (ALG_2 is NULL from the
-             * selection algorithm's perspective). ALG_1 must be acceptable to the peer.
-             *
-             * NOTE: end-to-end verification of a composite signature is not yet supported by the TLS crypto
-             * layer (see SignatureScheme.isComposite) -- this branch performs the negotiation/routing only.
+             * Composite certificate (sec. 10): one composite key in the SPKI, one composite signature --
+             * ALG_2 is NULL from the selection algorithm's perspective, the composite semantics live in
+             * the SignatureScheme codepoint. NOTE: end-to-end composite signing/verifying in the TLS
+             * crypto layer exists only for the JCA bridge; this branch performs negotiation/routing.
              */
-            selected = alg1InSigAlgs ? CertificateKeySelectionType.cks_composite_hybrid : -1;
+            cks = usePskHybrid ? CertificateKeySelectionType.cks_addpsk_with_composite
+                : CertificateKeySelectionType.cks_composite_hybrid;
         }
         else if (alg2 == null)
         {
-            // Figure 2: Standard certificate (ALG_2 == NULL). Figure 3: single-algorithm path.
-            selected = alg1InSigAlgs ? CertificateKeySelectionType.cks_default : -1;
+            // Standard certificate.
+            cks = usePskHybrid ? CertificateKeySelectionType.cks_addpsk_with_default
+                : CertificateKeySelectionType.cks_default;
         }
         else
         {
-            // Figure 2: Chimera certificate (base CKS 3). Figure 3 dual-algorithm selection: prefer both,
-            // then alternate-only, then native-only; neither supported means Figure 3's fatal
-            // unsupported_algorithm, mapped here to omit (-> standard, which the normal path then rejects).
-            if (alg1InSigAlgs && alg2InSigAlgs)
+            // Chimera certificate (sec. 8).
+            cks = usePskHybrid ? CertificateKeySelectionType.cks_addpsk_with_chimera_native
+                : CertificateKeySelectionType.cks_chimera_hybrid;
+        }
+
+        /*
+         * Figure 2 [37]-[39]: a setup value outside {3, 7, 10} (i.e. 0, 4, 5, 6, 9) MUST be advertised
+         * by the peer, else fatal unsupported_cks_value. {3, 7, 10} can still be rewritten during the
+         * selection phase, so their peer support is checked there instead.
+         */
+        if (cks != CertificateKeySelectionType.cks_chimera_hybrid
+            && cks != CertificateKeySelectionType.cks_addpsk_with_chimera_native
+            && cks != CertificateKeySelectionType.cks_addpsk_with_related_main
+            && !containsInt(peerAdvertised, cks))
+        {
+            throw new TlsFatalAlert(AlertDescription.unsupported_cks_value);
+        }
+
+        /*
+         * Figure 3 selection.
+         */
+        int selected;
+        if (alg2 == null)
+        {
+            /*
+             * Fig 3 [02]-[12]: single-algorithm path (Standard 0, Composite 4, or their PSK hybrids
+             * 6/9 -- the PSK binding lives in the key schedule, not this message). ALG_1 must be
+             * acceptable to the peer; [12]'s unsupported_algorithm has no code point (PROVISIONAL
+             * mapping, see the javadoc).
+             */
+            if (!alg1InSigAlgs)
             {
-                selected = CertificateKeySelectionType.cks_both;        // 3 -> ExtendedCertificateVerify
+                throw new TlsFatalAlert(AlertDescription.handshake_failure);
             }
-            else if (alg2InSigAlgs)
+            selected = cks;
+        }
+        else if (cks == CertificateKeySelectionType.cks_addpsk_with_chimera_native
+            || cks == CertificateKeySelectionType.cks_addpsk_with_related_main)
+        {
+            /*
+             * Fig 3 [14]-[46]: PSK hybrid with a dual-algorithm certificate. Prefer the per-type value
+             * (7/10); when its signing algorithm is unusable or the value unadvertised, rewrite to the
+             * other-key variant (7->8, 10->11), which must itself be advertised. A negotiated PSK
+             * hybrid is never downgraded to a certificate-only mode.
+             *
+             * Which credential algorithm signs under each value follows Table 3, and inverts between
+             * the two families: 7 signs with the chimera NATIVE key (credential ALG_1; 8 = alternate =
+             * ALG_2), while 10 signs with the related-pair MAIN key -- the credential's ALT signer,
+             * since the credential shape is ALG_1 = Related (first chain), ALG_2 = Main (11 = Related =
+             * ALG_1).
+             */
+            boolean chimera = (cks == CertificateKeySelectionType.cks_addpsk_with_chimera_native);
+            boolean preferredAlgOk = chimera ? alg1InSigAlgs : alg2InSigAlgs;
+            boolean rewriteAlgOk = chimera ? alg2InSigAlgs : alg1InSigAlgs;
+
+            if (preferredAlgOk && containsInt(peerAdvertised, cks))
             {
-                selected = CertificateKeySelectionType.cks_alternate;   // 2 -> CertificateVerify(ALG_2)
+                selected = cks;
             }
-            else if (alg1InSigAlgs)
+            else if (rewriteAlgOk)
             {
-                selected = CertificateKeySelectionType.cks_native;      // 1 -> CertificateVerify(ALG_1)
+                selected = chimera
+                    ? CertificateKeySelectionType.cks_addpsk_with_chimera_alternative
+                    : CertificateKeySelectionType.cks_addpsk_with_related_related;
+                if (!containsInt(peerAdvertised, selected))
+                {
+                    // [29]-[30] / [41]-[42].
+                    throw new TlsFatalAlert(AlertDescription.unsupported_cks_value);
+                }
             }
             else
             {
-                selected = -1;
+                // [33]-[34] / [45]-[46] unsupported_algorithm (PROVISIONAL mapping).
+                throw new TlsFatalAlert(AlertDescription.handshake_failure);
+            }
+        }
+        else if (cks == CertificateKeySelectionType.cks_related_certs_hybrid)
+        {
+            /*
+             * Fig 3 [48]-[55]: Related pair without PSK is STRICT -- both certificate algorithms are
+             * mandatory, there is no single-key downgrade. [50]/[53] raise unsupported_algorithm (the
+             * 0721 change from 0707's inappropriate_fallback; PROVISIONAL mapping). Peer support for 5
+             * was already enforced by the Figure 2 gate.
+             */
+            if (!alg1InSigAlgs || !alg2InSigAlgs)
+            {
+                throw new TlsFatalAlert(AlertDescription.handshake_failure);
+            }
+            selected = cks;    // 5 -> ExtendedCertificateVerify
+        }
+        else
+        {
+            /*
+             * Fig 3 [56]-[86]: ordinary Chimera selection. Both algorithms -> 3 if the peer advertised
+             * it, else a controlled downgrade to whichever of {2, 1} the peer listed first ([63]-[71]);
+             * single-algorithm fallbacks require the value in the peer's list ([74]-[75] / [81]-[82]).
+             */
+            if (alg1InSigAlgs && alg2InSigAlgs)
+            {
+                if (containsInt(peerAdvertised, CertificateKeySelectionType.cks_chimera_hybrid))
+                {
+                    selected = CertificateKeySelectionType.cks_chimera_hybrid;    // 3 -> ExtendedCertificateVerify
+                }
+                else
+                {
+                    selected = peerPrioritized(peerAdvertised, CertificateKeySelectionType.cks_chimera_alternative,
+                        CertificateKeySelectionType.cks_chimera_native);
+                    if (selected < 0)
+                    {
+                        // [71]: neither single-algorithm downgrade advertised.
+                        throw new TlsFatalAlert(AlertDescription.unsupported_cks_value);
+                    }
+                }
+            }
+            else if (alg2InSigAlgs)
+            {
+                selected = CertificateKeySelectionType.cks_chimera_alternative;   // 2 -> CertificateVerify(ALG_2)
+                if (!containsInt(peerAdvertised, selected))
+                {
+                    throw new TlsFatalAlert(AlertDescription.unsupported_cks_value);
+                }
+            }
+            else if (alg1InSigAlgs)
+            {
+                selected = CertificateKeySelectionType.cks_chimera_native;        // 1 -> CertificateVerify(ALG_1)
+                if (!containsInt(peerAdvertised, selected))
+                {
+                    throw new TlsFatalAlert(AlertDescription.unsupported_cks_value);
+                }
+            }
+            else
+            {
+                // [86] unsupported_algorithm (PROVISIONAL mapping).
+                throw new TlsFatalAlert(AlertDescription.handshake_failure);
             }
         }
 
-        if (selected < 0)
+        // Local policy is an opt-in per value: never use a value we did not ourselves advertise/allow.
+        // Declining locally falls back to omitting the extension, not to an alert (see the javadoc).
+        if (!containsInt(localSupported, selected))
         {
             return -1;
         }
 
-        // Fig-3 result wins; the lists only gate acceptance (peer must support it; local policy must allow it).
-        if (containsInt(peerAdvertised, selected) && containsInt(localSupported, selected))
-        {
-            return selected;
-        }
+        return selected;
+    }
 
+    /**
+     * Figure 3 [63]/[67] {@code Peer_Prioritized(a, b)} / {@code Peer_Least_Prioritized(a, b)}, collapsed:
+     * the peer's advertised list order is its preference (sec. 6.1), so the first of {@code a}, {@code b}
+     * encountered in {@code peerAdvertised} is the peer-preferred choice; {@code -1} when neither appears
+     * (the caller then raises {@code unsupported_cks_value} per [71]).
+     */
+    private static int peerPrioritized(int[] peerAdvertised, int a, int b)
+    {
+        for (int i = 0; i < peerAdvertised.length; ++i)
+        {
+            if (peerAdvertised[i] == a || peerAdvertised[i] == b)
+            {
+                return peerAdvertised[i];
+            }
+        }
         return -1;
     }
 
@@ -3366,7 +3552,15 @@ public class TlsUtils
      */
     private static boolean credentialIsRelatedPair(TlsCredentialedSigner credential) throws IOException
     {
-        Certificate certificate = credential.getCertificate();
+        return certificateContainsRelatedPair(credential.getCertificate());
+    }
+
+    /**
+     * Whether a Certificate message has Related Certificates Pair structure: some entry's certificate
+     * carries the RFC 9763 {@code RelatedCertificate} extension (the Main certificate of the pair).
+     */
+    private static boolean certificateContainsRelatedPair(Certificate certificate) throws IOException
+    {
         if (null == certificate)
         {
             return false;
@@ -3461,12 +3655,17 @@ public class TlsUtils
         switch (selectedCks)
         {
         case CertificateKeySelectionType.cks_default:
-        case CertificateKeySelectionType.cks_native:
-        case CertificateKeySelectionType.cks_alternate:
-        case CertificateKeySelectionType.cks_both:
+        case CertificateKeySelectionType.cks_chimera_native:
+        case CertificateKeySelectionType.cks_chimera_alternative:
+        case CertificateKeySelectionType.cks_chimera_hybrid:
         case CertificateKeySelectionType.cks_composite_hybrid:
-        case CertificateKeySelectionType.cks_related_certificates_pair_hybrid:
-        case CertificateKeySelectionType.cks_psk_with_certificate_validation:
+        case CertificateKeySelectionType.cks_related_certs_hybrid:
+        case CertificateKeySelectionType.cks_addpsk_with_default:
+        case CertificateKeySelectionType.cks_addpsk_with_chimera_native:
+        case CertificateKeySelectionType.cks_addpsk_with_chimera_alternative:
+        case CertificateKeySelectionType.cks_addpsk_with_composite:
+        case CertificateKeySelectionType.cks_addpsk_with_related_main:
+        case CertificateKeySelectionType.cks_addpsk_with_related_related:
             break;
         default:
             throw new TlsFatalAlert(AlertDescription.unsupported_cks_value);
@@ -5563,9 +5762,11 @@ public class TlsUtils
              * (Chimera) chain, additionally verify each certificate's native signature with the issuer's
              * native key and, where BOTH certificates carry the alternate extensions, its alternate
              * signature with the issuer's alternate key. Which signatures participate is governed by the
-             * negotiated CKS: cks_native(1) uses only the native (alternate extensions are ignored),
-             * cks_alternate(2) uses only the alternate (native ignored), cks_both(3) uses both. cks_default(0)
-             * runs no hybrid-specific check (standard RFC 8446 chain validation applies).
+             * negotiated CKS: cks_chimera_native(1) and its PSK variant addpsk_with_chimera_native(7) use
+             * only the native (alternate extensions are ignored), cks_chimera_alternative(2) and
+             * addpsk_with_chimera_alternative(8) use only the alternate (native ignored),
+             * cks_chimera_hybrid(3) uses both. cks_default(0) runs no hybrid-specific check (standard
+             * RFC 8446 chain validation applies).
              *
              * All certificate access goes through the TlsCertificate interface (DER via getEncoded()) so
              * this works on any crypto backend rather than casting to BcTlsCertificate, and the alternate
@@ -5573,10 +5774,12 @@ public class TlsUtils
              * the alternate extensions is skipped rather than dereferencing a null (the pre-2026 NPE).
              */
             short cksCode = securityParameters.cksCode;
-            boolean checkNative = (cksCode == CertificateKeySelectionType.cks_native
-                || cksCode == CertificateKeySelectionType.cks_both);
-            boolean checkAlt = (cksCode == CertificateKeySelectionType.cks_alternate
-                || cksCode == CertificateKeySelectionType.cks_both);
+            boolean checkNative = (cksCode == CertificateKeySelectionType.cks_chimera_native
+                || cksCode == CertificateKeySelectionType.cks_addpsk_with_chimera_native
+                || cksCode == CertificateKeySelectionType.cks_chimera_hybrid);
+            boolean checkAlt = (cksCode == CertificateKeySelectionType.cks_chimera_alternative
+                || cksCode == CertificateKeySelectionType.cks_addpsk_with_chimera_alternative
+                || cksCode == CertificateKeySelectionType.cks_chimera_hybrid);
 
             if (checkNative || checkAlt)
             {

@@ -443,10 +443,16 @@ public class TlsServerProtocol
         serverEncryptedExtensions.remove(TlsExtensionsUtils.EXT_certificate_key_selection);
 
         /*
-         * X9.146 QTLS sec. 10 / RFC 8773: if the client offered tls_cert_with_extern_psk and the server
-         * selected a PSK, combine certificate authentication with the external PSK (CKS 6). Echo the
-         * extension in EncryptedExtensions and record the negotiation; send13ServerHelloCoda then takes the
-         * certificate branch despite the selected PSK. Not offered / no PSK -> ordinary PSK-only behaviour.
+         * X9.146 QTLS sec. 11 / RFC 8773: if the client offered tls_cert_with_extern_psk and the server
+         * selected a PSK, combine certificate authentication with the external PSK (the addpsk CKS
+         * family, 6/7/8/9/10/11 by certificate type). Echo the extension in EncryptedExtensions and
+         * record the negotiation; send13ServerHelloCoda then takes the certificate branch despite the
+         * selected PSK. Not offered / no PSK -> ordinary PSK-only behaviour.
+         *
+         * certWithExternPSK models Figure 2's "enable_psk_hybrid AND tls_with_pre_shared_key": the
+         * client-side policy input is offering the extension at all, the server-side policy input is
+         * this unconditional echo. A server wanting PSKs but not PSK-hybrid authentication currently
+         * has no knob to decline here.
          */
         if (selectedPSK13 && TlsExtensionsUtils.hasCertWithExternPSKExtension(clientHelloExtensions))
         {
@@ -1691,10 +1697,12 @@ public class TlsServerProtocol
 
                 /*
                  * X9.146 QTLS sec. 6.2: now the credential is known, select the CKS value from the
-                 * server's supported list, the client's advertised list and the client's
-                 * signature_algorithms, and signal the used value in the Certificate message (sec. 6.1).
-                 * A -1 result means no common/feasible value: omit the extension and authenticate as
-                 * standard RFC 8446 (cksCode stays 0).
+                 * server's supported list, the client's advertised list (in the client's preference
+                 * order) and the client's signature_algorithms, and signal the used value in the
+                 * Certificate message (sec. 6.1). A -1 result means X9.146 is not in play or local
+                 * policy declined: omit the extension and authenticate as standard RFC 8446 (cksCode
+                 * stays 0). Peer-support violations abort inside the selection with the Figure 2/3
+                 * fatal alerts.
                  */
                 int selectedCks = TlsUtils.selectCertificateKeySelection(serverCredentials,
                     securityParameters.getClientSigAlgs(), serverCertificateKeySelectionList,

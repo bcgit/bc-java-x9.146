@@ -251,13 +251,15 @@ public class AlertDescription
     public static final short certificate_required = 116;
 
     /*
-     * ANSI X9.146 QTLS (draft 2026-07-07) sec. 6.5.
+     * ANSI X9.146 QTLS (draft 2026-07-21) sec. 6.5.
      *
      * PROVISIONAL: the draft lists these as "(XXXX)" pending IANA assignment; the values below are
      * placeholders in the currently-unassigned high range and MUST be revisited once the "TLS Alerts"
      * registry assigns real code points. The draft's selection algorithm (Figure 3) also names an
      * "unsupported_algorithm" alert that has no code point in the draft or the IANA registry; rather
-     * than mint a constant for it, {@link TlsUtils} raises the provisional mapping via a shared helper.
+     * than mint a constant for it, {@link TlsUtils}'s CKS selection PROVISIONALLY raises
+     * {@link #handshake_failure} where Figure 3 says unsupported_algorithm (flagged to the X9F5
+     * editors).
      */
 
     /**
@@ -271,6 +273,10 @@ public class AlertDescription
      * ANSI X9.146: sent by a relying party when, in Related Certificates Pair mode, the
      * RelatedCertificate extension is absent or does not validate against the paired certificate.
      * Always fatal. PROVISIONAL code point (see note above).
+     * <p>
+     * NOTE: the 2026-07-21 draft's restructure dropped the sentence naming this alert (sec. 9.7 in
+     * earlier drafts) while keeping the validation requirements it enforced (sec. 9.5); flagged to
+     * the X9F5 editors as likely accidental. Retained here pending their resolution.
      */
     public static final short unrelated_certificates = 225;
 

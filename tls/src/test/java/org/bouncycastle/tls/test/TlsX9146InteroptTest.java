@@ -25,7 +25,7 @@ import static java.lang.Thread.sleep;
 public class TlsX9146InteroptTest
     extends TestCase
 {
-    static short CKS_TYPE = CertificateKeySelectionType.cks_both;
+    static short CKS_TYPE = CertificateKeySelectionType.cks_chimera_hybrid;
     // 0x00 = default
     // 0x01 = native
     // 0x02 = alternative

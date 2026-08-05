@@ -47,8 +47,11 @@ class MockX9146TlsClient
     short negotiatedCksCode = -1;
     // X9.146: the CKS value this client used for its own (client) authentication, captured likewise.
     short negotiatedClientCksCode = -1;
-    // X9.146 CKS 6 / RFC 8773: offer an external PSK + the tls_cert_with_extern_psk extension.
+    // X9.146 / RFC 8773: offer an external PSK + the tls_cert_with_extern_psk extension.
     boolean usePskHybrid = false;
+    // When true, offer the external PSK under an identity the server does not recognize, so the PSK
+    // negotiation fails and the endpoint retains the certificate-only CKS value (0721 Fig 2 [09]-[11]).
+    boolean badPskIdentity = false;
     boolean negotiatedCertWithExternPSK = false;
     // X9.146 CKS 5: the server uses a Related Certificates Pair credential (self-signed test certs, so
     // skip the trust-path check and focus on the CKS-5 ExtendedCertificateVerify + relation-digest check).
@@ -57,6 +60,11 @@ class MockX9146TlsClient
     public void setUsePskHybrid(boolean usePskHybrid)
     {
         this.usePskHybrid = usePskHybrid;
+    }
+
+    public void setBadPskIdentity(boolean badPskIdentity)
+    {
+        this.badPskIdentity = badPskIdentity;
     }
 
     public void setUseRelatedPair(boolean useRelatedPair)
@@ -100,7 +108,8 @@ class MockX9146TlsClient
             return null;
         }
 
-        byte[] identity = org.bouncycastle.util.Strings.toUTF8ByteArray("x9146-client");
+        byte[] identity = org.bouncycastle.util.Strings.toUTF8ByteArray(
+            badPskIdentity ? "x9146-unknown" : "x9146-client");
         org.bouncycastle.tls.crypto.TlsSecret key =
             getCrypto().createSecret(new byte[32]);
         return TlsUtils.vectorOfOne(new BasicTlsPSKExternal(identity, key, PRFAlgorithm.tls13_hkdf_sha256));
@@ -351,7 +360,7 @@ class MockX9146TlsClient
                     // Chimera client credential with FIXED native (ECDSA P-256 / SHA-256) and alternate
                     // (ML-DSA-44) schemes, so credential loading does not depend on which algorithms the
                     // server offered -- allowing a test to withhold one algorithm and drive the client-auth
-                    // CKS downgrade (e.g. server offers only ML-DSA -> cks_alternate(2)).
+                    // CKS downgrade (e.g. server offers only ML-DSA -> cks_chimera_alternative(2)).
                     return TlsTestUtils.loadDualSignerCredentials(context,
                         new String[]{ "x9146/server-P256-mldsa44-cert.pem" },
                         "x9146/server-P256-key.pem", "x9146/server-mldsa44-key-pq.pem",

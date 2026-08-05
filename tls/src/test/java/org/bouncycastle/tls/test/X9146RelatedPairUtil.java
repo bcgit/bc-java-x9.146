@@ -11,6 +11,7 @@ import java.util.Date;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
+import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.Extension;
@@ -53,6 +54,16 @@ class X9146RelatedPairUtil
 
     static TlsCredentialedSigner createRelatedPairCredentials(TlsContext context) throws Exception
     {
+        return createRelatedPairCredentials(context, false);
+    }
+
+    /**
+     * @param corruptRelation when true, the Main certificate's RelatedCertificate digest is corrupted so
+     *        the pair does NOT validate -- for the sec. 9.5 negative rows (fatal unrelated_certificates).
+     */
+    static TlsCredentialedSigner createRelatedPairCredentials(TlsContext context, boolean corruptRelation)
+        throws Exception
+    {
         BcTlsCrypto crypto = (BcTlsCrypto)context.getCrypto();
 
         KeyPair relatedKeyPair = generateEC("P-256");
@@ -66,6 +77,16 @@ class X9146RelatedPairUtil
             .get(new DefaultDigestAlgorithmIdentifierFinder().find("SHA-256"));
         RelatedCertificate relatedCertExtension =
             org.bouncycastle.cert.RelatedCertificateTool.createRelatedCertificate(relatedHolder, sha256);
+
+        if (corruptRelation)
+        {
+            byte[] hashValue = relatedCertExtension.getHashValue().getOctets();
+            byte[] corrupted = new byte[hashValue.length];
+            System.arraycopy(hashValue, 0, corrupted, 0, hashValue.length);
+            corrupted[0] ^= 0x01;
+            relatedCertExtension = new RelatedCertificate(relatedCertExtension.getHashAlgorithm(),
+                new DEROctetString(corrupted));
+        }
 
         X509CertificateHolder mainHolder = buildSelfSigned("CN=X9146 Main", mainKeyPair,
             "SHA384withECDSA", relatedCertExtension);

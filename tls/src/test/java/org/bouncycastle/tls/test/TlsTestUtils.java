@@ -898,11 +898,11 @@ public class TlsTestUtils
             // should cks change this?
 //            switch (cks.getSignatureIdentifier())
 //            {
-//                case CertificateKeySelectionType.cks_native:
+//                case CertificateKeySelectionType.cks_chimera_native:
 //                case CertificateKeySelectionType.cks_default:
 //                    break;
-//                case CertificateKeySelectionType.cks_alternate:
-//                case CertificateKeySelectionType.cks_both:
+//                case CertificateKeySelectionType.cks_chimera_alternative:
+//                case CertificateKeySelectionType.cks_chimera_hybrid:
 //                    //TODO[X9.146]: do i need to modify certs to check?
 //                    break;
 //

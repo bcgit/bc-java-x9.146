@@ -9,8 +9,8 @@ import java.io.OutputStream;
  * <p>
  * It carries two independently-signalled signatures and is used in place of the RFC 8446
  * {@link CertificateVerify} body (under handshake type {@code certificate_verify(15)}) if and
- * only if the negotiated CKS value is {@code cks_both(3)} or
- * {@code cks_related_certificates_pair_hybrid(5)}:
+ * only if the negotiated CKS value is {@code cks_chimera_hybrid(3)} or
+ * {@code cks_related_certs_hybrid(5)}:
  * <pre>
  * struct {
  *     SignatureScheme primaryAlgorithm;

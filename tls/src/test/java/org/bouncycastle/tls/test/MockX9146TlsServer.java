@@ -65,10 +65,26 @@ class MockX9146TlsServer
     // (independent of the client's advertised signature_algorithms) so the client can withhold one algorithm
     // and drive a server-auth CKS downgrade (3 -> 1 / 3 -> 2).
     boolean fixedDualAlgs = false;
+    // X9.146 Standard-certificate rows (CKS 0 / 6): load the chimera certificate as a SINGLE-signer
+    // credential (native key only, no alternate) -- draft sec. 6.1 explicitly allows a hybrid certificate
+    // used as a classic one, so ALG_2 is NULL from the selection algorithm's perspective.
+    boolean standardOnly = false;
+    // X9.146 sec. 9.5 negative row: build the Related pair with a corrupted RelatedCertificate digest.
+    boolean corruptRelation = false;
 
     public void setUseRelatedPair(boolean useRelatedPair)
     {
         this.useRelatedPair = useRelatedPair;
+    }
+
+    public void setStandardOnly(boolean standardOnly)
+    {
+        this.standardOnly = standardOnly;
+    }
+
+    public void setCorruptRelation(boolean corruptRelation)
+    {
+        this.corruptRelation = corruptRelation;
     }
 
     public void setFixedDualAlgs(boolean fixedDualAlgs)
@@ -174,12 +190,20 @@ class MockX9146TlsServer
             {
                 try
                 {
-                    return X9146RelatedPairUtil.createRelatedPairCredentials(context);
+                    return X9146RelatedPairUtil.createRelatedPairCredentials(context, corruptRelation);
                 }
                 catch (Exception e)
                 {
                     throw new TlsFatalAlert(AlertDescription.internal_error, e);
                 }
+            }
+            if (standardOnly)
+            {
+                // Standard-certificate credential: chimera certificate used as a classic one (native
+                // key/scheme only), so the CKS selection takes the single-algorithm path (0 / 6).
+                return TlsTestUtils.loadSignerCredentials(context,
+                    new String[]{ "x9146/server-P256-mldsa44-cert.pem" }, "x9146/server-P256-key.pem",
+                    SignatureScheme.getSignatureAndHashAlgorithm(SignatureScheme.ecdsa_secp256r1_sha256));
             }
             return getPQSignerCredentials();
         }
@@ -239,7 +263,7 @@ class MockX9146TlsServer
 
         // X9.146: request client authentication and advertise the server's supported KeySelection list.
         // The accepted signature algorithms include the chimera native (ECDSA) and alternate (ML-DSA)
-        // schemes so a chimera client credential can negotiate cks_both.
+        // schemes so a chimera client credential can negotiate cks_chimera_hybrid.
         // The full set (chimera native ECDSA + alternate ML-DSA). Used for signature_algorithms_cert so the
         // ECDSA-signed client certificate chain always validates, independent of which algorithms are offered
         // for the client's CertificateVerify.
