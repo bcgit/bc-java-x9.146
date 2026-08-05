@@ -460,10 +460,12 @@ class MockX9146TlsServer
             "x9146/server-P521-mldsa87-cert.pem",
             "x9146/server-P521-key.pem", "x9146/server-mldsa87-key-pq.pem");
         case mldsa44rsa3072:
+            // NOTE: a distinct ML-DSA-44 key from the P256 set -- X9.146 sec. 6.6 forbids reusing key
+            // material across certificates, so each fixture certificate has its own alternate key.
             return TlsTestUtils.loadDualSignerCredentials(context, clientSigAlgs,
             SignatureAlgorithm.rsa_pss_rsae_sha256, (short)SignatureScheme.DRAFT_mldsa44,
             "x9146/server-rsa3072-mldsa44-cert.pem",
-            "x9146/server-rsa3072-key.pem", "x9146/server-mldsa44-key-pq.pem");
+            "x9146/server-rsa3072-key.pem", "x9146/server-mldsa44-rsa-key-pq.pem");
         case noPQC:
             return getRSASignerCredentials();
         default:
