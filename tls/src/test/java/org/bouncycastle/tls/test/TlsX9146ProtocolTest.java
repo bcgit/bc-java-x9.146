@@ -697,6 +697,134 @@ public class TlsX9146ProtocolTest
             CertificateKeySelectionType.cks_addpsk_with_composite, result.server.getNegotiatedCksCode());
     }
 
+    // X9.146 sec. 8.6 / draft-truskovsky sec. 4.2: a three-certificate chimera chain (root ->
+    // intermediate -> EE) with CKS 3 -- every link's native AND alternate signature is verified with the
+    // issuer's corresponding key (the static fixtures only ever exercise a single EE->CA link).
+    public void testChimeraChainWithIntermediate()
+        throws Exception
+    {
+        HandshakeResult result = runX9146Handshake(config(MockX9146TlsServer.HybridExample.mldsa44p256,
+            fullChimeraCks(), fullChimeraCks()).withChimeraChain(X9146ChimeraChainUtil.Variant.FULL));
+
+        assertEquals("unexpected chain CKS (client)",
+            CertificateKeySelectionType.cks_chimera_hybrid, result.client.getNegotiatedCksCode());
+        assertEquals("unexpected chain CKS (server)",
+            CertificateKeySelectionType.cks_chimera_hybrid, result.server.getNegotiatedCksCode());
+    }
+
+    // A CLASSICAL intermediate inside a hybrid chain: no link carries an alternate signature, so the
+    // alternate chain pass must skip each link (per-link extension guard, the pre-2026 NPE) while the
+    // end-entity's own alternate key still signs the ExtendedCertificateVerify (CKS 3).
+    public void testChimeraChainClassicalIntermediate()
+        throws Exception
+    {
+        HandshakeResult result = runX9146Handshake(config(MockX9146TlsServer.HybridExample.mldsa44p256,
+            fullChimeraCks(), fullChimeraCks())
+            .withChimeraChain(X9146ChimeraChainUtil.Variant.CLASSICAL_INTERMEDIATE));
+
+        assertEquals("unexpected chain CKS (client)",
+            CertificateKeySelectionType.cks_chimera_hybrid, result.client.getNegotiatedCksCode());
+        assertEquals("unexpected chain CKS (server)",
+            CertificateKeySelectionType.cks_chimera_hybrid, result.server.getNegotiatedCksCode());
+    }
+
+    // Negative row: the EE's altSignatureValue is made by a rogue key. Under CKS 3 the relying party
+    // verifies the alternate chain signatures and MUST reject with fatal bad_certificate.
+    public void testChimeraChainBadAltSignature()
+        throws Exception
+    {
+        short alert = runX9146ExpectClientFatal(config(MockX9146TlsServer.HybridExample.mldsa44p256,
+            fullChimeraCks(), fullChimeraCks())
+            .withChimeraChain(X9146ChimeraChainUtil.Variant.BAD_ALT_SIGNATURE));
+
+        assertEquals("expected bad_certificate", AlertDescription.bad_certificate, alert);
+    }
+
+    // CKS-semantics row (sec. 6.1: chimera_native "alternate extensions are ignored"): the SAME rogue
+    // alternate chain signature is ignored when the negotiated CKS is native-only -- withholding ML-DSA
+    // from the client's CV signature_algorithms downgrades to cks_chimera_native(1) and the handshake
+    // must complete.
+    public void testChimeraChainBadAltIgnoredForNativeOnly()
+        throws Exception
+    {
+        Config cfg = config(MockX9146TlsServer.HybridExample.mldsa44p256, fullChimeraCks(), fullChimeraCks())
+            .withChimeraChain(X9146ChimeraChainUtil.Variant.BAD_ALT_SIGNATURE);
+        cfg.omitCvScheme = SignatureScheme.DRAFT_mldsa44;
+
+        HandshakeResult result = runX9146Handshake(cfg);
+
+        assertEquals("expected native-only downgrade (client)",
+            CertificateKeySelectionType.cks_chimera_native, result.client.getNegotiatedCksCode());
+        assertEquals("expected native-only downgrade (server)",
+            CertificateKeySelectionType.cks_chimera_native, result.server.getNegotiatedCksCode());
+    }
+
+    // Symmetric (client-authentication) leg: the CLIENT authenticates with a three-certificate chimera
+    // chain and the SERVER runs the same per-link chain checks, governed by the client-auth CKS. Also
+    // exercises a multi-entry client Certificate message on the wire.
+    public void testMutualAuthChimeraChain()
+        throws Exception
+    {
+        HandshakeResult result = runX9146Handshake(config(MockX9146TlsServer.HybridExample.mldsa44p256,
+            fullChimeraCks(), fullChimeraCks())
+            .withClientAuth(fullChimeraCks())
+            .withClientChain(X9146ChimeraChainUtil.Variant.FULL));
+
+        assertEquals("client-auth CKS mismatch across peers",
+            result.server.getNegotiatedClientCksCode(), result.client.getNegotiatedClientCksCode());
+        assertEquals("unexpected client-auth CKS",
+            CertificateKeySelectionType.cks_chimera_hybrid, result.client.getNegotiatedClientCksCode());
+    }
+
+    // Symmetric negative: a rogue alternate chain signature in the CLIENT's chain must be rejected by
+    // the SERVER (fatal bad_certificate) under client-auth CKS 3. This is the regression guard for both
+    // the client-side chimera chain checks and the clientCksCode-before-notifyClientCertificate
+    // protocol ordering -- with either missing, the server accepts the bogus chain.
+    // NOTE the TLS 1.3 flow: the client's handshake completes when it sends its own Finished, BEFORE
+    // the server processes the client Certificate -- so the rejection is asserted on the server thread,
+    // not on the client's connect().
+    public void testMutualAuthBadClientAltChain()
+        throws Exception
+    {
+        Config cfg = config(MockX9146TlsServer.HybridExample.mldsa44p256, fullChimeraCks(), fullChimeraCks())
+            .withClientAuth(fullChimeraCks())
+            .withClientChain(X9146ChimeraChainUtil.Variant.BAD_ALT_SIGNATURE);
+
+        PipedInputStream clientRead = TlsTestUtils.createPipedInputStream();
+        PipedInputStream serverRead = TlsTestUtils.createPipedInputStream();
+        PipedOutputStream clientWrite = new PipedOutputStream(serverRead);
+        PipedOutputStream serverWrite = new PipedOutputStream(clientRead);
+
+        TlsClientProtocol clientProtocol = new TlsClientProtocol(clientRead, clientWrite);
+        TlsServerProtocol serverProtocol = new TlsServerProtocol(serverRead, serverWrite);
+
+        ServerThread serverThread = newServerThread(serverProtocol, cfg);
+        serverThread.start();
+
+        MockX9146TlsClient client = newClient(cfg);
+        clientProtocol.connect(client);
+
+        // Close BEFORE joining: if a regression makes the server accept the bogus chain, its echo loop
+        // blocks on client input -- the close_notify unblocks it so the assertion below can fail
+        // normally instead of deadlocking. When the server rejected (the expected case), the pipe is
+        // already broken and the close is best-effort.
+        try
+        {
+            clientProtocol.close();
+        }
+        catch (Exception e)
+        {
+            // Ignored -- see above.
+        }
+
+        serverThread.join();
+
+        assertTrue("server should have rejected the client chain",
+            serverThread.failure instanceof TlsFatalAlert);
+        assertEquals("expected bad_certificate", AlertDescription.bad_certificate,
+            ((TlsFatalAlert)serverThread.failure).getAlertDescription());
+    }
+
     // ---- X9.146 handshake harness ----
 
     private static CertificateKeySelection fullChimeraCks()
@@ -746,6 +874,14 @@ public class TlsX9146ProtocolTest
         // Composite server credential: runs both endpoints on JcaTlsCrypto (the composite sign/verify
         // bridge is JCA-only) and has the client advertise + trust the composite scheme/fixture.
         boolean composite;
+        // Non-null: the server authenticates with a runtime three-certificate chimera chain of this
+        // variant, and the client validates the received chain directly.
+        X9146ChimeraChainUtil.Variant chimeraChain;
+        // Non-null: the server requests client authentication advertising this KeySelection list.
+        CertificateKeySelection clientAuthCks;
+        // Non-null: the client authenticates with a runtime three-certificate chimera chain of this
+        // variant, and the server validates the received client chain directly.
+        X9146ChimeraChainUtil.Variant clientChain;
         int omitCvScheme = -1;
 
         Config withPskHybrid()
@@ -757,6 +893,24 @@ public class TlsX9146ProtocolTest
         Config withComposite()
         {
             this.composite = true;
+            return this;
+        }
+
+        Config withChimeraChain(X9146ChimeraChainUtil.Variant variant)
+        {
+            this.chimeraChain = variant;
+            return this;
+        }
+
+        Config withClientAuth(CertificateKeySelection cks)
+        {
+            this.clientAuthCks = cks;
+            return this;
+        }
+
+        Config withClientChain(X9146ChimeraChainUtil.Variant variant)
+        {
+            this.clientChain = variant;
             return this;
         }
 
@@ -891,6 +1045,9 @@ public class TlsX9146ProtocolTest
         serverThread.corruptRelation = cfg.corruptRelation;
         serverThread.standardOnly = cfg.standardOnly;
         serverThread.fixedDualAlgs = cfg.fixedDualAlgs;
+        serverThread.chimeraChainVariant = cfg.chimeraChain;
+        serverThread.clientAuthCKS = cfg.clientAuthCks;
+        serverThread.trustReceivedClientChain = (cfg.clientChain != null);
         if (cfg.composite)
         {
             serverThread.crypto = newJcaCrypto();
@@ -923,6 +1080,14 @@ public class TlsX9146ProtocolTest
         if (cfg.omitCvScheme >= 0)
         {
             client.setOmitCvScheme(cfg.omitCvScheme);
+        }
+        if (cfg.chimeraChain != null)
+        {
+            client.setTrustReceivedChain(true);
+        }
+        if (cfg.clientChain != null)
+        {
+            client.setClientChainVariant(cfg.clientChain);
         }
         return client;
     }
@@ -1027,6 +1192,10 @@ public class TlsX9146ProtocolTest
         boolean fixedDualAlgs;
         // When true, the server authenticates with a Standard (single-signer) credential (CKS 0 / 6 rows).
         boolean standardOnly;
+        // Non-null: the server authenticates with a runtime three-certificate chimera chain.
+        X9146ChimeraChainUtil.Variant chimeraChainVariant;
+        // When true, the server validates the received client chain directly (runtime client chains).
+        boolean trustReceivedClientChain;
         // Non-null: construct the server on this crypto instead of the default BcTlsCrypto (composite rows).
         TlsCrypto crypto;
         volatile MockX9146TlsServer server;
@@ -1067,6 +1236,14 @@ public class TlsX9146ProtocolTest
                 if (standardOnly)
                 {
                     server.setStandardOnly(true);
+                }
+                if (chimeraChainVariant != null)
+                {
+                    server.setChimeraChainVariant(chimeraChainVariant);
+                }
+                if (trustReceivedClientChain)
+                {
+                    server.setTrustReceivedClientChain(true);
                 }
                 if (clientAuthCKS != null)
                 {

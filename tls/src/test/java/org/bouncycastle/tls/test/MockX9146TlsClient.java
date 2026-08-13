@@ -61,6 +61,22 @@ class MockX9146TlsClient
     // composite SignatureAndHashAlgorithm's byte pair collides with SignatureAlgorithm-based credential
     // pickers used elsewhere in the suite.
     boolean useComposite = false;
+    // When true, validate the received server chain directly (it carries its own root) instead of
+    // matching against the static trusted resources -- for runtime-generated chain credentials.
+    boolean trustReceivedChain = false;
+    // Non-null: authenticate the CLIENT leg (mutual auth) with a runtime-generated three-certificate
+    // chimera chain of the given variant instead of the static single-certificate chimera credential.
+    X9146ChimeraChainUtil.Variant clientChainVariant = null;
+
+    public void setTrustReceivedChain(boolean trustReceivedChain)
+    {
+        this.trustReceivedChain = trustReceivedChain;
+    }
+
+    public void setClientChainVariant(X9146ChimeraChainUtil.Variant clientChainVariant)
+    {
+        this.clientChainVariant = clientChainVariant;
+    }
 
     public void setUseComposite(boolean useComposite)
     {
@@ -355,6 +371,14 @@ class MockX9146TlsClient
                     return;
                 }
 
+                if (trustReceivedChain)
+                {
+                    // Runtime-generated chain (carries its own root): validate the received chain
+                    // directly, exercising the per-link chimera checks across every link.
+                    TlsUtils.checkPeerSigAlgs(context, chain);
+                    return;
+                }
+
                 String[] trustedCertResources = useComposite
                     ? new String[]{ "x9146/server-composite-mldsa44-p256-cert.pem" }
                     : new String[]{
@@ -381,6 +405,20 @@ class MockX9146TlsClient
                 // with a chimera (dual-key) credential so the client-authentication CKS leg is exercised.
                 if (certificateRequest.getCertificateKeySelection() != null)
                 {
+                    if (clientChainVariant != null)
+                    {
+                        // Three-certificate chimera chain credential for the client leg, exercising the
+                        // server-side per-link chain-signature checks (multi-entry client Certificate).
+                        try
+                        {
+                            return X9146ChimeraChainUtil.createChainCredentials(context, clientChainVariant);
+                        }
+                        catch (Exception e)
+                        {
+                            throw new TlsFatalAlert(AlertDescription.internal_error, e);
+                        }
+                    }
+
                     // Chimera client credential with FIXED native (ECDSA P-256 / SHA-256) and alternate
                     // (ML-DSA-44) schemes, so credential loading does not depend on which algorithms the
                     // server offered -- allowing a test to withhold one algorithm and drive the client-auth

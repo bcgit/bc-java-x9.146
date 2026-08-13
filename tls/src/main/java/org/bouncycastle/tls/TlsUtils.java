@@ -5701,6 +5701,11 @@ public class TlsUtils
                 valid = containsSignatureAlgorithm(serverSigAlgsCert, sigAndHashAlg);
             }
 
+            // X9.146: chimera chain-signature checks for the client-authentication leg, governed by the
+            // CKS the client used for its own authentication (symmetric with checkSigAlgOfServerCerts).
+            checkHybridChainSignatures(subjectCert, issuerCert, sigAndHashAlg,
+                securityParameters.clientCksCode);
+
             if (!valid)
             {
                 throw new TlsFatalAlert(AlertDescription.bad_certificate);
@@ -5757,105 +5762,113 @@ public class TlsUtils
                 valid = containsSignatureAlgorithm(clientSigAlgsCert, sigAndHashAlg)
                     || (null != clientSigAlgs && containsSignatureAlgorithm(clientSigAlgs, sigAndHashAlg));
             }
-            /*
-             * X9.146 QTLS sec. 8.8 + draft-truskovsky-lamps-pq-hybrid-x509-02 sec. 4.2: for a hybrid
-             * (Chimera) chain, additionally verify each certificate's native signature with the issuer's
-             * native key and, where BOTH certificates carry the alternate extensions, its alternate
-             * signature with the issuer's alternate key. Which signatures participate is governed by the
-             * negotiated CKS: cks_chimera_native(1) and its PSK variant addpsk_with_chimera_native(7) use
-             * only the native (alternate extensions are ignored), cks_chimera_alternative(2) and
-             * addpsk_with_chimera_alternative(8) use only the alternate (native ignored),
-             * cks_chimera_hybrid(3) uses both. cks_default(0) runs no hybrid-specific check (standard
-             * RFC 8446 chain validation applies).
-             *
-             * All certificate access goes through the TlsCertificate interface (DER via getEncoded()) so
-             * this works on any crypto backend rather than casting to BcTlsCertificate, and the alternate
-             * pass is driven by each link's own extensions -- a classical issuer/intermediate that lacks
-             * the alternate extensions is skipped rather than dereferencing a null (the pre-2026 NPE).
-             */
-            short cksCode = securityParameters.cksCode;
-            boolean checkNative = (cksCode == CertificateKeySelectionType.cks_chimera_native
-                || cksCode == CertificateKeySelectionType.cks_addpsk_with_chimera_native
-                || cksCode == CertificateKeySelectionType.cks_chimera_hybrid);
-            boolean checkAlt = (cksCode == CertificateKeySelectionType.cks_chimera_alternative
-                || cksCode == CertificateKeySelectionType.cks_addpsk_with_chimera_alternative
-                || cksCode == CertificateKeySelectionType.cks_chimera_hybrid);
-
-            if (checkNative || checkAlt)
-            {
-                org.bouncycastle.asn1.x509.Certificate subjectX509 =
-                    org.bouncycastle.asn1.x509.Certificate.getInstance(subjectCert.getEncoded());
-                TBSCertificate subjectTbs = subjectX509.getTBSCertificate();
-
-                if (checkNative && null != sigAndHashAlg)
-                {
-                    Tls13Verifier verifier = issuerCert.createVerifier(SignatureScheme.from(sigAndHashAlg));
-                    OutputStream output = verifier.getOutputStream();
-                    output.write(subjectTbs.getEncoded());
-                    if (!verifier.verifySignature(subjectX509.getSignature().getBytes()))
-                    {
-                        throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed native");
-                    }
-                }
-
-                if (checkAlt)
-                {
-                    org.bouncycastle.asn1.x509.Certificate issuerX509 =
-                        org.bouncycastle.asn1.x509.Certificate.getInstance(issuerCert.getEncoded());
-
-                    AltSignatureValue altSignatureValue =
-                        AltSignatureValue.fromExtensions(subjectTbs.getExtensions());
-                    SubjectAltPublicKeyInfo issuerAltPublicKeyInfo =
-                        SubjectAltPublicKeyInfo.fromExtensions(issuerX509.getTBSCertificate().getExtensions());
-
-                    if (null != altSignatureValue && null != issuerAltPublicKeyInfo)
-                    {
-                        /*
-                         * Reconstruct the PreTBSCertificate (draft-truskovsky 4.2 a-d): drop the
-                         * altSignatureValue extension and the outer signature field; retain every other
-                         * extension, then DER-encode.
-                         */
-                        V3TBSCertificateGenerator tbsBuilder = new V3TBSCertificateGenerator();
-                        tbsBuilder.setSerialNumber(subjectTbs.getSerialNumber());
-                        tbsBuilder.setIssuer(subjectTbs.getIssuer());
-                        tbsBuilder.setSubject(subjectTbs.getSubject());
-                        tbsBuilder.setStartDate(subjectTbs.getStartDate());
-                        tbsBuilder.setEndDate(subjectTbs.getEndDate());
-                        tbsBuilder.setSubjectPublicKeyInfo(subjectTbs.getSubjectPublicKeyInfo());
-
-                        ASN1Sequence extSeq = ASN1Sequence.getInstance(subjectTbs.getExtensions().toASN1Primitive());
-                        ASN1EncodableVector extV = new ASN1EncodableVector();
-                        for (int j = 0; j != extSeq.size(); j++)
-                        {
-                            ASN1Sequence ext = ASN1Sequence.getInstance(extSeq.getObjectAt(j));
-                            if (!Extension.altSignatureValue.equals(ext.getObjectAt(0)))
-                            {
-                                extV.add(ext);
-                            }
-                        }
-                        tbsBuilder.setExtensions(Extensions.getInstance(new DERSequence(extV).toASN1Primitive()));
-                        tbsBuilder.setSignature(null);
-                        byte[] altTbs = tbsBuilder.generatePreTBSCertificate().getEncoded();
-
-                        SignatureAndHashAlgorithm altSigAndHashAlg = getCertAltSigAndHashAlg(subjectCert, issuerCert);
-                        Tls13Verifier altVerifier = issuerCert.createAltVerifier(
-                            new SubjectPublicKeyInfo(
-                                issuerAltPublicKeyInfo.getAlgorithm(),
-                                issuerAltPublicKeyInfo.getSubjectAltPublicKey()),
-                            SignatureScheme.from(altSigAndHashAlg));
-                        OutputStream altOutput = altVerifier.getOutputStream();
-                        altOutput.write(altTbs);
-                        if (!altVerifier.verifySignature(altSignatureValue.getSignature().getBytes()))
-                        {
-                            throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed alternative");
-                        }
-                    }
-                }
-            }
+            checkHybridChainSignatures(subjectCert, issuerCert, sigAndHashAlg, securityParameters.cksCode);
 
             if (!valid)
             {
                 throw new TlsFatalAlert(AlertDescription.bad_certificate);
+            }
+        }
+    }
+
+    /**
+     * X9.146 QTLS sec. 8.5/8.6 + draft-truskovsky-lamps-pq-hybrid-x509-02 sec. 4.2: per-link hybrid
+     * (Chimera) chain-signature verification, applied to server and client certificate paths alike (the
+     * 2026-07-21 draft's validation rules are peer-neutral). Verify the subject certificate's native
+     * signature with the issuer's native key and, where BOTH certificates carry the alternate
+     * extensions, its alternate signature with the issuer's alternate key. Which signatures participate
+     * is governed by the CKS negotiated for the authenticating peer: cks_chimera_native(1) and its PSK
+     * variant addpsk_with_chimera_native(7) use only the native (alternate extensions are ignored),
+     * cks_chimera_alternative(2) and addpsk_with_chimera_alternative(8) use only the alternate (native
+     * ignored), cks_chimera_hybrid(3) uses both. Other values run no hybrid-specific check (standard
+     * RFC 8446 chain validation applies).
+     * <p>
+     * All certificate access goes through the TlsCertificate interface (DER via getEncoded()) so this
+     * works on any crypto backend rather than casting to BcTlsCertificate, and the alternate pass is
+     * driven by each link's own extensions -- a classical issuer/intermediate inside a hybrid chain is
+     * skipped rather than dereferencing a null (the pre-2026 NPE).
+     */
+    private static void checkHybridChainSignatures(TlsCertificate subjectCert, TlsCertificate issuerCert,
+        SignatureAndHashAlgorithm sigAndHashAlg, short cksCode) throws IOException
+    {
+        boolean checkNative = (cksCode == CertificateKeySelectionType.cks_chimera_native
+            || cksCode == CertificateKeySelectionType.cks_addpsk_with_chimera_native
+            || cksCode == CertificateKeySelectionType.cks_chimera_hybrid);
+        boolean checkAlt = (cksCode == CertificateKeySelectionType.cks_chimera_alternative
+            || cksCode == CertificateKeySelectionType.cks_addpsk_with_chimera_alternative
+            || cksCode == CertificateKeySelectionType.cks_chimera_hybrid);
+
+        if (!checkNative && !checkAlt)
+        {
+            return;
+        }
+
+        org.bouncycastle.asn1.x509.Certificate subjectX509 =
+            org.bouncycastle.asn1.x509.Certificate.getInstance(subjectCert.getEncoded());
+        TBSCertificate subjectTbs = subjectX509.getTBSCertificate();
+
+        if (checkNative && null != sigAndHashAlg)
+        {
+            Tls13Verifier verifier = issuerCert.createVerifier(SignatureScheme.from(sigAndHashAlg));
+            OutputStream output = verifier.getOutputStream();
+            output.write(subjectTbs.getEncoded());
+            if (!verifier.verifySignature(subjectX509.getSignature().getBytes()))
+            {
+                throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed native");
+            }
+        }
+
+        if (checkAlt)
+        {
+            org.bouncycastle.asn1.x509.Certificate issuerX509 =
+                org.bouncycastle.asn1.x509.Certificate.getInstance(issuerCert.getEncoded());
+
+            AltSignatureValue altSignatureValue =
+                AltSignatureValue.fromExtensions(subjectTbs.getExtensions());
+            SubjectAltPublicKeyInfo issuerAltPublicKeyInfo =
+                SubjectAltPublicKeyInfo.fromExtensions(issuerX509.getTBSCertificate().getExtensions());
+
+            if (null != altSignatureValue && null != issuerAltPublicKeyInfo)
+            {
+                /*
+                 * Reconstruct the PreTBSCertificate (draft-truskovsky 4.2 a-d): drop the
+                 * altSignatureValue extension and the outer signature field; retain every other
+                 * extension, then DER-encode.
+                 */
+                V3TBSCertificateGenerator tbsBuilder = new V3TBSCertificateGenerator();
+                tbsBuilder.setSerialNumber(subjectTbs.getSerialNumber());
+                tbsBuilder.setIssuer(subjectTbs.getIssuer());
+                tbsBuilder.setSubject(subjectTbs.getSubject());
+                tbsBuilder.setStartDate(subjectTbs.getStartDate());
+                tbsBuilder.setEndDate(subjectTbs.getEndDate());
+                tbsBuilder.setSubjectPublicKeyInfo(subjectTbs.getSubjectPublicKeyInfo());
+
+                ASN1Sequence extSeq = ASN1Sequence.getInstance(subjectTbs.getExtensions().toASN1Primitive());
+                ASN1EncodableVector extV = new ASN1EncodableVector();
+                for (int j = 0; j != extSeq.size(); j++)
+                {
+                    ASN1Sequence ext = ASN1Sequence.getInstance(extSeq.getObjectAt(j));
+                    if (!Extension.altSignatureValue.equals(ext.getObjectAt(0)))
+                    {
+                        extV.add(ext);
+                    }
+                }
+                tbsBuilder.setExtensions(Extensions.getInstance(new DERSequence(extV).toASN1Primitive()));
+                tbsBuilder.setSignature(null);
+                byte[] altTbs = tbsBuilder.generatePreTBSCertificate().getEncoded();
+
+                SignatureAndHashAlgorithm altSigAndHashAlg = getCertAltSigAndHashAlg(subjectCert, issuerCert);
+                Tls13Verifier altVerifier = issuerCert.createAltVerifier(
+                    new SubjectPublicKeyInfo(
+                        issuerAltPublicKeyInfo.getAlgorithm(),
+                        issuerAltPublicKeyInfo.getSubjectAltPublicKey()),
+                    SignatureScheme.from(altSigAndHashAlg));
+                OutputStream altOutput = altVerifier.getOutputStream();
+                altOutput.write(altTbs);
+                if (!altVerifier.verifySignature(altSignatureValue.getSignature().getBytes()))
+                {
+                    throw new TlsFatalAlert(AlertDescription.bad_certificate, "failed alternative");
+                }
             }
         }
     }

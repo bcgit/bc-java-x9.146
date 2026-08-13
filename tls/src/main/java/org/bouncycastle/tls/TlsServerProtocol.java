@@ -1507,15 +1507,19 @@ public class TlsServerProtocol
 
         assertEmpty(buf);
 
-        notifyClientCertificate(clientCertificate);
-
         /*
-         * X9.146 QTLS sec. 6.1/8.7: read the client's used CKS value from its Certificate message and
+         * X9.146 QTLS sec. 6.1/8.5: read the client's used CKS value from its Certificate message and
          * validate it against the KeySelection values the server advertised in the CertificateRequest.
          * An unadvertised or undefined value is fatal (unsupported_cks_value); absent means Default(0).
+         * This runs BEFORE the notifyClientCertificate callback (mirroring the client side, where the
+         * CKS is read before handleServerCertificate) so application-level chain validation -- e.g.
+         * TlsUtils.checkPeerSigAlgs' CKS-governed chimera chain-signature checks -- sees the value the
+         * client actually used rather than the Default(0) placeholder.
          */
         tlsServerContext.getSecurityParametersHandshake().clientCksCode = TlsUtils.receiveCertificateKeySelection(
             clientCertificate, certificateRequest.getCertificateKeySelection());
+
+        notifyClientCertificate(clientCertificate);
     }
 
     protected void receive13ClientCertificateVerify(ByteArrayInputStream buf)

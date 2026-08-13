@@ -74,6 +74,22 @@ class MockX9146TlsServer
     boolean standardOnly = false;
     // X9.146 sec. 9.5 negative row: build the Related pair with a corrupted RelatedCertificate digest.
     boolean corruptRelation = false;
+    // Non-null: authenticate with a runtime-generated three-certificate chimera chain (root ->
+    // intermediate -> EE) of the given variant, exercising the multi-link chain-signature checks.
+    X9146ChimeraChainUtil.Variant chimeraChainVariant = null;
+    // When true, validate the received CLIENT chain directly (it carries its own root) instead of
+    // matching against the static trusted resources -- for runtime-generated client chain credentials.
+    boolean trustReceivedClientChain = false;
+
+    public void setChimeraChainVariant(X9146ChimeraChainUtil.Variant chimeraChainVariant)
+    {
+        this.chimeraChainVariant = chimeraChainVariant;
+    }
+
+    public void setTrustReceivedClientChain(boolean trustReceivedClientChain)
+    {
+        this.trustReceivedClientChain = trustReceivedClientChain;
+    }
 
     public void setUseRelatedPair(boolean useRelatedPair)
     {
@@ -205,6 +221,17 @@ class MockX9146TlsServer
                     throw new TlsFatalAlert(AlertDescription.internal_error, e);
                 }
             }
+            if (chimeraChainVariant != null)
+            {
+                try
+                {
+                    return X9146ChimeraChainUtil.createChainCredentials(context, chimeraChainVariant);
+                }
+                catch (Exception e)
+                {
+                    throw new TlsFatalAlert(AlertDescription.internal_error, e);
+                }
+            }
             if (standardOnly)
             {
                 // Standard-certificate credential: chimera certificate used as a classic one (native
@@ -323,6 +350,14 @@ class MockX9146TlsServer
             return;
         }
 
+        if (trustReceivedClientChain)
+        {
+            // Runtime-generated client chain (carries its own root): validate the received chain
+            // directly, exercising the per-link chimera checks across every link.
+            TlsUtils.checkPeerSigAlgs(context, chain);
+            return;
+        }
+
         String[] trustedCertResources = new String[]{
                 "x509-client-dsa.pem",
                 "x509-client-ecdh.pem",
@@ -334,17 +369,16 @@ class MockX9146TlsServer
                 "x509-client-rsa_pss_512.pem",
                 "x509-client-rsa.pem",
 
+                // The chimera client credential (mutual auth) and the x9146 CA certificates.
+                "x9146/server-P256-mldsa44-cert.pem",
                 "x9146/ca-P256-mldsa44-cert.pem",
                 "x9146/ca-P384-mldsa65-cert.pem",
-                "x9146/ca-P512-mldsa87-cert.pem",
+                "x9146/ca-P521-mldsa87-cert.pem",
                 "x9146/ca-rsa3072-mldsa44-cert.pem"
         };
 
-        //TODO[X9.146] Process the trusted cert resource via provided cks code
-        CertificateKeySelection cks = context.getSecurityParameters().getCertificateKeySelection();
-
         TlsCertificate[] certPath = TlsTestUtils.getTrustedCertPath(context.getCrypto(), chain[0],
-            trustedCertResources, cks);
+            trustedCertResources);
 
         if (null == certPath)
         {

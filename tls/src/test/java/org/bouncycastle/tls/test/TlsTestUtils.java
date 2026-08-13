@@ -886,46 +886,6 @@ public class TlsTestUtils
         }
         return null;
     }
-    static TlsCertificate[] getTrustedCertPath(TlsCrypto crypto, TlsCertificate cert, String[] resources, CertificateKeySelection cks)
-        throws IOException
-    {
-        for (int i = 0; i < resources.length; ++i)
-        {
-            String eeCertResource = resources[i];
-            TlsCertificate eeCert = loadCertificateResource(crypto, eeCertResource);
-
-            //TODO[x9.146]: Determine how to process trusred cert path chains!
-            // should cks change this?
-//            switch (cks.getSignatureIdentifier())
-//            {
-//                case CertificateKeySelectionType.cks_chimera_native:
-//                case CertificateKeySelectionType.cks_default:
-//                    break;
-//                case CertificateKeySelectionType.cks_chimera_alternative:
-//                case CertificateKeySelectionType.cks_chimera_hybrid:
-//                    //TODO[X9.146]: do i need to modify certs to check?
-//                    break;
-//
-//                case CertificateKeySelectionType.cks_external:
-//                default:
-//                    throw new RuntimeException("Unknown Certificate Key Selection Code: " + cksCode);
-//
-//            }
-
-
-
-//            if (areSameCertificate(cert, eeCert))
-            {
-                String caCertResource = getCACertResource(eeCertResource);
-                TlsCertificate caCert = loadCertificateResource(crypto, caCertResource);
-                if (null != caCert)
-                {
-                    return new TlsCertificate[]{ eeCert, caCert };
-                }
-            }
-        }
-        return null;
-    }
 
     static TrustManagerFactory getSunX509TrustManagerFactory()
         throws NoSuchAlgorithmException
