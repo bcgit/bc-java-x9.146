@@ -19,7 +19,11 @@ public class AllTests11
     {
         TestSuite suite = new TestSuite("JDK11 Provider Tests");
         suite.addTestSuite(XDHKeyTest.class);
+        suite.addTestSuite(XDHKeyAgreementMRTest.class);
+        suite.addTestSuite(XDHKeySpecMRTest.class);
         suite.addTestSuite(FalconNamedParameterSpecTest.class);
+        suite.addTestSuite(OpenSSHKeyFactoryMRTest.class);
+        suite.addTestSuite(EdECKeyFactoryMalformedMRTest.class);
         return suite;
     }
 

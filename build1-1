@@ -253,12 +253,10 @@ find $jdk11src -name "*.java" -exec scripts/useseccert.sh \{\} \;
     rm -rf org/bouncycastle/pqc/crypto/*/FrodoVectorTest*
     rm -rf org/bouncycastle/pqc/crypto/*/SABERVectorTest*
     rm -rf org/bouncycastle/pqc/crypto/test/SNTRU*
-    rm -rf org/bouncycastle/pqc/crypto/test/Picnic*
     rm -rf org/bouncycastle/pqc/crypto/test/Crystals*
     rm -rf org/bouncycastle/pqc/crypto/test/HQC*
     rm -rf org/bouncycastle/pqc/crypto/test/Falcon*
     rm -rf org/bouncycastle/pqc/crypto/test/BIKE*
-    rm -rf org/bouncycastle/pqc/crypto/test/Rainbow*
     rm -rf org/bouncycastle/pqc/crypto/test/GeMSS*
     rm -rf org/bouncycastle/pqc/crypto/test/MLKEM*
     rm -rf org/bouncycastle/pqc/crypto/test/MLDSA*
@@ -266,7 +264,6 @@ find $jdk11src -name "*.java" -exec scripts/useseccert.sh \{\} \;
     rm -rf org/bouncycastle/pqc/crypto/*/SIKE*
     rm -rf org/bouncycastle/pqc/crypto/sike
     rm -rf org/bouncycastle/pqc/legacy/crypto/sike
-    rm -rf org/bouncycastle/pqc/crypto/rainbow
     rm -rf org/bouncycastle/pqc/crypto/gemss
     rm -rf org/bouncycastle/asn1/test/MiscTest.java
     rm org/bouncycastle/pkix/SubjectPublicKeyInfoChecker.java
@@ -291,7 +288,6 @@ find $jdk11src -name "*.java" -exec scripts/useseccert.sh \{\} \;
     rm -rf org/bouncycastle/est/test
     rm -rf org/bouncycastle/dvcs/test
     rm -rf org/bouncycastle/pqc/crypto/gemss
-    rm -rf org/bouncycastle/pqc/crypto/rainbow
     rm org/bouncycastle/crypto/*/Xoo*.java
     rm org/bouncycastle/crypto/*/Photon*.java
     rm org/bouncycastle/crypto/*/ISAP*.java
@@ -333,7 +329,7 @@ then
 
     mkdir $artifacts/lcrypto-jdk11-$base
     mkdir $artifacts/lcrypto-jdk11-$base/src
-    tar cf - index.html LICENSE.html CONTRIBUTORS.html docs | (cd $artifacts/lcrypto-jdk11-$base && tar xf -)
+    tar cf - index.html LICENSE.html CONTRIBUTORS.md docs | (cd $artifacts/lcrypto-jdk11-$base && tar xf -)
     (cd $jdk11src && tar cf - java org/bouncycastle/LICENSE.java \
     org/bouncycastle/test org/bouncycastle/math org/bouncycastle/internal org/bouncycastle/crypto org/bouncycastle/util org/bouncycastle/asn1 org/bouncycastle/pqc/legacy org/bouncycastle/pqc/math org/bouncycastle/pqc/crypto org/bouncycastle/pqc/asn1 ) \
      | (cd $artifacts/lcrypto-jdk11-$base/src && tar xf -)
@@ -453,7 +449,7 @@ then
 
     mkdir $artifacts/jce-jdk11-$base
     mkdir $artifacts/jce-jdk11-$base/src
-    tar cf - index.html LICENSE.html CONTRIBUTORS.html docs | (cd $artifacts/jce-jdk11-$base; tar xf -)
+    tar cf - index.html LICENSE.html CONTRIBUTORS.md docs | (cd $artifacts/jce-jdk11-$base; tar xf -)
     mkdir -p $jdk11src/org/bouncycastle/pqc/jcajce/provider/util
     cp prov/src/main/java/org/bouncycastle/pqc/jcajce/provider/util/BaseKeyFactorySpi.java $jdk11src/org/bouncycastle/pqc/jcajce/provider/util/BaseKeyFactorySpi.java
     cp prov/src/main/java/org/bouncycastle/pqc/jcajce/provider/util/KeyUtil.java $jdk11src/org/bouncycastle/pqc/jcajce/provider/util/KeyUtil.java
@@ -629,7 +625,7 @@ then
 
     mkdir $artifacts/bcpkix-jdk11-$base
     mkdir $artifacts/bcpkix-jdk11-$base/src
-    tar cf - index.html LICENSE.html CONTRIBUTORS.html docs | (cd $artifacts/bcpkix-jdk11-$base; tar xf -)
+    tar cf - index.html LICENSE.html CONTRIBUTORS.md docs | (cd $artifacts/bcpkix-jdk11-$base; tar xf -)
     ((cd $jdk11src && tar cf - org/bouncycastle/test org/bouncycastle/cert org/bouncycastle/dvcs org/bouncycastle/pkcs org/bouncycastle/pkix org/bouncycastle/cms org/bouncycastle/eac org/bouncycastle/openssl org/bouncycastle/tsp org/bouncycastle/operator ) | (cd $artifacts/bcpkix-jdk11-$base/src && tar xf -))
 
     (
@@ -690,7 +686,7 @@ then
 
     mkdir $artifacts/bcpg-jdk11-$base
     mkdir $artifacts/bcpg-jdk11-$base/src
-    tar cf - index.html LICENSE.html CONTRIBUTORS.html docs | (cd $artifacts/bcpg-jdk11-$base; tar xf -)
+    tar cf - index.html LICENSE.html CONTRIBUTORS.md docs | (cd $artifacts/bcpg-jdk11-$base; tar xf -)
     ((cd pg/src/main/java && tar cf - * ) | (cd $artifacts/bcpg-jdk11-$base/src && tar xf -))
     ((cd pg/src/main/jdk1.5 && tar cf - * ) | (cd $artifacts/bcpg-jdk11-$base/src && tar xf -))
     ((cd pg/src/main/jdk1.4 && tar cf - * ) | (cd $artifacts/bcpg-jdk11-$base/src && tar xf -))

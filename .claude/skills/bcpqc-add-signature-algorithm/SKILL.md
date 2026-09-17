@@ -27,6 +27,14 @@ Before this skill kicks in, the lightweight side of the algorithm must already b
 - `<Alg>KeyGenerationParameters` extending `KeyGenerationParameters`, wrapping a `SecureRandom` + `<Alg>Parameters`
 - `<Alg>Signer` implementing `MessageSigner` (or `Signer` for streaming) with `init(boolean, CipherParameters)`, `generateSignature(byte[])`, `verifySignature(byte[], byte[])`
 
+**The `MessageSigner` contract is the bare signature — never the NIST `crypto_sign` "sm" envelope.** A reference C implementation's `crypto_sign` writes the *signed message* (`signature || message`, or `message || signature` for some harnesses) and its `crypto_sign_open` recovers the message from it. That envelope is an artefact of the KAT harness making each vector file self-contained; it is not part of any scheme's specification, and a `MessageSigner` must not emit it:
+
+- `generateSignature(byte[])` returns exactly the parameter set's signature bytes. Have the engine write the bare signature — don't allocate `sigBytes + message.length` and strip the message afterwards.
+- `verifySignature(byte[], byte[])` requires **exactly** that length, `return false` otherwise. A `>=` / "long enough" check makes the encoding non-unique (trailing bytes ride along on a valid signature) and a missing check indexes past the end of a short buffer, throwing out of `Signature.verify()`.
+- The KAT files still record the envelope, so the **test** rebuilds it — see the `TestUtils.SignerOperation.toVectorSignature` hook, or `FalconTest`, which does the same reconstruction inline.
+
+This is not hypothetical: MAYO, SNOVA, QR-UOV, SQIsign and AIMer all shipped the envelope and had to be corrected in 1.86 (github #2403). Because `ContentSigner` hands the signature straight into the structure being signed, the envelope propagated a verbatim copy of the signed data into every certificate, CRL, CMS `SignedData` and TLS `CertificateVerify` built on those algorithms. A sign-then-verify round-trip test passes happily with an envelope on both ends, which is why it survived five ports — hence the encoding assertion in Step 15.
+
 If any of these are missing, that's a separate task (porting the reference implementation). This skill picks up *after* that's done.
 
 ## The two-provider split — read this first
@@ -165,11 +173,15 @@ Extends `java.security.KeyPairGenerator`. Contains:
 - `generateKeyPair()` runs the engine, wraps in BC key classes, returns a `KeyPair`.
 - **One public static inner class per parameter set** calling `super(<Alg>Parameters.<paramset>)`.
 
+If the SPI has an uninitialised-default branch in `generateKeyPair()` (`if (!initialised) { … }`), treat it as a second, parallel initialisation path: it must set **every** field `initialize(spec, random)` sets, not just `param`, and its parameters must actually be constructible. Both halves went wrong in the older XMSS/XMSS^MT generators (github #2408) — XMSS^MT defaulted to a height/layer pair that is not a legal parameter set, so the call threw outright, and both left `treeDigest` null, so a default-generated key threw `NullPointerException` from `equals()` / `hashCode()` / `getTreeDigest()`. Cover it with a test that calls `KeyPairGenerator.getInstance("<Alg>", "BCPQC").generateKeyPair()` with no `initialize()`, round-trips the key through its `KeyFactory` and compares it to itself.
+
 ### Step 10 — `prov/.../pqc/jcajce/provider/<alg>/SignatureSpi.java`
 
 Extends `java.security.Signature`. Contains a `ByteArrayOutputStream bOut` for message accumulation, the standard `engineInitSign` / `engineInitVerify` / `engineUpdate` / `engineSign` / `engineVerify` overrides, a `Base` inner class with no parameter binding (used when the caller selects via `"Faest"` and the actual parameter set comes from the key), and **one public static inner class per parameter set** that hard-pins the parameter check.
 
 In `engineInitVerify` / `engineInitSign`, when the SPI was constructed with a specific parameter set, verify the key's algorithm matches the SPI's parameter set with an exact-message error — `"signature configured for " + canonicalAlg`. Tests in other algorithms assert on that exact string, so the message format is part of the contract; copy it verbatim from SNOVA's `SignatureSpi`.
+
+`engineVerify` must never let an unchecked exception out: a signature that will not decode is `false`, one this engine cannot process is a `SignatureException` (built through `SecurityExceptions.signatureException`), and the accumulated message is cleared in a `finally` so the object survives a rejection. The lightweight signer throws unchecked for malformed input by design — translating that is the SPI's job. Full contract, and the malformed-signature battery to check it with, in the `Signature.verify()` section of `docs/claude/conventions.md`.
 
 ### Step 11 — `prov/.../pqc/jcajce/provider/<Alg>.java` (the Mappings class)
 
@@ -236,11 +248,16 @@ Add `prov/src/test/java/org/bouncycastle/pqc/jcajce/provider/test/<Alg>Test.java
 5. **`test<Alg>RandomSig`** — sign+verify with the non-parameter-bound `Signature.getInstance("<Alg>", "BCPQC")` form.
 6. **`testBcProviderKeyInfoConverter`** — **the bridge regression test.** For every parameter set, generate a keypair via BCPQC, then call `BouncyCastleProvider.getPublicKey(SubjectPublicKeyInfo.getInstance(pubEnc))` and `BouncyCastleProvider.getPrivateKey(...)` and assert each returned key is a `<Alg>Key` with the right `getParameterSpec().getName()` and `.equals()` the original. If this test passes but tests 1-5 also pass, the algorithm is end-to-end wired. If 1-5 pass but `testBcProviderKeyInfoConverter` fails, step 13 was forgotten.
 
+Then the **encoding regression test**, which is `core`-side rather than part of `<Alg>Test` — the contract it pins belongs to the lightweight `MessageSigner`, not to the JCA shell:
+
+- Add a `test<Alg>()` method to `core/src/test/java/org/bouncycastle/pqc/crypto/test/PqcSignatureEncodingTest.java`, following the existing per-scheme methods: one parameter set (the encoding does not vary by parameter set, and key generation can be expensive) driven through `checkBareSignature`, which asserts the produced signature is exactly the parameter set's signature length, that it verifies, and that none of `signature || message`, `message || signature`, the signature with a byte appended, the signature with 64 bytes appended, the signature truncated by one, or an empty array verifies.
+- Add the empty / one-byte cases for the new scheme to `PqcMalformedInputTest.testMalformedSignatureReturnsFalse` too. Note an *oversized* all-zero buffer asserts nothing there — verification fails on the crypto whatever the length gate does — so trailing-byte rejection stays in `PqcSignatureEncodingTest`, where there is a genuine signature to append to.
+
 Add `suite.addTestSuite(<Alg>Test.class);` to `prov/src/test/java/org/bouncycastle/pqc/jcajce/provider/test/AllTests.java`.
 
 ### Step 16 — Release notes
 
-Add a single `<li>` to `docs/releasenotes.html` under the current unreleased version's "Additional Features and Functionality" block. Mention: the algorithm name and spec version, the parameter sets supported, that `BouncyCastlePQCProvider` exposes `KeyPairGenerator.<Alg>` / `Signature.<Alg>` / `KeyFactory.<Alg>` plus per-parameter-set aliases, and that `BouncyCastleProvider.loadPQCKeys()` registers the OIDs so the standard `BC` provider can decode certificates and PKCS#8 keys.
+Add a single `-` bullet to `docs/releasenotes.md` under the current unreleased version's "Additional Features and Functionality" block. Mention: the algorithm name and spec version, the parameter sets supported, that `BouncyCastlePQCProvider` exposes `KeyPairGenerator.<Alg>` / `Signature.<Alg>` / `KeyFactory.<Alg>` plus per-parameter-set aliases, and that `BouncyCastleProvider.loadPQCKeys()` registers the OIDs so the standard `BC` provider can decode certificates and PKCS#8 keys.
 
 ## Verification commands
 
@@ -296,6 +313,7 @@ When in doubt, mimic these files for the corresponding step:
 | 13 | `prov/.../jce/provider/BouncyCastleProvider.java` `loadPQCKeys()` snova section |
 | 14 | `prov/src/main/jdk1.9/module-info.java` snova entries |
 | 15 | `prov/src/test/java/org/bouncycastle/pqc/jcajce/provider/test/SnovaTest.java` (mostly — but add a `testBcProviderKeyInfoConverter`; SNOVA's existing test doesn't cover that path, but FAEST's does) |
-| 16 | `docs/releasenotes.html` — look at the FAEST entry under 1.85 for the prose template |
+| 15 (encoding) | `core/src/test/java/org/bouncycastle/pqc/crypto/test/PqcSignatureEncodingTest.java` `testSnova` + `checkBareSignature`, and the SNOVA block in `PqcMalformedInputTest.testMalformedSignatureReturnsFalse` |
+| 16 | `docs/releasenotes.md` — look at the FAEST entry under 1.85 for the prose template |
 
 The FAEST entries (added in 1.85 alongside the introduction of this skill) are the most recent worked example of the full pipeline and are a useful cross-check.

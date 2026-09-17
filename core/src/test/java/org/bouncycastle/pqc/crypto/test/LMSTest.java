@@ -8,18 +8,21 @@ import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
 import org.bouncycastle.crypto.AsymmetricCipherKeyPairGenerator;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
-import org.bouncycastle.pqc.crypto.ExhaustedPrivateKeyException;
-import org.bouncycastle.pqc.crypto.lms.HSSPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.lms.LMOtsParameters;
-import org.bouncycastle.pqc.crypto.lms.LMSKeyGenerationParameters;
-import org.bouncycastle.pqc.crypto.lms.LMSKeyPairGenerator;
-import org.bouncycastle.pqc.crypto.lms.LMSParameters;
-import org.bouncycastle.pqc.crypto.lms.LMSPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.lms.LMSPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.lms.LMSSigner;
-import org.bouncycastle.pqc.crypto.lms.LMSigParameters;
-import org.bouncycastle.pqc.crypto.util.PrivateKeyFactory;
-import org.bouncycastle.pqc.crypto.util.PrivateKeyInfoFactory;
+import org.bouncycastle.crypto.ExhaustedPrivateKeyException;
+import org.bouncycastle.crypto.params.HSSKeyGenerationParameters;
+import org.bouncycastle.crypto.generators.HSSKeyPairGenerator;
+import org.bouncycastle.crypto.params.HSSPrivateKeyParameters;
+import org.bouncycastle.crypto.signers.HSSSigner;
+import org.bouncycastle.crypto.params.LMOtsParameters;
+import org.bouncycastle.crypto.params.LMSKeyGenerationParameters;
+import org.bouncycastle.crypto.generators.LMSKeyPairGenerator;
+import org.bouncycastle.crypto.params.LMSParameters;
+import org.bouncycastle.crypto.params.LMSPrivateKeyParameters;
+import org.bouncycastle.crypto.params.LMSPublicKeyParameters;
+import org.bouncycastle.crypto.signers.LMSSigner;
+import org.bouncycastle.crypto.params.LMSigParameters;
+import org.bouncycastle.crypto.util.PrivateKeyFactory;
+import org.bouncycastle.crypto.util.PrivateKeyInfoFactory;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Pack;
 import org.bouncycastle.util.Strings;
@@ -137,6 +140,11 @@ public class LMSTest
 
         assertTrue(signer.verifySignature(msg2, sig));
 
+        // the shard's two usages are now spent. Re-init for signing to assert that: this used to
+        // reach generateSignature on a signer left in verify mode, working only because init did
+        // not clear the private key from the previous signing init.
+        signer.init(true, privKey);
+
         try
         {
             sig = signer.generateSignature(msg2);
@@ -181,6 +189,53 @@ public class LMSTest
         lmsSigner.init(false, pup);
 
         assertFalse(lmsSigner.verifySignature(msg, sig));
+    }
+
+    // a valid LMS/HSS signature with appended trailing bytes must not verify (signature malleability)
+    public void test_shouldRejectTrailingBytesAndMalformedSignature()
+        throws Exception
+    {
+        SecureRandom rnd = new SecureRandom();
+        byte[] msg = Strings.toByteArray("the message that was signed");
+
+        LMSKeyPairGenerator lmsKpg = new LMSKeyPairGenerator();
+        lmsKpg.init(new LMSKeyGenerationParameters(
+            new LMSParameters(LMSigParameters.lms_sha256_n32_h5, LMOtsParameters.sha256_n32_w4), rnd));
+        AsymmetricCipherKeyPair lmsKp = lmsKpg.generateKeyPair();
+
+        LMSSigner lmsSigner = new LMSSigner();
+        lmsSigner.init(true, lmsKp.getPrivate());
+        byte[] lmsSig = lmsSigner.generateSignature(msg);
+
+        LMSSigner lmsVerifier = new LMSSigner();
+        lmsVerifier.init(false, lmsKp.getPublic());
+        assertTrue("pristine LMS signature should verify", lmsVerifier.verifySignature(msg, lmsSig));
+
+        assertFalse("LMS signature with trailing bytes must be rejected (malleability)",
+            lmsVerifier.verifySignature(msg, Arrays.copyOf(lmsSig, lmsSig.length + 16)));
+        assertFalse("LMS signature with a single trailing byte must be rejected",
+            lmsVerifier.verifySignature(msg, Arrays.copyOf(lmsSig, lmsSig.length + 1)));
+        assertFalse("empty signature must be rejected", lmsVerifier.verifySignature(msg, new byte[0]));
+        assertFalse("truncated signature must be rejected",
+            lmsVerifier.verifySignature(msg, Arrays.copyOf(lmsSig, lmsSig.length / 2)));
+        assertFalse("all-zero signature must be rejected",
+            lmsVerifier.verifySignature(msg, new byte[lmsSig.length]));
+
+        HSSKeyPairGenerator hssKpg = new HSSKeyPairGenerator();
+        hssKpg.init(new HSSKeyGenerationParameters(new LMSParameters[]{
+            new LMSParameters(LMSigParameters.lms_sha256_n32_h5, LMOtsParameters.sha256_n32_w4),
+            new LMSParameters(LMSigParameters.lms_sha256_n32_h5, LMOtsParameters.sha256_n32_w4)}, rnd));
+        AsymmetricCipherKeyPair hssKp = hssKpg.generateKeyPair();
+
+        HSSSigner hssSigner = new HSSSigner();
+        hssSigner.init(true, hssKp.getPrivate());
+        byte[] hssSig = hssSigner.generateSignature(msg);
+
+        HSSSigner hssVerifier = new HSSSigner();
+        hssVerifier.init(false, hssKp.getPublic());
+        assertTrue("pristine HSS signature should verify", hssVerifier.verifySignature(msg, hssSig));
+        assertFalse("HSS signature with trailing bytes must be rejected",
+            hssVerifier.verifySignature(msg, Arrays.copyOf(hssSig, hssSig.length + 16)));
     }
 
     public void test_should_verify_sha256_n24_w1()
@@ -355,6 +410,83 @@ public class LMSTest
         catch (IllegalStateException e)
         {
             assertTrue(e.getCause() instanceof IOException);
+        }
+    }
+
+    /**
+     * init() used to assign only the key for the mode being set, leaving the other one from a
+     * previous init in place: a signer initialised for verification still held the private key and
+     * would sign with it, and one initialised for signing still held the public key and would
+     * verify. Both keys are now cleared on every init, so using the signer in the mode it was not
+     * initialised for is reported rather than silently working off the stale key.
+     */
+    public void testReInitClearsTheOtherKey()
+        throws Exception
+    {
+        AsymmetricCipherKeyPairGenerator kpGen = new LMSKeyPairGenerator();
+
+        kpGen.init(new LMSKeyGenerationParameters(
+            new LMSParameters(LMSigParameters.lms_sha256_n32_h5, LMOtsParameters.sha256_n32_w4), new SecureRandom()));
+
+        AsymmetricCipherKeyPair kp = kpGen.generateKeyPair();
+
+        byte[] msg = Hex.decode("54686520706f77657273206e6f742064656c65676174656420746f2074686520");
+
+        LMSSigner signer = new LMSSigner();
+
+        signer.init(true, kp.getPrivate());
+
+        byte[] sig = signer.generateSignature(msg);
+
+        // signing key must not survive an init for verification
+        signer.init(false, kp.getPublic());
+
+        assertTrue(signer.verifySignature(msg, sig));
+
+        try
+        {
+            signer.generateSignature(msg);
+            fail("no exception");
+        }
+        catch (IllegalStateException e)
+        {
+            assertEquals("LMSSigner not initialised for signature generation", e.getMessage());
+        }
+
+        // and the verification key must not survive an init for signing
+        signer.init(true, kp.getPrivate());
+
+        try
+        {
+            signer.verifySignature(msg, sig);
+            fail("no exception");
+        }
+        catch (IllegalStateException e)
+        {
+            assertEquals("LMSSigner not initialised for verification", e.getMessage());
+        }
+
+        // a fresh signer is unusable in either mode until initialised
+        LMSSigner fresh = new LMSSigner();
+
+        try
+        {
+            fresh.generateSignature(msg);
+            fail("no exception");
+        }
+        catch (IllegalStateException e)
+        {
+            assertEquals("LMSSigner not initialised for signature generation", e.getMessage());
+        }
+
+        try
+        {
+            fresh.verifySignature(msg, sig);
+            fail("no exception");
+        }
+        catch (IllegalStateException e)
+        {
+            assertEquals("LMSSigner not initialised for verification", e.getMessage());
         }
     }
 }

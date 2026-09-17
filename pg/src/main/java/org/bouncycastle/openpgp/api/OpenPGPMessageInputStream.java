@@ -33,6 +33,21 @@ import org.bouncycastle.openpgp.PGPSignatureList;
  * You can get information about the message (signatures, encryption method, message metadata)
  * by reading ALL data from the stream, closing it with {@link #close()} and then retrieving a {@link Result} object
  * by calling {@link #getResult()}.
+ * <p>
+ * <b>Unauthenticated plaintext note:</b> data read from this stream has not yet been checked for integrity.
+ * Decryption is performed as the stream is read, and the integrity of the message is only established once
+ * {@link #close()} has returned without throwing. For a version 1 Symmetrically Encrypted and Integrity Protected
+ * Data packet, the Modification Detection Code covers the whole message and is verified at the end of the data,
+ * so every plaintext byte is emitted before the check runs; a tampered message is reported by an
+ * {@link IOException} from the final {@link #read()} or from {@link #close()}, after the plaintext has already
+ * been handed over. A caller should therefore treat everything read from this stream as unverified, and should not
+ * act on it, pass it on or parse it further until {@link #close()} has completed normally. RFC 9580 sec. 13.7
+ * discusses what releasing decrypted data before confirming its integrity can leak.
+ * <p>
+ * A version 2 packet is not affected in the same way: it is encrypted with an AEAD algorithm in chunks, and each
+ * chunk's authentication tag is verified before that chunk's plaintext is emitted, so the unverified window is
+ * bounded by one chunk. Signature verification is separate from either and is only complete once
+ * {@link #close()} has returned and {@link #getResult()} has been consulted.
  */
 public class OpenPGPMessageInputStream
     extends InputStream
@@ -48,6 +63,8 @@ public class OpenPGPMessageInputStream
     private final Layer layer; // the packet layer processed by this input stream
 
     private InputStream in;
+    // this layer's IntegrityProtectedInputStream, if it has one - closed by close(), see there
+    private InputStream integrityProtectedIn;
     private final List<PacketHandler> packetHandlers = new ArrayList<PacketHandler>()
     {{
         add(new SignatureListHandler());
@@ -140,6 +157,12 @@ public class OpenPGPMessageInputStream
                 processor.onException(new PGPException("Unexpected trailing packet encountered: " +
                     next.getClass().getName()));
             }
+        }
+
+        // close it here: a truncated message never returns the -1 that makes it self-close and verify the MDC
+        if (integrityProtectedIn != null)
+        {
+            integrityProtectedIn.close();
         }
 
         resultBuilder.verifySignatures(processor);
@@ -643,7 +666,13 @@ public class OpenPGPMessageInputStream
             PGPCompressedData compressedData = (PGPCompressedData)packet;
             resultBuilder.compressed(compressedData.getAlgorithm());
 
-            InputStream decompressed = compressedData.getDataStream();
+            // A compressed data packet declares no decompressed length, so the expansion is
+            // bounded here rather than left to the consumer: by the time bytes reach a caller
+            // counting them off the stream, the decompression producing them has already
+            // happened. MAX_RECURSION caps how many compression layers nest, not how much any
+            // one of them yields.
+            InputStream decompressed = compressedData.getDataStream(
+                processor.getPolicy().getMaximumDecompressedDataSize());
             processNestedStream(decompressed);
         }
 
@@ -676,6 +705,7 @@ public class OpenPGPMessageInputStream
             OpenPGPMessageProcessor.Decrypted decrypted = processor.decrypt(encryptedDataList);
 
             resultBuilder.encrypted(decrypted);
+            integrityProtectedIn = decrypted.inputStream;
             processNestedStream(decrypted.inputStream);
         }
 
@@ -762,6 +792,11 @@ public class OpenPGPMessageInputStream
                 try
                 {
                     OpenPGPCertificate.OpenPGPComponentKey key = cert.getKey(identifier);
+                    if (key == null)
+                    {
+                        // a provided certificate that does not actually carry the issuer key
+                        continue;
+                    }
                     issuers.put(ops, key);
                     ops.init(processor.getImplementation().pgpContentVerifierBuilderProvider(),
                         key.getPGPPublicKey());
@@ -800,7 +835,8 @@ public class OpenPGPMessageInputStream
         List<OpenPGPSignature.OpenPGPDocumentSignature> verify(
             OpenPGPMessageProcessor processor)
         {
-            OpenPGPPolicy policy = processor.getImplementation().policy();
+            // the policy the processor was configured with, not the implementation default it may override
+            OpenPGPPolicy policy = processor.getPolicy();
             List<OpenPGPSignature.OpenPGPDocumentSignature> dataSignatures = new ArrayList<OpenPGPSignature.OpenPGPDocumentSignature>();
             int num = onePassSignatures.size();
             for (int i = 0; i < signatures.size(); i++)
@@ -874,54 +910,59 @@ public class OpenPGPMessageInputStream
                 KeyIdentifier identifier = OpenPGPSignature.getMostExpressiveIdentifier(sig.getKeyIdentifiers());
                 if (identifier == null)
                 {
-                    dataSignatures.add(new OpenPGPSignature.OpenPGPDocumentSignature(sig, null));
                     continue;
                 }
                 OpenPGPCertificate cert = processor.provideCertificate(identifier);
                 if (cert == null)
                 {
-                    dataSignatures.add(new OpenPGPSignature.OpenPGPDocumentSignature(sig, null));
+                    continue;
+                }
+                OpenPGPCertificate.OpenPGPComponentKey key = cert.getKey(identifier);
+                if (key == null)
+                {
                     continue;
                 }
 
-                OpenPGPCertificate.OpenPGPComponentKey key = cert.getKey(identifier);
                 OpenPGPSignature.OpenPGPDocumentSignature signature = new OpenPGPSignature.OpenPGPDocumentSignature(sig, key);
-                dataSignatures.add(signature);
                 try
                 {
                     signature.signature.init(
                         processor.getImplementation().pgpContentVerifierBuilderProvider(),
-                        cert.getKey(identifier).getPGPPublicKey());
+                        key.getPGPPublicKey());
                 }
                 catch (PGPException e)
                 {
                     processor.onException(e);
+                    continue;
                 }
+                // an uninitialised PGPSignature throws out of update(), i.e. out of read()
+                dataSignatures.add(signature);
             }
         }
 
         void update(int i)
         {
-            for (Iterator it = prefixedSignatures.iterator(); it.hasNext();)
+            for (Iterator it = dataSignatures.iterator(); it.hasNext();)
             {
-                PGPSignature signature = (PGPSignature)it.next();
-                signature.update((byte) i);
+                OpenPGPSignature.OpenPGPDocumentSignature signature = (OpenPGPSignature.OpenPGPDocumentSignature)it.next();
+                signature.signature.update((byte) i);
             }
         }
 
         void update(byte[] buf, int off, int len)
         {
-            for (Iterator it = prefixedSignatures.iterator(); it.hasNext();)
+            for (Iterator it = dataSignatures.iterator(); it.hasNext();)
             {
-                PGPSignature signature = (PGPSignature)it.next();
-                signature.update(buf, off, len);
+                OpenPGPSignature.OpenPGPDocumentSignature signature = (OpenPGPSignature.OpenPGPDocumentSignature)it.next();
+                signature.signature.update(buf, off, len);
             }
         }
 
         List<OpenPGPSignature.OpenPGPDocumentSignature> verify(OpenPGPMessageProcessor processor)
         {
             List<OpenPGPSignature.OpenPGPDocumentSignature> verifiedSignatures = new ArrayList<OpenPGPSignature.OpenPGPDocumentSignature>();
-            OpenPGPPolicy policy = processor.getImplementation().policy();
+            // the policy the processor was configured with, not the implementation default it may override
+            OpenPGPPolicy policy = processor.getPolicy();
             for (Iterator it = dataSignatures.iterator(); it.hasNext();)
             {
                 OpenPGPSignature.OpenPGPDocumentSignature sig = (OpenPGPSignature.OpenPGPDocumentSignature)it.next();

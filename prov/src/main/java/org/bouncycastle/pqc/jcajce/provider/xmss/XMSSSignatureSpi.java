@@ -9,6 +9,7 @@ import java.security.SignatureException;
 import java.security.spec.AlgorithmParameterSpec;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.Digest;
@@ -17,8 +18,9 @@ import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.digests.SHA512Digest;
 import org.bouncycastle.crypto.digests.SHAKEDigest;
 import org.bouncycastle.crypto.params.ParametersWithRandom;
-import org.bouncycastle.pqc.crypto.xmss.XMSSPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.xmss.XMSSSigner;
+import org.bouncycastle.crypto.params.XMSSPrivateKeyParameters;
+import org.bouncycastle.crypto.signers.XMSSSigner;
+import org.bouncycastle.jcajce.provider.util.SecurityExceptions;
 import org.bouncycastle.pqc.jcajce.interfaces.StateAwareSignature;
 
 public class XMSSSignatureSpi
@@ -32,9 +34,16 @@ public class XMSSSignatureSpi
 
     private Digest digest;
     private XMSSSigner signer;
-    private SecureRandom random;
     private ASN1ObjectIdentifier treeDigest;
+    // the attributes of the key engineInitSign was given, so the key getUpdatedPrivateKey()
+    // hands back is the same key rather than one stripped of them
+    private ASN1Set attributes;
     private ASN1ObjectIdentifier[] treeDigests;
+    // whether the last init was for signing. treeDigest says this object has been given a private
+    // key at some point, which a verification init does not take back: the signer keeps the key
+    // across one so that sign, verify, then collect the advanced state is a sequence a caller can
+    // drive, and this is what stops isSigningCapable() answering true while it is verifying.
+    private boolean signing;
 
     protected XMSSSignatureSpi(String sigName, Digest digest, XMSSSigner signer)
     {
@@ -59,7 +68,7 @@ public class XMSSSignatureSpi
 
             CipherParameters param = ((BCXMSSPublicKey)publicKey).getKeyParams();
 
-            treeDigest = null;
+            signing = false;
             digest.reset();
             signer.init(false, param);
         }
@@ -96,25 +105,40 @@ public class XMSSSignatureSpi
     protected void engineInitSign(PrivateKey privateKey, SecureRandom random)
         throws InvalidKeyException
     {
-        this.random = random;
-        engineInitSign(privateKey);
+        initSigning(privateKey, random);
     }
 
     protected void engineInitSign(PrivateKey privateKey)
         throws InvalidKeyException
     {
+        initSigning(privateKey, null);
+    }
+
+    // the random travels as an argument rather than in a field: held in one, a random supplied to
+    // an earlier initSign(key, random) on this object would still be wrapping the key on a later
+    // initSign(key) that named none
+    private void initSigning(PrivateKey privateKey, SecureRandom random)
+        throws InvalidKeyException
+    {
         if (privateKey instanceof BCXMSSPrivateKey)
         {
+            if (((BCXMSSPrivateKey)privateKey).isDestroyed())
+            {
+                throw new InvalidKeyException("key destroyed");
+            }
+
             checkTreeDigest(((BCXMSSPrivateKey)privateKey).getTreeDigestOID());
 
             CipherParameters param = ((BCXMSSPrivateKey)privateKey).getKeyParams();
 
             treeDigest = ((BCXMSSPrivateKey)privateKey).getTreeDigestOID();
+            attributes = ((BCXMSSPrivateKey)privateKey).getAttributes();
             if (random != null)
             {
                 param = new ParametersWithRandom(param, random);
             }
 
+            signing = true;
             digest.reset();
             signer.init(true, param);
         }
@@ -143,7 +167,9 @@ public class XMSSSignatureSpi
 
         try
         {
-            byte[] sig = signer.generateSignature(hash);
+            signer.update(hash, 0, hash.length);
+
+            byte[] sig = signer.generateSignature();
 
             return sig;
         }
@@ -151,9 +177,9 @@ public class XMSSSignatureSpi
         {
             if (e instanceof IllegalStateException)
             {
-                throw new SignatureException(e.getMessage(), e);
+                throw SecurityExceptions.signatureException(e.getMessage(), e);
             }
-            throw new SignatureException(e.toString(), e);
+            throw SecurityExceptions.signatureException(e.toString(), e);
         }
     }
 
@@ -162,7 +188,20 @@ public class XMSSSignatureSpi
     {
         byte[] hash = DigestUtil.getDigestResult(digest);
 
-        return signer.verifySignature(hash, sigBytes);
+        try
+        {
+            signer.update(hash, 0, hash.length);
+
+            return signer.verifySignature(sigBytes);
+        }
+        catch (Exception e)
+        {
+            if (e instanceof IllegalStateException)
+            {
+                throw SecurityExceptions.signatureException(e.getMessage(), e);
+            }
+            throw SecurityExceptions.signatureException(e.toString(), e);
+        }
     }
 
     protected void engineSetParameter(AlgorithmParameterSpec params)
@@ -188,20 +227,32 @@ public class XMSSSignatureSpi
 
     public boolean isSigningCapable()
     {
-        return treeDigest != null && signer.getUsagesRemaining() != 0;
+        return signing && signer.getUsagesRemaining() != 0;
     }
 
     public PrivateKey getUpdatedPrivateKey()
     {
-        if (treeDigest == null)
+        // the signer is asked rather than a field of this object being read: what it hands back is
+        // null exactly when there is nothing left to hand back - never initialised for signing, or
+        // a signature made and its key already collected. Clearing treeDigest here made a collection
+        // that followed no signature look like an exhausted object, when what the signer keeps in
+        // that case is a one-usage shard of the leaf the collected key has been advanced past.
+        //
+        // That is a different question from the one isSigningCapable() answers, and the two do part
+        // company: it asks the signer for a count, this asks whether it holds a key at all, and a
+        // signer initialised on a spent key holds one. Measured, that signer answers false to
+        // isSigningCapable() and hands a key back from here - deliberately, because a spent key is
+        // still state its caller has to store. So a key from here is not a statement that anything
+        // is left to sign with; only isSigningCapable() says that.
+        XMSSPrivateKeyParameters updated = (treeDigest == null)
+            ? null : (XMSSPrivateKeyParameters)signer.getUpdatedPrivateKey();
+
+        if (updated == null)
         {
             throw new IllegalStateException("signature object not in a signing state");
         }
-        PrivateKey rKey = new BCXMSSPrivateKey(treeDigest, (XMSSPrivateKeyParameters)signer.getUpdatedPrivateKey());
 
-        treeDigest = null;
-
-        return rKey;
+        return new BCXMSSPrivateKey(treeDigest, updated, attributes);
     }
 
     static public class generic

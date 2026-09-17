@@ -8,7 +8,10 @@ import org.bouncycastle.crypto.KeyGenerationParameters;
 
 /**
  * Key pair generator for XMSS^MT keys.
+ *
+ * @deprecated use {@link org.bouncycastle.crypto.generators.XMSSMTKeyPairGenerator} instead.
  */
+@Deprecated
 public final class XMSSMTKeyPairGenerator
     implements AsymmetricCipherKeyPairGenerator
 {

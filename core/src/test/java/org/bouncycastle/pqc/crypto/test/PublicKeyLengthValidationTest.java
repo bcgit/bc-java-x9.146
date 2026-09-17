@@ -12,6 +12,12 @@ import org.bouncycastle.crypto.params.ParametersWithRandom;
 import org.bouncycastle.crypto.signers.MLDSASigner;
 import org.bouncycastle.pqc.crypto.falcon.FalconParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.smaugt.SmaugTKEMExtractor;
+import org.bouncycastle.pqc.crypto.smaugt.SmaugTKeyGenerationParameters;
+import org.bouncycastle.pqc.crypto.smaugt.SmaugTKeyPairGenerator;
+import org.bouncycastle.pqc.crypto.smaugt.SmaugTParameters;
+import org.bouncycastle.pqc.crypto.smaugt.SmaugTPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.smaugt.SmaugTPublicKeyParameters;
 
 /**
  * Regression test for the PQC public-key length-validation hardening (finding #14).
@@ -35,23 +41,10 @@ public class PublicKeyLengthValidationTest
     // ML-DSA-44 public key is SeedBytes + k*DilithiumPolyT1PackedBytes = 32 + 4*320 = 1312 bytes.
     public void testMLDSAPublicKeyRejectsMalformedLength()
     {
-        // new public API (org.bouncycastle.crypto.params)
         try
         {
             new MLDSAPublicKeyParameters(MLDSAParameters.ml_dsa_44, SHORT_ENCODING);
             fail("expected IllegalArgumentException for short ML-DSA public key (crypto.params)");
-        }
-        catch (IllegalArgumentException e)
-        {
-            assertEquals("'encoding' has invalid length", e.getMessage());
-        }
-
-        // deprecated decode path still used by PublicKeyFactory (org.bouncycastle.pqc.crypto.mldsa)
-        try
-        {
-            new org.bouncycastle.pqc.crypto.mldsa.MLDSAPublicKeyParameters(
-                org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters.ml_dsa_44, SHORT_ENCODING);
-            fail("expected IllegalArgumentException for short ML-DSA public key (pqc.crypto.mldsa)");
         }
         catch (IllegalArgumentException e)
         {
@@ -68,17 +61,6 @@ public class PublicKeyLengthValidationTest
             new org.bouncycastle.crypto.params.MLKEMPublicKeyParameters(
                 org.bouncycastle.crypto.params.MLKEMParameters.ml_kem_512, SHORT_ENCODING);
             fail("expected IllegalArgumentException for short ML-KEM public key (crypto.params)");
-        }
-        catch (IllegalArgumentException e)
-        {
-            assertEquals("'encoding' has invalid length", e.getMessage());
-        }
-
-        try
-        {
-            new org.bouncycastle.pqc.crypto.mlkem.MLKEMPublicKeyParameters(
-                org.bouncycastle.pqc.crypto.mlkem.MLKEMParameters.ml_kem_512, SHORT_ENCODING);
-            fail("expected IllegalArgumentException for short ML-KEM public key (pqc.crypto.mlkem)");
         }
         catch (IllegalArgumentException e)
         {
@@ -137,5 +119,90 @@ public class PublicKeyLengthValidationTest
         {
             assertEquals("'encoding' has invalid length", e.getMessage());
         }
+    }
+
+    /**
+     * SMAUG-T: both key-decode constructors stored the encoding unchecked, so a malformed-length key
+     * was accepted silently and only crashed later - the public key with an
+     * <code>ArrayIndexOutOfBoundsException</code> inside encapsulation, the private key with garbage
+     * behaviour at decapsulation time. Both are reachable from untrusted input via
+     * <code>PublicKeyFactory</code> (SubjectPublicKeyInfo) and <code>PrivateKeyFactory</code> (PKCS#8).
+     */
+    public void testSmaugTPublicKeyRejectsMalformedLength()
+    {
+        SmaugTParameters[] sets = new SmaugTParameters[]
+            {
+                SmaugTParameters.smaugt_mode1, SmaugTParameters.smaugt_mode3,
+                SmaugTParameters.smaugt_mode5, SmaugTParameters.smaugt_modet
+            };
+
+        for (int i = 0; i != sets.length; i++)
+        {
+            try
+            {
+                new SmaugTPublicKeyParameters(sets[i], SHORT_ENCODING);
+                fail("expected IllegalArgumentException for short SMAUG-T public key: " + sets[i].getName());
+            }
+            catch (IllegalArgumentException e)
+            {
+                assertEquals("'publicKey' has invalid length", e.getMessage());
+            }
+        }
+    }
+
+    public void testSmaugTPrivateKeyRejectsMalformedLength()
+    {
+        SmaugTParameters[] sets = new SmaugTParameters[]
+            {
+                SmaugTParameters.smaugt_mode1, SmaugTParameters.smaugt_mode3,
+                SmaugTParameters.smaugt_mode5, SmaugTParameters.smaugt_modet
+            };
+
+        for (int i = 0; i != sets.length; i++)
+        {
+            try
+            {
+                new SmaugTPrivateKeyParameters(sets[i], SHORT_ENCODING);
+                fail("expected IllegalArgumentException for short SMAUG-T private key: " + sets[i].getName());
+            }
+            catch (IllegalArgumentException e)
+            {
+                assertEquals("'privateKey' has invalid length", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * SMAUG-T decapsulation indexed the ciphertext at fixed offsets up to CIPHERTEXT_BYTES with no
+     * length check, so a short encapsulation threw an <code>ArrayIndexOutOfBoundsException</code> out
+     * of <code>extractSecret</code>. Mirrors the HQC / NTRU Prime / BIKE extractors.
+     */
+    public void testSmaugTExtractorRejectsWrongLengthEncapsulation()
+    {
+        SmaugTKeyPairGenerator kpg = new SmaugTKeyPairGenerator();
+        kpg.init(new SmaugTKeyGenerationParameters(new SecureRandom(), SmaugTParameters.smaugt_mode1));
+
+        AsymmetricCipherKeyPair kp = kpg.generateKeyPair();
+        SmaugTKEMExtractor extractor = new SmaugTKEMExtractor((SmaugTPrivateKeyParameters)kp.getPrivate());
+
+        int expected = extractor.getEncapsulationLength();
+
+        int[] wrong = new int[]{0, 1, expected - 1, expected + 1};
+        for (int i = 0; i != wrong.length; i++)
+        {
+            try
+            {
+                extractor.extractSecret(new byte[wrong[i]]);
+                fail("expected IllegalArgumentException for encapsulation length " + wrong[i]);
+            }
+            catch (IllegalArgumentException e)
+            {
+                assertEquals("encapsulation wrong length", e.getMessage());
+            }
+        }
+
+        // control: the correct length is still accepted and yields a shared secret
+        byte[] ok = extractor.extractSecret(new byte[expected]);
+        assertEquals(32, ok.length);
     }
 }

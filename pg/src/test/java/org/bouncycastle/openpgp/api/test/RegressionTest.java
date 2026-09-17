@@ -9,15 +9,21 @@ public class RegressionTest
 {
     public static Test[] tests = {
         new ChangeKeyPassphraseTest(),
-        new DoubleBufferedInputStreamTest(),
+        new OpenPGPConfiguredPolicyTest(),
+        new OpenPGPDecompressionLimitTest(),
         new OpenPGPCertificateTest(),
         new OpenPGPDetachedSignatureProcessorTest(),
+        new OpenPGPDocumentSignatureExpiryTest(),
         new OpenPGPKeyEditorTest(),
         new OpenPGPKeyReaderTest(),
         new OpenPGPMessageGeneratorTest(),
         new OpenPGPMessageProcessorTest(),
+        new OpenPGPMissingCrossCertificationTest(),
+        new OpenPGPPrimaryKeyExpiryTest(),
         new OpenPGPSubkeyExpiryForgeryTest(),
+        new OpenPGPThirdPartyCertificationAuthorityTest(),
         new OpenPGPV4KeyGenerationTest(),
+        new OpenPGPV6DirectKeySignatureTest(),
         new OpenPGPV6KeyGeneratorTest(),
         new StaticV6OpenPGPMessageGeneratorTest(),
     };

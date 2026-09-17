@@ -54,11 +54,87 @@ Common gotchas:
 - IDE-built classes under `out/production/...` (IntelliJ) are NOT on the Gradle classpath — don't reference them, and beware that they can drift from Gradle's outputs.
 - After deleting or renaming a test method (e.g. when rolling back an edit), the stale `.class` file lingers under `<module>/build/classes/java/test/`. JUnit's `TestSuite.class` reflection-walk will still find and run the stale method, surfacing confusing `ClassNotFoundException` / `NoClassDefFoundError` for inner-class artifacts that were removed. Run `./gradlew :<module>:compileTestJava --rerun-tasks` (or `:<module>:clean`) after a rollback to flush.
 
+## A green Gradle run can mean the tests never ran — and the tree can move under you
+
+Two ways a "BUILD SUCCESSFUL" has lied in practice. Both are cheap to check and expensive to miss.
+
+**`UP-TO-DATE` test tasks.** Gradle will skip a test task it believes is current and still print
+`BUILD SUCCESSFUL`. The tell is the wall time: `:pkix:test` in seconds when it normally takes
+minutes. Confirm with `--console=plain` and look for `> Task :pkix:test UP-TO-DATE` (a real run
+prints the task line with no suffix), or check the result XML is actually fresh:
+
+```
+find <module>/build -name "*.xml" -path "*test-result*" -printf "%TH:%TM %p\n" | sort | tail
+```
+
+`ls`-ing the results directory is not enough — the directory mtime updates even when nothing is
+rewritten, and `find -newermt "-30 minutes"` is *not* valid relative syntax (it silently matches
+nothing; use `-newermt "30 minutes ago"`).
+
+**Where core and prov write their results is not where the docs above imply.** `:core:test` puts
+its XML straight into `core/build/test-results/TEST-<fqcn>.xml` — there is no `test-results/test/`
+subdirectory — and it runs individual test classes, not only the `AllTest*` wrappers the
+per-module tasks filter on (so `crypto.params.LMSTests` appears, `crypto.params.AllTests` does not).
+`:prov:test` is the same shape: all 79 per-class XML files sit at `prov/build/test-results/*.xml` while
+the per-task subdirectories (`test8/`, `test11/`, …) hold only a `binary/` directory, with each task's
+totals in `prov/build/reports/tests/<task>/index.html`.
+
+Globbing the documented `<module>/build/test-results/test/*.xml` path against either therefore returns
+zero files after a run that did execute 135 suites, which looks exactly like the skipped-tests trap
+above. Check `core/build/reports/tests/test/index.html` for the totals, or glob `TEST-*.xml` one
+level up. On this machine a clean full `:core:test` is ~8 minutes and 787 tests.
+
+Note also that `find` here is `bfs`, not GNU find: it rejects `-newermt "30 minutes ago"` outright
+("Invalid timestamp") and wants an ISO-8601 stamp, so relative-time filtering needs a different
+approach than the one above. When in doubt force it: `:<module>:cleanTest :<module>:test`.
+
+**HEAD moves while a suite runs.** dgh pulls into this clone during a session, so a long
+`:core:test` / `:prov:test` can straddle a merge and describe a tree that no longer exists. This
+has already produced a confident-but-wrong "my change broke three unrelated tests" (the failures
+belonged to the pre-pull tree). So:
+
+- Print `git log --oneline -1` immediately before launching a long run and again when it finishes;
+  only trust the result if they match.
+- A before/after comparison (stash the fix, re-run) is only valid if **both** runs are at the same
+  HEAD. Re-run the baseline if a pull landed between them.
+- `git stash push <paths>` names the commit it stashed against ("WIP on main: <hash> <subject>") —
+  a free HEAD check, worth reading rather than skipping.
+- `git log --oneline <old-head>..HEAD -- <paths you changed>` says whether the incoming work
+  touched what you are touching; uncommitted edits usually survive a pull untouched, but verify
+  rather than assume.
+
+**`BC_JDK8` is exported in dgh's shell**, so `:prov:test` pulls in `test8`, which runs the suite
+against the *built jar* on a real JDK 8 with `maxParallelForks = 8`. That is a different execution
+path from running a test class directly against `build/classes`, and the only place some failures
+appear. A `:prov:test` that suddenly takes much longer, or fails in tests you did not touch, is
+usually `test8`.
+
 ## Verifying a fix actually catches the bug
 
 The repo's working norm for any defect-fix patch is: write the test that reproduces the bug, then **stash the fix** (`git stash push <fix-files>`), recompile (`./gradlew :<module>:compileJava`), rerun the test to confirm it now fails on the original symptom, then `git stash pop` and rerun to confirm it now passes. This catches tests that pass for the wrong reason. Use it whenever you add a regression test alongside a fix.
 
 When the fix is in `core/`, remember to recompile `prov` too (the `core`-into-`prov` trap below) so the test JVM picks up the updated bytecode rather than a stale `prov/build/classes` shadow.
+
+When the fix *introduces the API the test compiles against* (new public setters, a new class), stashing the whole patch just breaks the test compile — it proves the API is new, not that the test catches the bug. Stash or temporarily remove only the enforcement (the check lines inside the method), recompile the main tree, and confirm the negative cases fail on the original symptom before restoring. The `JceKTSKeyTransRecipient` constraint port (`915e7f3ffb`) is the worked example.
+
+### A green run after breaking the code means the test never reached it — verify the break landed
+
+The same stash/mutate technique also answers "is this call site actually on my new code path?": put a `throw` at the top of the new method and confirm each test that should exercise it now fails. But a **false green** — the test passing when the code is deliberately broken — has two boring causes far more often than it has an interesting one, and both point you at innocent code:
+
+- **The edit didn't apply.** A scripted `sed`/`replace` whose anchor doesn't match is a silent no-op. Assert it: `grep -c` the marker in the source *and* `javap -p -c <class> | grep -c` it in the compiled class before believing any test result.
+- **A stale `prov` copy shadowed it.** Per the `core`-into-`prov` trap, `prov/build/classes/java/main` contains its own build of every `core` class. If it precedes `core/build/classes/java/main` on a hand-built classpath, or if only `:core:compileJava` was re-run, the JVM loads the old bytecode. Compile both (`:core:compileJava :prov:compileJava`) and put `core` first — and confirm the marker is present in *both* class trees.
+
+This bit the EC constant-time multiplier work (`965f42dae9`), where both causes fired in turn and produced a confident but wrong "none of these paths are wired" conclusion. It invalidates ordinary test *results* the same way it invalidates a probe, so when a `core` change is exercised through `prov` tests, compile both and order the classpath core-first as routine.
+
+## Parsing base64 out of Java source: `+` is the concatenation operator
+
+A recurring shape in this tree is a PEM or key blob spread over many `"...\n" +` string literals.
+Stripping "non-base64" characters with something like `re.sub(r'[^A-Za-z0-9+/=]', '', text)` keeps
+the `+` that joins the literals, silently corrupting the decode — the result still base64-decodes,
+just into garbage, so the failure is a wrong *answer* rather than an error. This produced a
+confident undercount of the OpenSSH test keys (8 of 15) that survived two rounds of "checking".
+Extract the contents of each `"..."` literal instead, then join. Where a tool can confirm the
+result — `ssh-keygen -l -f`, `openssl asn1parse` — use it as the authority rather than the parse.
 
 ## The legacy jdk15to18 (Java 5) build has a *runtime* floor Gradle can't see
 

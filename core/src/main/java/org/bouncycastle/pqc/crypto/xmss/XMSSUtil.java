@@ -1,12 +1,10 @@
 package org.bouncycastle.pqc.crypto.xmss;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.ObjectStreamClass;
 import java.util.HashSet;
 import java.util.Set;
@@ -17,7 +15,15 @@ import org.bouncycastle.util.encoders.Hex;
 
 /**
  * Utils for XMSS implementation.
+ *
+ * @deprecated this class is implementation detail of the XMSS / XMSS^MT engine, which has
+ * moved to org.bouncycastle.crypto.signers.xmss and is package-private there. Drive XMSS
+ * through {@link org.bouncycastle.crypto.signers.XMSSSigner} /
+ * {@link org.bouncycastle.crypto.generators.XMSSKeyPairGenerator} and the
+ * org.bouncycastle.crypto.params key classes instead; the engine operations those are
+ * built on are on org.bouncycastle.crypto.signers.xmss.XMSSEngine.
  */
+@Deprecated
 public class XMSSUtil
 {
 
@@ -312,19 +318,85 @@ public class XMSSUtil
         return (int)(index & ((1L << xmssTreeHeight) - 1L));
     }
 
+    /**
+     * Encode BDS traversal state as the versioned binary state. The legacy Java serialization is
+     * still accepted by {@link #deserialize(byte[], Class)} for keys written by earlier releases,
+     * but is no longer generated.
+     */
+    /**
+     * Encode a BDS state, binding it to nothing. Prefer serialize(Object, byte[]): the encoded state
+     * carries a checksum, and passing the owning key's public seed ties the state to that key, so a
+     * state transplanted between two keys of the same parameters is detected (github #2414).
+     */
     public static byte[] serialize(Object obj)
         throws IOException
     {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        ObjectOutputStream oos = new ObjectOutputStream(out);
-        oos.writeObject(obj);
-        oos.flush();
-        return out.toByteArray();
+        return serialize(obj, null);
     }
 
+    /**
+     * Encode a BDS state, binding its checksum to the public seed of the key it belongs to.
+     *
+     * @param obj        the BDS or BDSStateMap to encode.
+     * @param publicSeed the owning key's public seed, or null to bind nothing.
+     */
+    public static byte[] serialize(Object obj, byte[] publicSeed)
+        throws IOException
+    {
+        if (obj instanceof BDS)
+        {
+            return BDSStateCodec.encode((BDS)obj, publicSeed);
+        }
+        if (obj instanceof BDSStateMap)
+        {
+            return BDSStateCodec.encode((BDSStateMap)obj, publicSeed);
+        }
+
+        throw new IllegalArgumentException("unsupported BDS state type: "
+            + (obj != null ? obj.getClass().getName() : "null"));
+    }
+
+    /**
+     * Decode a BDS state whose checksum was bound to nothing. Prefer
+     * deserialize(byte[], Class, byte[]) - see serialize(Object, byte[]).
+     */
     public static Object deserialize(byte[] data, final Class clazz)
         throws IOException, ClassNotFoundException
     {
+        return deserialize(data, clazz, null);
+    }
+
+    /**
+     * Decode a BDS state, checking its checksum against the public seed of the key it belongs to.
+     *
+     * @param data       the encoded state.
+     * @param clazz      BDS or BDSStateMap.
+     * @param publicSeed the owning key's public seed, or null if nothing was bound.
+     */
+    public static Object deserialize(byte[] data, final Class clazz, byte[] publicSeed)
+        throws IOException, ClassNotFoundException
+    {
+        if (clazz == BDS.class || clazz == BDSStateMap.class)
+        {
+            BDSStateCodec.checkEncodingSize(data);
+            if (BDSStateCodec.isBDSStateEncoding(data))
+            {
+                if (clazz != BDS.class)
+                {
+                    throw new IOException("unexpected BDS state encoding");
+                }
+                return BDSStateCodec.decodeBDS(data, publicSeed);
+            }
+            if (BDSStateCodec.isBDSStateMapEncoding(data))
+            {
+                if (clazz != BDSStateMap.class)
+                {
+                    throw new IOException("unexpected BDS state map encoding");
+                }
+                return BDSStateCodec.decodeBDSStateMap(data, publicSeed);
+            }
+        }
+
         ByteArrayInputStream in = new ByteArrayInputStream(data);
         ObjectInputStream is = new CheckingStream(clazz, in);
 

@@ -109,6 +109,18 @@ import org.bouncycastle.util.Strings;
 class BcFKSKeyStoreSpi
     extends KeyStoreSpi
 {
+    /**
+     * The PBKDF2-HMAC-SHA512 iteration count written by default, for the integrity MAC key and
+     * the entry key-encryption keys.
+     */
+    private static final int DEFAULT_STORE_IT_COUNT = 50 * 1024;
+
+    /**
+     * Largest count {@link Properties#BCFKS_STORE_IT_COUNT} may name - the default read-side cap
+     * {@link Properties#BCFKS_MAX_IT_COUNT} applies, so a file BC writes is one BC can read back.
+     */
+    private static final int MAX_STORE_IT_COUNT = 5000000;
+
     private static final Map<String, ASN1ObjectIdentifier> oidMap = new HashMap<String, ASN1ObjectIdentifier>();
     private static final Map<ASN1ObjectIdentifier, String> publicAlgMap = new HashMap<ASN1ObjectIdentifier, String>();
 
@@ -851,7 +863,7 @@ class BcFKSKeyStoreSpi
 
             if (params.getKeyLength() != null)
             {
-                keySizeInBytes = params.getKeyLength().intValue();
+                keySizeInBytes = validateKeyLength(params.getKeyLength());
             }
             else if (keySizeInBytes == -1)
             {
@@ -867,7 +879,7 @@ class BcFKSKeyStoreSpi
 
             if (pbkdf2Params.getKeyLength() != null)
             {
-                keySizeInBytes = pbkdf2Params.getKeyLength().intValue();
+                keySizeInBytes = validateKeyLength(pbkdf2Params.getKeyLength());
             }
             else if (keySizeInBytes == -1)
             {
@@ -936,6 +948,30 @@ class BcFKSKeyStoreSpi
         {
             throw new IOException("BCFKS KeyStore: scrypt cost parameters require more than " + maxMemory + " bytes");
         }
+    }
+
+    // The keys derived here are 32 bytes (64 for the SHA-512 integrity check); anything beyond
+    // this is rejected as abusive. Bounding it also keeps the keySizeInBytes * 8 conversion at the
+    // derivation call sites from overflowing, which turned a large keyLength into an unchecked
+    // NegativeArraySizeException escaping a method declaring IOException.
+    private static final int MAX_KEY_LENGTH = 1024;
+
+    private static int validateKeyLength(BigInteger keyLength)
+        throws IOException
+    {
+        // As with the iteration count: the value arrives in the not-yet-integrity-checked keystore
+        // and sizes the derivation output, so bound it before deriving.
+        if (keyLength == null || keyLength.signum() <= 0 || keyLength.bitLength() > 31)
+        {
+            throw new IOException("BCFKS KeyStore: invalid keyLength");
+        }
+
+        if (keyLength.intValue() > MAX_KEY_LENGTH)
+        {
+            throw new IOException("BCFKS KeyStore: keyLength (" + keyLength + ") greater than " + MAX_KEY_LENGTH);
+        }
+
+        return keyLength.intValue();
     }
 
     private static int validateIterationCount(BigInteger ic)
@@ -1204,7 +1240,7 @@ class BcFKSKeyStoreSpi
         }
         catch (NoSuchPaddingException e)
         {
-            throw new NoSuchAlgorithmException(e.toString());
+            throw SecurityExceptions.noSuchAlgorithmException(e.toString(), e);
         }
         catch (BadPaddingException e)
         {
@@ -1637,12 +1673,31 @@ class BcFKSKeyStoreSpi
 
         if (PKCSObjectIdentifiers.id_PBKDF2.equals(derivationAlgorithm))
         {
-            return new KeyDerivationFunc(PKCSObjectIdentifiers.id_PBKDF2, new PBKDF2Params(pbkdSalt, 50 * 1024, keySizeInBytes, new AlgorithmIdentifier(PKCSObjectIdentifiers.id_hmacWithSHA512, DERNull.INSTANCE)));
+            return new KeyDerivationFunc(PKCSObjectIdentifiers.id_PBKDF2, new PBKDF2Params(pbkdSalt, getStoreIterationCount(), keySizeInBytes, new AlgorithmIdentifier(PKCSObjectIdentifiers.id_hmacWithSHA512, DERNull.INSTANCE)));
         }
         else
         {
             throw new IllegalStateException("unknown derivation algorithm: " + derivationAlgorithm);
         }
+    }
+
+    /**
+     * The PBKDF2 iteration count to write with on the default path - the integrity MAC key and
+     * the entry key-encryption keys when no {@link BCFKSLoadStoreParameter} names a KDF -
+     * {@link #DEFAULT_STORE_IT_COUNT} unless {@link Properties#BCFKS_STORE_IT_COUNT} names a
+     * usable value. A value outside 1 .. {@link #MAX_STORE_IT_COUNT} is ignored, so a mistyped
+     * property fails towards the default rather than towards a file with no PBE work in it.
+     */
+    private static int getStoreIterationCount()
+    {
+        int itCount = Properties.asInteger(Properties.BCFKS_STORE_IT_COUNT, DEFAULT_STORE_IT_COUNT);
+
+        if (itCount < 1 || itCount > MAX_STORE_IT_COUNT)
+        {
+            return DEFAULT_STORE_IT_COUNT;
+        }
+
+        return itCount;
     }
 
     public static class Std

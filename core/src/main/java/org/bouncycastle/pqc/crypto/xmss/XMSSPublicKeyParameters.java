@@ -7,7 +7,10 @@ import org.bouncycastle.util.Pack;
 
 /**
  * XMSS Public Key.
+ *
+ * @deprecated use {@link org.bouncycastle.crypto.params.XMSSPublicKeyParameters} instead.
  */
+@Deprecated
 public final class XMSSPublicKeyParameters
     extends XMSSKeyParameters
     implements XMSSStoreableObjectInterface, Encodable

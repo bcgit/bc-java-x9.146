@@ -4,9 +4,10 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
+import javax.security.auth.Destroyable;
+
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
-import org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters;
 import org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters;
 import org.bouncycastle.crypto.util.PrivateKeyFactory;
 import org.bouncycastle.crypto.util.PrivateKeyInfoFactory;
@@ -15,12 +16,13 @@ import org.bouncycastle.jcajce.interfaces.MLKEMPrivateKey;
 import org.bouncycastle.jcajce.interfaces.MLKEMPublicKey;
 import org.bouncycastle.jcajce.spec.MLKEMParameterSpec;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
 import org.bouncycastle.util.Fingerprint;
 import org.bouncycastle.util.Strings;
 import org.bouncycastle.util.encoders.Hex;
 
 public class BCMLKEMPrivateKey
-    implements MLKEMPrivateKey, BCKey
+    implements MLKEMPrivateKey, Destroyable, BCKey
 {
     private static final long serialVersionUID = 1L;
 
@@ -68,6 +70,12 @@ public class BCMLKEMPrivateKey
         {
             BCMLKEMPrivateKey otherKey = (BCMLKEMPrivateKey)o;
 
+            // a destroyed key no longer exposes its value, so it is only equal to itself.
+            if (isDestroyed() || otherKey.isDestroyed())
+            {
+                return false;
+            }
+
             return Arrays.constantTimeAreEqual(params.getEncoded(), otherKey.params.getEncoded());
         }
 
@@ -89,6 +97,11 @@ public class BCMLKEMPrivateKey
 
     public byte[] getEncoded()
     {
+        if (params.isDestroyed())
+        {
+            throw new IllegalStateException("key destroyed");
+        }
+
         try
         {
             if (priorEncoding != null)
@@ -130,11 +143,11 @@ public class BCMLKEMPrivateKey
             byte[] seed = params.getSeed();
             if (seed != null)
             {
-                return new BCMLKEMPrivateKey(this.params.withPreferredFormat(MLDSAPrivateKeyParameters.SEED_ONLY));
+                return new BCMLKEMPrivateKey(this.params.withPreferredFormat(MLKEMPrivateKeyParameters.SEED_ONLY));
             }
         }
 
-        return new BCMLKEMPrivateKey(this.params.withPreferredFormat(MLDSAPrivateKeyParameters.EXPANDED_KEY));
+        return new BCMLKEMPrivateKey(this.params.withPreferredFormat(MLKEMPrivateKeyParameters.EXPANDED_KEY));
     }
 
     public MLKEMParameterSpec getParameterSpec()
@@ -167,6 +180,26 @@ public class BCMLKEMPrivateKey
         return buf.toString();
     }
 
+    /**
+     * Destroy this key, zeroizing the secret key material it holds.
+     * <p>
+     * After destruction {@link #isDestroyed()} returns true and the secret-bearing accessors
+     * (such as {@link #getEncoded()}, {@link #getPrivateData()} and {@link #getSeed()}) throw
+     * {@link IllegalStateException}. As the underlying parameter arrays may be shared with keys
+     * derived from this one, destruction invalidates those references too.
+     */
+    public synchronized void destroy()
+    {
+        params.destroy();
+        Arrays.clear(priorEncoding);
+        priorEncoding = null;
+    }
+
+    public boolean isDestroyed()
+    {
+        return params.isDestroyed();
+    }
+
     MLKEMPrivateKeyParameters getKeyParams()
     {
         return params;
@@ -189,6 +222,13 @@ public class BCMLKEMPrivateKey
     {
         out.defaultWriteObject();
 
-        out.writeObject(this.getEncoded());
+        try
+        {
+            out.writeObject(this.getEncoded());
+        }
+        catch (IllegalStateException e)
+        {
+            throw Exceptions.ioException(e.getMessage(), e);
+        }
     }
 }

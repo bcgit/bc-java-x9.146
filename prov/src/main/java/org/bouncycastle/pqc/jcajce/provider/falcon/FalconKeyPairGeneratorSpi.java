@@ -1,6 +1,7 @@
 package org.bouncycastle.pqc.jcajce.provider.falcon;
 
 import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidParameterException;
 import java.security.KeyPair;
 import java.security.SecureRandom;
 import java.security.spec.AlgorithmParameterSpec;
@@ -45,7 +46,7 @@ public class FalconKeyPairGeneratorSpi
 
     protected FalconKeyPairGeneratorSpi(FalconParameters falconParameters)
     {
-        super(falconParameters.getName());
+        super(Strings.toUpperCase(falconParameters.getName()));
         this.falconParameters = falconParameters;
     }
 
@@ -53,7 +54,8 @@ public class FalconKeyPairGeneratorSpi
             int strength,
             SecureRandom random)
     {
-        throw new IllegalArgumentException("use AlgorithmParameterSpec");
+        // what the JCA specifies here; it extends IllegalArgumentException, so catches still match
+        throw new InvalidParameterException("use AlgorithmParameterSpec");
     }
 
     public void initialize(
@@ -71,7 +73,7 @@ public class FalconKeyPairGeneratorSpi
 
             if (falconParameters != null && !falconParams.getName().equals(falconParameters.getName()))
             {
-                 throw new InvalidAlgorithmParameterException("key pair generator locked to " + Strings.toUpperCase(falconParameters.getName()));
+                 throw new InvalidAlgorithmParameterException("key pair generator locked to " + getAlgorithm());
             }
 
             engine.init(param);
@@ -92,7 +94,10 @@ public class FalconKeyPairGeneratorSpi
         }
         else
         {
-            return Strings.toLowerCase(SpecUtil.getNameFrom(paramSpec));
+            String name = SpecUtil.getNameFrom(paramSpec);
+
+            // null where the spec has no getName(), which the caller reports as the exception it declares
+            return (name == null) ? null : Strings.toLowerCase(name);
         }
     }
 

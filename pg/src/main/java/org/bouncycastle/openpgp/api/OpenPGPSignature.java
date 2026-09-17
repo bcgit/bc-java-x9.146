@@ -760,7 +760,9 @@ public abstract class OpenPGPSignature
 
             sanitize(issuer, policy);
 
-            return issuer.getCertificate().getPrimaryKey().isBoundAt(date) &&
+            // effectiveness covers the signature's own Signature Expiration Time (RFC9580, section 5.2.3.18)
+            return isEffectiveAt(date) &&
+                    issuer.getCertificate().getPrimaryKey().isBoundAt(date) &&
                     issuer.isBoundAt(date) &&
                     issuer.isSigningKey(date);
         }

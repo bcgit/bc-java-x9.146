@@ -32,19 +32,19 @@ import org.bouncycastle.crypto.util.SubjectPublicKeyInfoFactory;
 
 /**
  * End-to-end walkthrough of a <em>landmark-relative</em> Merkle Tree
- * certificate (Section 6.3 of draft-ietf-plants-merkle-tree-certs) —
+ * certificate (Section 6.4 of draft-ietf-plants-merkle-tree-certs) —
  * the signatureless counterpart of the standalone certificates built in
  * {@link MerkleTreeCertificateExample}.
  *
  * <p>The flow has three parts:</p>
  * <ol>
  *   <li><b>CA side</b> — a four-entry issuance log is built in-memory and a
- *       landmark sequence (Section 6.3.3) publishes landmark 1 at tree size 4.
+ *       landmark sequence (Section 6.4.3) publishes landmark 1 at tree size 4.
  *       Its covering subtrees (Section 4.5) are {@code [0, 2)} and
  *       {@code [2, 4)}; the EE's log entry at index 1 lies in the first, and
  *       {@link LandmarkCertificateManager#buildLandmarkCertificate} wraps its
  *       inclusion proof into a certificate whose {@code MTCProof} carries
- *       <em>no signatures</em> (Section 6.3.4).</li>
+ *       <em>no signatures</em> (Section 6.4.4).</li>
  *   <li><b>Relying-party update channel</b> — before such a certificate can
  *       validate, the relying party must already trust the landmark subtree.
  *       {@link LandmarkCertificateManager.TrustedSubtreeManager} accepts it
@@ -82,7 +82,7 @@ public class LandmarkRelativeCertificateExample
         MerkleTreeHash hashFunc = ca.getHashFunc();
         System.out.println("CA trust anchor ID:    " + ca.getDottedCaId());
 
-        // 2. The CA publishes a landmark sequence (Section 6.3.3): landmark 1
+        // 2. The CA publishes a landmark sequence (Section 6.4.3): landmark 1
         //    at tree size 4, landmark 0 always at size 0. Per Section 4.5 the
         //    interval [0, 4) is covered by the two landmark subtrees [0, 2)
         //    and [2, 4); the EE entry at index 1 lies in the first.

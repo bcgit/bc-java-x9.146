@@ -5,7 +5,7 @@ import org.bouncycastle.util.Arrays;
 /**
  * Immutable identifier for an MTC issuance-log subtree window: the CA that
  * operates the log, the log number (the upper 16 bits of the cert serial per
- * Section 6.1 of draft-ietf-plants-merkle-tree-certs) and the subtree's
+ * Section 6.2 of draft-ietf-plants-merkle-tree-certs) and the subtree's
  * {@code [start, end)} index range (uint48). The bound {@link MTCCertAuth}
  * lets the log derive its own binary trust anchor ID via
  * {@link #getLogId()}, so callers can pass a single {@code MTCLog} where they

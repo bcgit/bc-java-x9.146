@@ -1,6 +1,7 @@
 package org.bouncycastle.pqc.jcajce.provider.aimer;
 
 import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidParameterException;
 import java.security.KeyPair;
 import java.security.SecureRandom;
 import java.security.spec.AlgorithmParameterSpec;
@@ -55,13 +56,19 @@ public class AIMerKeyPairGeneratorSpi
     {
         super(aimerParameters.getName());
         this.aimerParameters = aimerParameters;
+
+        param = new AIMerKeyGenerationParameters(random, aimerParameters);
+
+        engine.init(param);
+        initialised = true;
     }
 
     public void initialize(
         int strength,
         SecureRandom random)
     {
-        throw new IllegalArgumentException("use AlgorithmParameterSpec");
+        // what the JCA specifies here; it extends IllegalArgumentException, so catches still match
+        throw new InvalidParameterException("use AlgorithmParameterSpec");
     }
 
     public void initialize(
@@ -73,7 +80,18 @@ public class AIMerKeyPairGeneratorSpi
 
         if (name != null)
         {
-            param = new AIMerKeyGenerationParameters(random, (AIMerParameters)parameters.get(name));
+            AIMerParameters aimerParams = (AIMerParameters)parameters.get(name);
+            if (aimerParams == null)
+            {
+                throw new InvalidAlgorithmParameterException("unknown parameter set name: " + name);
+            }
+
+            if (aimerParameters != null && !aimerParams.getName().equals(aimerParameters.getName()))
+            {
+                throw new InvalidAlgorithmParameterException("key pair generator locked to " + getAlgorithm());
+            }
+
+            param = new AIMerKeyGenerationParameters(random, aimerParams);
 
             engine.init(param);
             initialised = true;
@@ -93,7 +111,10 @@ public class AIMerKeyPairGeneratorSpi
         }
         else
         {
-            return Strings.toLowerCase(SpecUtil.getNameFrom(paramSpec));
+            String name = SpecUtil.getNameFrom(paramSpec);
+
+            // null where the spec has no getName(), which the caller reports as the exception it declares
+            return (name == null) ? null : Strings.toLowerCase(name);
         }
     }
 

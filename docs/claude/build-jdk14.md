@@ -22,6 +22,8 @@ What is therefore FINE in 1.4-reachable code: generics, `StringBuilder`, varargs
 declarations. What is NOT (the regexes can't fix syntax or APIs): enhanced-for loops,
 autoboxing, enums, covariant return overrides, varargs *call sites*, and any post-1.4 API —
 `String.contains`/`isEmpty`, `System.clearProperty` (use `System.getProperties().remove`),
+`java.nio.charset.StandardCharsets` (Java 7 — use BC `Strings.toUTF8ByteArray` /
+`Strings.toByteArray`; this is the single most common way a new *test* breaks this build),
 `java.util.Arrays.copyOf(Range)` (use BC `Arrays`), `Integer.numberOfLeadingZeros`/`compare`
 (use BC `Integers` or open-code), `Math.scalb`/`getExponent` (Java 6 — see `Dpe`'s private
 bit-twiddling helpers for the pattern), `java.util.concurrent` (use synchronized collections
@@ -80,16 +82,26 @@ assertions. Rules of thumb:
 sh build1-4                                   # build-provider, build, zip-src
 JAVA_HOME=/opt/jdk1.4.2 ant -f ant/jdk14.xml build-test
 /home/dgh/bin/bcsign4 build/artifacts/jdk1.4/jars/*.jar    # this machine only
-JAVA_HOME=/opt/jdk1.4.2 ant -f ant/jdk14.xml test
+JAVA_HOME=/opt/jdk1.4.2 ant -f ant/jdk14.xml test-signed   # NOT "test" — see below
 ```
 
 - JRE 1.4's JCE authenticates providers: unsigned bcprov jars fail with
   "provider BC may not be signed by a trusted party". `bcsign4` signs jdk14 jars with
   `bc1024key` via the 1.4 jarsigner (silently — an empty log is success).
-- **Sign every jar, and sign after `build-test`**: the junit classpath takes the provider
-  from `bcprov-ext-jdk14` plus all other jars in `artifacts/jars`, JRE 1.4 requires all
-  classes in one package to share signer info, and the `test` target's `build-test`
-  dependency re-jars `bctest` (wiping its signature) if anything recompiled.
+- **Sign every jar, and then run `test-signed`, not `test`.** The junit classpath takes the
+  provider from `bcprov-ext-jdk14` plus all other jars in `artifacts/jars`, and JRE 1.4
+  requires all classes in one package to share signer info. `bctest` shares
+  `org.bouncycastle.pqc.crypto.hqc` with the signed provider jar — `GFTest` lives in that
+  main-namespace package to reach the package-private `GF` — so an unsigned `bctest` fails
+  that suite with `SecurityException: class "…hqc.GF"'s signer information does not match
+  signer information of other classes in the same package`. The `test` target **cannot**
+  work here: its `build-test` dependency re-jars `bctest` on *every* invocation (ant's
+  `init` re-copies and re-preprocesses the sources, so javac always has work to do), which
+  strips the signature again after `bcsign4` ran. `test-signed` delegates to the same junit
+  suites with no `build-test` dependency, so it runs against the jars exactly as signed.
+  Don't try to drive `ant -f ant/bc+-build.xml test` directly instead — that file depends on
+  properties `jdk14.xml` supplies (`target.prefix`, `junit.printsummary`, …) and fails
+  immediately with "`${junit.printsummary}` is not a legal value for this attribute".
 - Package-private provider tests (`prov/src/test/java/org/bouncycastle/jce/provider/*.java`
   — `CrlCacheTest` etc.) are excluded in `ant/jdk14.xml` for the same reason `jdk15+.xml`
   excludes them: the test jar cannot share `org.bouncycastle.jce.provider` with the signed
@@ -105,9 +117,82 @@ JAVA_HOME=/opt/jdk1.4.2 ant -f ant/jdk14.xml test
   `/opt/jdk1.4.2/bin/java -Xmx1536m -cp <jars> <test class>` (SimpleTests print
   `<Name>: Okay`); the full pipeline is ~25 minutes, this loop is ~2.
 
+Worth knowing before chasing a legacy-build risk: **LMS/HSS and XMSS/XMSS^MT are both excluded
+from this build** (`**/lms/**`, `**/xmss/**` plus the individual `crypto/params/LMS*` and
+`crypto/signers/LMS*` excludes in `ant/jdk14.xml`), and so from jdk1.3, so changes confined to
+those packages cannot break either. `PrivateKeyFactory` / `PrivateKeyInfoFactory` do have
+jdk1.1 and jdk1.4 overlays, but neither overlay references XMSS or the BDS state.
+
 Tests that genuinely cannot run on 1.4 (post-1.4 JCA APIs, algorithms excluded from the
 distribution) get an `ant/jdk14.xml` exclude — but check the suite wiring first: a
 `TestCase` referenced from a compiled `AllTests` needs either a jdk1.4 `AllTests` overlay
 without the reference or a jdk1.4 stub overlay of the test itself (see the
 `PKCS12PfxPduSecretKeyTest` overlay, which keeps the high-level-builder half and drops the
 JCE-keystore half).
+
+## jdk1.3 layers the jdk1.4 overlays — don't base a jdk1.3 overlay on `src/main/java`
+
+`ant/jdk13.xml` stages **base `src/main/java` → the `src/main/jdk1.4` overlay trees (overwrite)
+→ the `src/main/jdk1.3` overlays (overwrite) → preprocess** (see the `core/src/main/jdk1.4`,
+`prov/src/main/jdk1.4`, … `<fileset>`s copied in `jdk13.xml`). So the jdk1.3 build's effective
+source for a class is the jdk1.4 overlay when one exists, only then the jdk1.3 overlay. Two
+consequences:
+
+- **A file that compiles for jdk1.3 today may have no jdk1.3 overlay at all** — it's being served
+  by a jdk1.4 overlay that already removed the post-1.3 APIs. `jce/provider/BouncyCastleProvider`
+  is the worked example: base uses `java.util.concurrent.ConcurrentHashMap` (Java 5) and
+  `java.util.logging` (Java 1.4), but the **jdk1.4** overlay replaces both and carries no recent-PQC
+  references, so jdk1.3 compiles it fine with no jdk1.3 overlay.
+- **Therefore, when you need a new jdk1.3 overlay of a class, base it on the jdk1.4 overlay if one
+  exists, not on `src/main/java`.** Copying base re-introduces exactly the Java-5/1.4 APIs (and other
+  drift) the jdk1.4 overlay had already fixed, and your jdk1.3 overlay — copied last — wins, so the
+  build breaks on `ConcurrentHashMap`/`Logger`/etc. `find <module>/src/main/jdk1.4 -name <Class>.java`
+  before writing a jdk1.3 overlay.
+
+## Legacy Ant provider jars sweep in main-namespace tests (OSGi junit contamination)
+
+The shared `ant/bc+-build.xml` builds `bcprov` by copying `${src.dir}` into the provider tree with
+`*Test.java` **excludes** (around line 364), and builds `bctest` by copying test sources with
+`*Test.java` **includes** (around line 975). Both used **shallow** globs
+(`org/bouncycastle/crypto/*/*Test.java`, `.../asn1/*/*Test.java` — exactly one directory deep), so a
+unit test living **directly in a main-namespace package** to reach a package-private class
+(`org.bouncycastle.asn1.ASN1TimeFormatTest` for the package-private `ASN1TimeFormat`;
+`org.bouncycastle.crypto.agreement.owl.OwlUtilTest` for `OwlUtil`) is missed by the exclude and
+**swept into `bcprov`**. When such a test `extends junit.framework.TestCase`, bnd then emits
+`Import-Package: …,junit.framework;resolution:=optional` and a `uses:="junit.framework,…"` on the
+enclosing package's `Export-Package` — a production crypto bundle wrongly referencing junit. (The
+Gradle `-jdk18on` jars are unaffected: `src/main` vs `src/test` separation excludes these by
+construction. Verify with `unzip -p <jar> META-INF/MANIFEST.MF | grep junit` and
+`unzip -l <jar> | grep -E 'Test\.class$'`.)
+
+Fix pattern (all in `ant/bc+-build.xml`, so it corrects `bcprov` across jdk15to18 / jdk1.4 / jdk1.3
+at once): broaden the provider-copy excludes to any depth
+(`org/bouncycastle/{crypto,asn1}/**/*Test.java`); and because the bctest-copy **include** globs are
+shallow the same way, a main-namespace test then vanishes from *both* jars — add a targeted bctest
+include (e.g. `**/crypto/agreement/owl/*Test.java`) so it lands in `bctest` (where a
+same-package/same-classloader test keeps its package-private access to the class in `bcprov`).
+`org.bouncycastle.util.test.{SimpleTest,Test}` legitimately ship in `bcprov` and are not `junit`
+subclasses, so they are not the problem; only `*Test extends junit.framework.TestCase` is.
+
+### `org.bouncycastle.tls`-package tests: a targeted include gets them compiled, not run
+
+The same shallow-include problem applies to `bctls`, with a second twist that makes the miss silent
+in both directions. A test in the `org.bouncycastle.tls` package itself (rather than
+`org.bouncycastle.tls.test`) is reached by **no** bctest include — `**/test/*.java` and
+`**/test/*/*.java` cover the `.test` subpackage only — so it is dropped from the distribution
+entirely: never compiled by the real 1.4 javac, never run. `Add13CertificateStatusTest`,
+`AbstractTlsServerResetTest`, `CheckTlsFeaturesExtensionTest` and `DTLSReassemblerTest` all sit in
+that hole today; `SpreadCertificateStatusTest` was given a targeted include
+(`org/bouncycastle/tls/SpreadCertificateStatusTest.java`, next to the `owl` one) to get it at least
+compiled. The contamination half does *not* fire here — the `build-tls` copy in `bc+-build.xml`
+already carries `<exclude name="**/*Test.java"/>`, so unlike `bcprov` these never leak into the
+shipped `bctls` jar (`unzip -l bctls-jdk14-*.jar | grep -cE 'Test\.class'` should stay 0).
+
+Adding the include compiles the class but does **not** run it: the `test` target's batchtest runs
+`**/AllTests.java` out of the staged bctest source tree, and `ant/jdk14.xml` (around line 283)
+excludes `**/tls/AllTests.java` — the only suite referencing these classes. So a targeted include is
+a *compile-floor* check, which is usually what you want from this build anyway. Making the package's
+tests actually execute means staging its `AllTests` too, which then needs every class it references
+included, none of which have been through 1.4 javac — a bigger change, not a one-liner. Note the
+`.test`-subpackage suite is unaffected and does run: `org/bouncycastle/tls/test/AllTests.java` is not
+excluded, so e.g. `Tls13CertificateStatusTest` is both compiled and executed.

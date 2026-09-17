@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
+import javax.security.auth.Destroyable;
+
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters;
@@ -15,12 +17,13 @@ import org.bouncycastle.jcajce.interfaces.MLDSAPublicKey;
 import org.bouncycastle.jcajce.provider.asymmetric.util.KeyUtil;
 import org.bouncycastle.jcajce.spec.MLDSAParameterSpec;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
 import org.bouncycastle.util.Fingerprint;
 import org.bouncycastle.util.Strings;
 import org.bouncycastle.util.encoders.Hex;
 
 public class BCMLDSAPrivateKey
-    implements MLDSAPrivateKey, BCKey
+    implements MLDSAPrivateKey, Destroyable, BCKey
 {
     private static final long serialVersionUID = 1L;
 
@@ -73,6 +76,12 @@ public class BCMLDSAPrivateKey
         {
             BCMLDSAPrivateKey otherKey = (BCMLDSAPrivateKey)o;
 
+            // a destroyed key no longer exposes its value, so it is only equal to itself.
+            if (isDestroyed() || otherKey.isDestroyed())
+            {
+                return false;
+            }
+
             return Arrays.constantTimeAreEqual(params.getEncoded(), otherKey.params.getEncoded());
         }
 
@@ -114,6 +123,13 @@ public class BCMLDSAPrivateKey
 
     public byte[] getEncoded()
     {
+        // KeyUtil.getEncodedPrivateKeyInfo swallows the params' destroyed-state exception and
+        // returns null, so guard here to keep the "key destroyed" contract for this accessor.
+        if (params.isDestroyed())
+        {
+            throw new IllegalStateException("key destroyed");
+        }
+
         if (encoding == null)
         {
             encoding = KeyUtil.getEncodedPrivateKeyInfo(params, attributes);
@@ -174,6 +190,26 @@ public class BCMLDSAPrivateKey
         return buf.toString();
     }
 
+    /**
+     * Destroy this key, zeroizing the secret key material it holds.
+     * <p>
+     * After destruction {@link #isDestroyed()} returns true and the secret-bearing accessors
+     * (such as {@link #getEncoded()}, {@link #getPrivateData()} and {@link #getSeed()}) throw
+     * {@link IllegalStateException}. As the underlying parameter arrays may be shared with keys
+     * derived from this one, destruction invalidates those references too.
+     */
+    public synchronized void destroy()
+    {
+        params.destroy();
+        Arrays.clear(encoding);
+        encoding = null;
+    }
+
+    public boolean isDestroyed()
+    {
+        return params.isDestroyed();
+    }
+
     MLDSAPrivateKeyParameters getKeyParams()
     {
         return params;
@@ -196,6 +232,13 @@ public class BCMLDSAPrivateKey
     {
         out.defaultWriteObject();
 
-        out.writeObject(this.getEncoded());
+        try
+        {
+            out.writeObject(this.getEncoded());
+        }
+        catch (IllegalStateException e)
+        {
+            throw Exceptions.ioException(e.getMessage(), e);
+        }
     }
 }

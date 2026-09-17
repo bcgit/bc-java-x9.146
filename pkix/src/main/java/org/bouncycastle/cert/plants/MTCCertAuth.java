@@ -19,7 +19,7 @@ import org.bouncycastle.util.Arrays;
  *   <li>{@link #issuerName()} — the X.500 Name used in the cert's issuer field</li>
  *   <li>{@link #certSerial(long, long)} — a packed {@code (log_number, index)}
  *       cert serial</li>
- *   <li>{@link #authorityInfo(BigInteger)} — the {@link MTCCertificationAuthority}
+ *   <li>{@link #authorityInfo(BigInteger, BigInteger)} — the {@link MTCCertificationAuthority}
  *       extension value the relying party needs out-of-band</li>
  * </ul>
  *
@@ -114,7 +114,7 @@ public class MTCCertAuth
     /**
      * @param logNumber log number ({@code 1 <= logNumber <= 2^16-1})
      * @param index     entry index in the log ({@code 0 <= index <= 2^48-1})
-     * @return the 64-bit cert serial composed per Section 6.1
+     * @return the 64-bit cert serial composed per Section 6.2
      */
     public BigInteger certSerial(long logNumber, long index)
     {

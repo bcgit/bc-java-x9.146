@@ -22,6 +22,7 @@ import org.bouncycastle.jcajce.PKIXCertStore;
 import org.bouncycastle.jcajce.PKIXExtendedBuilderParameters;
 import org.bouncycastle.jcajce.PKIXExtendedParameters;
 import org.bouncycastle.jcajce.provider.asymmetric.x509.CertificateFactory;
+import org.bouncycastle.util.Properties;
 import org.bouncycastle.x509.ExtendedPKIXBuilderParameters;
 import org.bouncycastle.x509.ExtendedPKIXParameters;
 
@@ -34,6 +35,10 @@ public class PKIXCertPathBuilderSpi
     extends CertPathBuilderSpi
 {
     private final boolean isForCRLCheck;
+
+    private AnnotatedException certPathException;
+    private int maxNodes;
+    private int nodesVisited;
 
     public PKIXCertPathBuilderSpi()
     {
@@ -92,49 +97,55 @@ public class PKIXCertPathBuilderSpi
                     + PKIXExtendedBuilderParameters.class.getName() + ".");
         }
 
-        Collection targets;
-        Iterator targetIter;
-        List certPathList = new ArrayList();
-        X509Certificate cert;
+        certPathException = null;
+        maxNodes = Properties.asInteger(Properties.X509_MAX_CERT_PATH_BUILD_NODES, 262144);
+        nodesVisited = 0;
 
-        // search target certificates
-        targets = CertPathValidatorUtilities.findTargets(paramsPKIX);
-
-        CertPathBuilderResult result = null;
-
-        // check all potential target certificates
-        targetIter = targets.iterator();
-        while (targetIter.hasNext() && result == null)
+        try
         {
-            cert = (X509Certificate) targetIter.next();
-            result = build(cert, paramsPKIX, certPathList);
-        }
+            List certPathList = new ArrayList();
 
-        if (result == null && certPathException != null)
-        {
-            if (certPathException instanceof AnnotatedException)
+            // check all potential target certificates
+            Collection targets = CertPathValidatorUtilities.findTargets(paramsPKIX);
+            Iterator targetIter = targets.iterator();
+            while (targetIter.hasNext())
             {
-                throw new CertPathBuilderException(certPathException.getMessage(), certPathException.getCause());
+                X509Certificate tbvCert = (X509Certificate)targetIter.next();
+
+                CertPathBuilderResult result = build(tbvCert, paramsPKIX, certPathList);
+                if (result != null)
+                {
+                    return result;
+                }
             }
-            throw new CertPathBuilderException(
-                "Possible certificate chain could not be validated.",
-                certPathException);
         }
-
-        if (result == null && certPathException == null)
+        catch (NodeBudgetExceededException e)
         {
-            throw new CertPathBuilderException(
-                "Unable to find certificate chain.");
+            throw new CertPathBuilderException(e.getMessage());
         }
 
-        return result;
-    }
+        if (certPathException == null)
+        {
+            throw new CertPathBuilderException("Unable to find certificate chain.");
+        }
 
-    private Exception certPathException;
+        throw new CertPathBuilderException(certPathException.getMessage(), certPathException.getCause());
+    }
 
     protected CertPathBuilderResult build(X509Certificate tbvCert,
         PKIXExtendedBuilderParameters pkixParams, List tbvPath)
     {
+        // Keep the depth-first search bounded: candidate issuers are matched by subject name
+        // only, so a store full of like-named certificates that never chain to a trust anchor
+        // could otherwise be explored as a very large number of partial paths (see
+        // Properties.X509_MAX_CERT_PATH_BUILD_NODES).
+        if (++nodesVisited > maxNodes)
+        {
+            throw new NodeBudgetExceededException(
+                "certification path build exceeded node limit set by "
+                    + Properties.X509_MAX_CERT_PATH_BUILD_NODES);
+        }
+
         // If tbvCert is readily present in tbvPath, it indicates having run
         // into a cycle in the
         // PKI graph.
@@ -157,12 +168,8 @@ public class PKIXCertPathBuilderSpi
             }
         }
 
-        tbvPath.add(tbvCert);
-
         CertificateFactory cFact;
         PKIXCertPathValidatorSpi validator;
-        CertPathBuilderResult builderResult = null;
-
         try
         {
             cFact = new CertificateFactory();
@@ -173,6 +180,8 @@ public class PKIXCertPathBuilderSpi
             // cannot happen
             throw new RuntimeException("Exception creating support classes.");
         }
+
+        tbvPath.add(tbvCert);
 
         try
         {
@@ -197,25 +206,19 @@ public class PKIXCertPathBuilderSpi
 
                 try
                 {
-                    result = (PKIXCertPathValidatorResult) validator.engineValidate(
-                        certPath, pkixParams);
+                    result = (PKIXCertPathValidatorResult)validator.engineValidate(certPath, pkixParams);
                 }
                 catch (Exception e)
                 {
-                    throw new AnnotatedException(
-                        "Certification path could not be validated.", e);
+                    throw new AnnotatedException("Certification path could not be validated.", e);
                 }
 
-                return new PKIXCertPathBuilderResult(certPath, result
-                    .getTrustAnchor(), result.getPolicyTree(), result
-                    .getPublicKey());
-
+                return new PKIXCertPathBuilderResult(certPath, result.getTrustAnchor(), result.getPolicyTree(),
+                    result.getPublicKey());
             }
             else
             {
                 List stores = new ArrayList();
-
-
                 stores.addAll(pkixParams.getBaseParameters().getCertificateStores());
 
                 // add additional X.509 stores from locations in certificate
@@ -231,8 +234,7 @@ public class PKIXCertPathBuilderSpi
                         e);
                 }
                 Collection issuers = new HashSet();
-                // try to get the issuer certificate from one
-                // of the stores
+                // try to get the issuer certificate from one of the stores
                 try
                 {
                     issuers.addAll(CertPathValidatorUtilities.findIssuerCerts(tbvCert, pkixParams.getBaseParameters().getCertStores(), stores));
@@ -249,11 +251,15 @@ public class PKIXCertPathBuilderSpi
                         "No issuer certificate for certificate in certification path found.");
                 }
                 Iterator it = issuers.iterator();
-
-                while (it.hasNext() && builderResult == null)
+                while (it.hasNext())
                 {
                     X509Certificate issuer = (X509Certificate) it.next();
-                    builderResult = build(issuer, pkixParams, tbvPath);
+
+                    CertPathBuilderResult builderResult = build(issuer, pkixParams, tbvPath);
+                    if (builderResult != null)
+                    {
+                        return builderResult;
+                    }
                 }
             }
         }
@@ -261,11 +267,25 @@ public class PKIXCertPathBuilderSpi
         {
             certPathException = e;
         }
-        if (builderResult == null)
+        finally
         {
+            // Undo the add above on every exit from this frame - including the success path (the CertPath was built
+            // from a copy of tbvPath) and an unwinding NodeBudgetExceededException.
             tbvPath.remove(tbvCert);
         }
-        return builderResult;
+        return null;
     }
 
+    /**
+     * Unchecked so it unwinds the whole recursive build (which catches only the checked
+     * AnnotatedException) back to engineBuild, where it becomes a CertPathBuilderException.
+     */
+    private static class NodeBudgetExceededException
+        extends RuntimeException
+    {
+        NodeBudgetExceededException(String message)
+        {
+            super(message);
+        }
+    }
 }

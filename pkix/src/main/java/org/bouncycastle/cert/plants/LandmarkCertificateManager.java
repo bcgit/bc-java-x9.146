@@ -23,7 +23,7 @@ import org.bouncycastle.util.Arrays;
 
 /**
  * Issuance- and relying-party-side helpers for landmark subtrees, per
- * Sections 6.3 and 7.4 of draft-ietf-plants-merkle-tree-certs.
+ * Sections 6.4 and 7.4 of draft-ietf-plants-merkle-tree-certs.
  *
  * <p>{@link #buildLandmarkCertificate} produces a landmark-relative
  * certificate (an X.509 wrapper around an {@link MTCProof} whose inclusion
@@ -37,9 +37,9 @@ public class LandmarkCertificateManager
 {
     /**
      * Builds a landmark-relative certificate (no signatures, only an inclusion
-     * proof to a predistributed landmark subtree, Section 6.3.4). The
+     * proof to a predistributed landmark subtree, Section 6.4.4). The
      * certificate serial number is packed from the log number and the entry's
-     * index per Section 6.1: {@code serial = (log_number << 48) | index}.
+     * index per Section 6.2: {@code serial = (log_number << 48) | index}.
      *
      * @param logNumber            number of the issuance log containing the entry
      *                             ({@code 1 <= logNumber <= 2^16-1})
@@ -314,7 +314,7 @@ public class LandmarkCertificateManager
                     continue;
                 }
 
-                // A checkpoint is a subtree with start == 0 (Section 5.4.1).
+                // A checkpoint is a subtree with start == 0 (Section 5.2).
                 byte[] cosignedMessage = MTCCosignedMessage.encode(
                     logId, 0L, checkpoint.treeSize, checkpoint.rootHash, cosignerId);
 

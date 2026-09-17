@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1Object;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
@@ -24,6 +25,7 @@ import org.bouncycastle.asn1.teletrust.TeleTrusTObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.X509ObjectIdentifiers;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
+import org.bouncycastle.util.Strings;
 
 /**
  * Default implementation of {@link DigestAlgorithmIdentifierFinder}, returning
@@ -397,23 +399,36 @@ public class DefaultDigestAlgorithmIdentifierFinder
         }
     }
 
+    public boolean hasAlgorithm(String digAlgName)
+    {
+        // digestNameToOids, not digestOidToAlgIds: the latter is keyed by ASN1ObjectIdentifier, so
+        // a name could never be found in it. This has to accept exactly what find(String) does -
+        // the name table, then a dotted OID, which find(ASN1ObjectIdentifier) names whatever it is.
+        if (!this.digestNameToOids.containsKey(Strings.toUpperCase(digAlgName)))
+        {
+             return ASN1ObjectIdentifier.tryFromID(digAlgName) != null;
+        }
+
+        return true;
+    }
+
     public AlgorithmIdentifier find(String digAlgName)
     {
-        ASN1ObjectIdentifier oid = (ASN1ObjectIdentifier)digestNameToOids.get(digAlgName);
+        ASN1ObjectIdentifier oid = (ASN1ObjectIdentifier)digestNameToOids.get(Strings.toUpperCase(digAlgName));
         if (oid != null)
         {
             return find(oid);
         }
 
-        try
+        oid = ASN1ObjectIdentifier.tryFromID(digAlgName);
+        if (oid != null)
         {
-            return find(new ASN1ObjectIdentifier(digAlgName));
-        }
-        catch (RuntimeException e)
-        {
-            // ignore - tried it but it didn't work...
+            return find(oid);
         }
 
-        return null;
+        // NOTE: only the name lookup reports failure this way. find(AlgorithmIdentifier) still
+        // returns null when it cannot derive a digest from a signature algorithm - github #1767
+        // depends on that, and testCompositeMLDsaDigestLookupIssue1767 pins it.
+        throw new IllegalArgumentException("Unknown digest algorithm requested: " + digAlgName);
     }
 }

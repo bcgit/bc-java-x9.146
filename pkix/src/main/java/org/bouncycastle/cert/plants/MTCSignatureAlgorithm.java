@@ -1,8 +1,8 @@
 package org.bouncycastle.cert.plants;
 
 /**
- * String constants for the cosigner signature algorithms defined by Section
- * 5.3.2 of draft-ietf-plants-merkle-tree-certs. These are the canonical names
+ * String constants for the cosigner signature algorithms permitted by Section
+ * 5.3.3 of draft-ietf-plants-merkle-tree-certs. These are the canonical names
  * passed to {@link MTCSignatureVerifier} implementations (and their concrete
  * {@code Bc*} / {@code Jca*} forms) to select a signature primitive.
  *

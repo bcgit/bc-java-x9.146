@@ -11,7 +11,10 @@ import org.bouncycastle.util.Integers;
 
 /**
  * XMSS Parameters.
+ *
+ * @deprecated use {@link org.bouncycastle.crypto.params.XMSSParameters} instead.
  */
+@Deprecated
 public final class XMSSParameters
 {
     private static final Map<Integer, XMSSParameters> paramsLookupTable;

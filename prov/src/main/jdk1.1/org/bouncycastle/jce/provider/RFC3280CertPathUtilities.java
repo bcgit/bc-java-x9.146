@@ -538,7 +538,9 @@ class RFC3280CertPathUtilities
             }
             catch (CertPathBuilderException e)
             {
-                throw new AnnotatedException("CertPath for CRL signer failed to validate.", e);
+                throw new AnnotatedException(
+                    "CertPath for CRL signer failed to validate. Per RFC 5280 sec. 6.3.3 (f) the CRL issuer's"
+                        + " certification path must be anchored at the same trust anchor as the certificate being checked.", e);
             }
             catch (CertPathValidatorException e)
             {
@@ -1854,6 +1856,18 @@ class RFC3280CertPathUtilities
             catch (AnnotatedException e)
             {
                 lastException = e;
+            }
+            catch (RecoverableCertPathValidatorException e)
+            {
+                // The fallback runs without the CRLDP-derived stores, so finding nothing here says
+                // nothing about the distribution point attempts above (github #2427).
+                if (lastException == null)
+                {
+                    throw e;
+                }
+                throw new RecoverableCertPathValidatorException(
+                    e.getMessage() + ". The CRL distribution points of the certificate were tried first and failed: "
+                        + lastException.getMessage(), lastException, e.getCertPath(), e.getIndex());
             }
         }
 

@@ -20,11 +20,6 @@ public class FrodoKEMPublicKeyParameters
         this.publicKey = Arrays.clone(publicKey);
     }
 
-    public byte[] getPublicKey()
-    {
-        return Arrays.clone(publicKey);
-    }
-
     public byte[] getEncoded()
     {
         return Arrays.clone(publicKey);

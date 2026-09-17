@@ -287,11 +287,14 @@
                 <copy toDir="@{toDir}">
                      <fileset dir="${basedir}">
                          <include name="*.html" />
+                         <include name="CONTRIBUTORS.md" />
                      </fileset>
                 </copy>
                 <copy toDir="@{toDir}/docs">
                      <fileset dir="${basedir}/docs">
-                         <include name="**/*.html" />
+                         <include name="index.md" />
+                         <include name="releasenotes.md" />
+                         <include name="specifications.md" />
                      </fileset>
                 </copy>
             </sequential>
@@ -329,6 +332,10 @@
                  <include name="org/bouncycastle/pqc/asn1/**/*.java" />
                  <exclude name="org/bouncycastle/pqc/**/*Tests.java" />
                  <exclude name="org/bouncycastle/pqc/**/AllTests*.java" />
+                 <exclude name="org/bouncycastle/crypto/params/*Tests.java" />
+                 <exclude name="org/bouncycastle/crypto/signers/lms/*Tests.java" />
+                 <exclude name="org/bouncycastle/crypto/signers/xmss/*Tests.java" />
+                 <exclude name="org/bouncycastle/crypto/params/LMSVectorUtils.java" />
                  <exclude name="org/bouncycastle/pqc/**/LMSVectorUtils.java" />
                  <exclude name="org/bouncycastle/crypto/test/AllTestsSlow.java" />
                  <exclude name="org/bouncycastle/crypto/test/AllTestsOpenBSDBCrypt.java" />
@@ -343,7 +350,12 @@
             fork="true"
             debug="${release.debug}">
             <classpath>
-                <path refid="project.classpath" /> 
+                <path refid="project.classpath" />
+                <!-- jdk1.3: the clean-room jce-jdk13 jar carries the javax.security.auth /
+                     javax.crypto backport that core (e.g. SecretWithEncapsulation) references. -->
+                <fileset dir="${artifacts.jars.dir}">
+                    <include name="**/*.jar" />
+                </fileset>
             </classpath>
         </javac>
     </target>
@@ -371,11 +383,15 @@
                  <exclude name="org/bouncycastle/**/AllTests.java" />
                  <exclude name="org/bouncycastle/test/*.java" />
                  <exclude name="org/bouncycastle/**/test/**" />
-                 <exclude name="org/bouncycastle/crypto/*/*Test.java" />
-                 <exclude name="org/bouncycastle/asn1/*/*Test.java" />
+                 <exclude name="org/bouncycastle/crypto/**/*Test.java" />
+                 <exclude name="org/bouncycastle/asn1/**/*Test.java" />
                  <exclude name="org/bouncycastle/util/*Test.java" />
                  <exclude name="org/bouncycastle/pqc/**/*Tests.java" />
                  <exclude name="org/bouncycastle/pqc/**/*Test.java" />
+                 <exclude name="org/bouncycastle/crypto/params/*Tests.java" />
+                 <exclude name="org/bouncycastle/crypto/signers/lms/*Tests.java" />
+                 <exclude name="org/bouncycastle/crypto/signers/xmss/*Tests.java" />
+                 <exclude name="org/bouncycastle/crypto/params/LMSVectorUtils.java" />
                  <exclude name="org/bouncycastle/pqc/**/LMSVectorUtils.java" />
                  <exclude name="**/*.crl" />
                  <exclude name="org/bouncycastle/util/utiltest/**" />
@@ -420,6 +436,7 @@
                  <exclude name="org/bouncycastle/gpg/**" />
                  <exclude name="org/bouncycastle/its/**" />
                  <exclude name="org/bouncycastle/oer/**" />
+                 <exclude name="org/bouncycastle/cbor/**" />
                  <exclude name="org/bouncycastle/openpgp/**" />
                  <exclude name="org/bouncycastle/openssl/**" />
                  <exclude name="org/bouncycastle/mozilla/**" />
@@ -431,11 +448,11 @@
                  <exclude name="org/bouncycastle/tls/**" />
                  <exclude name="org/bouncycastle/jsse/**" />
                  <exclude name="org/bouncycastle/**/CrlCacheTest.java" />
+                 <exclude name="org/bouncycastle/**/OcspCacheTest.java" />
                  <exclude name="org/bouncycastle/**/MultiValuedRDNEmailTest.java" />
              </fileset>
              <fileset dir="${src.dir}">
                  <include name="org/bouncycastle/x509/CertPathReviewerMessages*.properties" />
-                 <include name="org/bouncycastle/pqc/crypto/picnic/lowmc.properties" />
              </fileset>
              <fileset dir="${src.dir}" includes="org/bouncycastle/util/test/*.java" />
              <fileset dir="${src.dir}" includes="org/bouncycastle/util/*.java" />
@@ -519,7 +536,12 @@
                  <exclude name="org/bouncycastle/crypto/*/*Test.java" />
                  <exclude name="org/bouncycastle/util/*Test.java" />
                  <exclude name="org/bouncycastle/pqc/**/*Tests.java" />
+                 <exclude name="org/bouncycastle/pqc/**/*Test.java" />
                  <exclude name="org/bouncycastle/pqc/**/AllTests*.java" />
+                 <exclude name="org/bouncycastle/crypto/params/*Tests.java" />
+                 <exclude name="org/bouncycastle/crypto/signers/lms/*Tests.java" />
+                 <exclude name="org/bouncycastle/crypto/signers/xmss/*Tests.java" />
+                 <exclude name="org/bouncycastle/crypto/params/LMSVectorUtils.java" />
                  <exclude name="org/bouncycastle/pqc/**/LMSVectorUtils.java" />
                  <exclude name="**/*.crl" />
                  <exclude name="**/*.key" />
@@ -538,6 +560,7 @@
                  <exclude name="org/bouncycastle/util/utiltest/**" />
                  <exclude name="org/bouncycastle/mime/**" />
                  <exclude name="org/bouncycastle/mail/**" />
+                 <exclude name="org/bouncycastle/cades/**" />
                  <exclude name="org/bouncycastle/cms/**" />
                  <exclude name="org/bouncycastle/pkix/**" />
                  <exclude name="org/bouncycastle/dvcs/**" />
@@ -557,6 +580,9 @@
                  <exclude name="org/bouncycastle/voms/**" />
                  <exclude name="org/bouncycastle/tls/**" />
                  <exclude name="org/bouncycastle/jsse/**" />
+                 <exclude name="org/bouncycastle/**/CrlCacheTest.java" />
+                 <exclude name="org/bouncycastle/**/OcspCacheTest.java" />
+                 <exclude name="org/bouncycastle/**/MultiValuedRDNEmailTest.java" />
                  <exclude name="org/apache/**/*.java" />
              </fileset>
              <fileset dir="${src.dir}" includes="org/bouncycastle/util/test/*.java" />
@@ -568,6 +594,8 @@
                 <exclude name="**/legacy/**/NTRU*.class" />
                 <exclude name="**/legacy/**/ntru/**/*.class" />
                 <exclude name="org/bouncycastle/pqc/**/*Tests.class" />
+                <exclude name="org/bouncycastle/crypto/**/*Tests.class" />
+                <exclude name="org/bouncycastle/crypto/params/LMSVectorUtils.class" />
                 <exclude name="org/bouncycastle/pqc/**/LMSVectorUtils.class" />
                 <include name="**/*.properties"/>
             </jarFileSet>
@@ -803,7 +831,6 @@
                  <include name="org/bouncycastle/asn1/ess/**" />
                  <include name="org/bouncycastle/asn1/est/**" />
                  <include name="org/bouncycastle/asn1/gnu/**" />
-                 <include name="org/bouncycastle/asn1/iana/**" />
                  <include name="org/bouncycastle/asn1/icao/**" />
                  <include name="org/bouncycastle/asn1/isara/**" />
                  <include name="org/bouncycastle/asn1/isismtt/**" />
@@ -819,6 +846,7 @@
                  <include name="org/bouncycastle/asn1/smime/**" />
                  <include name="org/bouncycastle/asn1/tsp/**" />
                  <include name="org/bouncycastle/oer/**" />
+                 <include name="org/bouncycastle/cbor/**" />
              </fileset>
         </copy>
 
@@ -876,6 +904,8 @@
                  <exclude name="**/*Tests.java" />
                  <exclude name="**/test/*.*" />
                  <exclude name="**/test/**.*" />
+                 <!-- the two above only reach one level below test/; est/test/san holds .pem fixtures two levels down -->
+                 <exclude name="**/test/**" />
              </fileset>
         </copy>
 
@@ -930,6 +960,8 @@
                  <exclude name="**/*Test.java" />
                  <exclude name="**/*Tests.java" />
                  <exclude name="**/test/*.java" />
+                 <!-- src.dir merges main and test sources, so test files are excluded by name; OpenPGPTestKeys lives in the main-namespace openpgp package and ends in Keys.java, matching none of the patterns above. -->
+                 <exclude name="**/*TestKeys.java" />
              </fileset>
         </copy>
 
@@ -978,6 +1010,12 @@
              <fileset dir="${src.dir}" includes="**/*AllTests.java" />
              <fileset dir="${src.dir}" includes="**/math/**/*Test.java" />
              <fileset dir="${src.dir}" includes="**/crypto/*/*Test.java" />
+             <fileset dir="${src.dir}" includes="**/crypto/agreement/owl/*Test.java" />
+             <fileset dir="${src.dir}" includes="org/bouncycastle/tls/SpreadCertificateStatusTest.java" />
+             <!-- main-namespace test fixture the bcpg copy now excludes; the openpgp.api tests resolve it from here -->
+             <fileset dir="${src.dir}" includes="org/bouncycastle/openpgp/OpenPGPTestKeys.java" />
+             <fileset dir="${src.dir}" includes="**/pqc/crypto/hqc/*Test.java" />
+             <fileset dir="${src.dir}" includes="**/pqc/math/ntru/*Test.java" />
              <fileset dir="${src.dir}" includes="**/tsp/*UnitTest.java" />
              <fileset dir="${src.dir}" includes="**/utiltest/*Test.java" />
              <fileset dir="${src.dir}" includes="**/util/io/pem/*Test.java" />
@@ -1015,9 +1053,13 @@
         </copy>
 
         <delete file="${test.target.src.dir}/org/bouncycastle/pqc/crypto/lms/AllTests.java" />
+        <delete file="${test.target.src.dir}/org/bouncycastle/crypto/params/AllTests.java" />
+        <delete file="${test.target.src.dir}/org/bouncycastle/crypto/signers/lms/AllTests.java" />
+        <delete file="${test.target.src.dir}/org/bouncycastle/crypto/signers/xmss/AllTests.java" />
         <delete file="${test.target.src.dir}/org/bouncycastle/pqc/crypto/mayo/AllTests.java" />
         <delete file="${test.target.src.dir}/org/bouncycastle/est/AllTests.java" />
         <delete file="${test.target.src.dir}/org/bouncycastle/gpg/keybox/AllTests.java" />
+        <delete file="${test.target.src.dir}/org/bouncycastle/crypto/agreement/owl/AllTests.java" />
         <delete file="${test.target.src.dir}/org/bouncycastle/x509/CertPathReviewerMessages_de.properties" />
         <delete file="${test.target.src.dir}/org/bouncycastle/x509/CertPathReviewerMessages.properties" />
 
@@ -1056,6 +1098,11 @@
                 </fileset>
             </classpath>
             <sysproperty key="test.java.version.prefix" value="${env.JAVA_VERSION_PREFIX}" />
+            <!-- the PKCS#12 keystore writes with a 600,000 iteration PBE by default and BCFKS
+                 with a 51,200 iteration PBKDF2, several seconds per store; the tests are not
+                 measuring the KDF, so write cheap files -->
+            <sysproperty key="org.bouncycastle.pkcs12.store_it_count" value="4096" />
+            <sysproperty key="org.bouncycastle.bcfks.store_it_count" value="1024" />
 
             <formatter type="xml" />
             <batchtest todir="${artifacts.reports.xml.dir}" unless="testcase">
@@ -1084,6 +1131,12 @@
                     <exclude name="**/bcprov-jdk*.jar" />
                 </fileset>
             </classpath>
+
+            <!-- the PKCS#12 keystore writes with a 600,000 iteration PBE by default and BCFKS
+                 with a 51,200 iteration PBKDF2, several seconds per store; the tests are not
+                 measuring the KDF, so write cheap files -->
+            <sysproperty key="org.bouncycastle.pkcs12.store_it_count" value="4096" />
+            <sysproperty key="org.bouncycastle.bcfks.store_it_count" value="1024" />
 
             <formatter type="xml" />
             <test name="${testcase}" todir="${artifacts.reports.xml.dir}" if="testcase" />
@@ -1301,8 +1354,11 @@
                 <package name="org.bouncycastle.asn1.*" />
                 <package name="org.bouncycastle.oer" />
                 <package name="org.bouncycastle.oer.*" />
+                <package name="org.bouncycastle.cbor" />
+                <package name="org.bouncycastle.cbor.c509" />
                 <group title="Extra ASN.1 Packages" packages="org.bouncycastle.asn1*" />
                 <group title="Extra ASN.1 Packages (OER)" packages="org.bouncycastle.oer*" />
+                <group title="CBOR and C509 Packages" packages="org.bouncycastle.cbor*" />
             </docElements>
         </compile-doc>
 
@@ -1330,6 +1386,7 @@
                  <include name="org/bouncycastle/operator/**/*.html" />
                  <include name="org/bouncycastle/mozilla/**/*.html" />
                  <include name="org/bouncycastle/tsp/**/*.html" />
+                 <exclude name="**/test/**" />
              </fileset>
         </copy>
 

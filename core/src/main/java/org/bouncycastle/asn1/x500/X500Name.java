@@ -51,8 +51,8 @@ public class X500Name
     /**
      * Return a X500Name based on the passed in tagged object.
      * 
-     * @param obj tag object holding name.
-     * @param explicit true if explicitly tagged false otherwise.
+     * @param taggedObject tag object holding name.
+     * @param declaredExplicit true if explicitly tagged false otherwise.
      * @return the X500Name
      */
     public static X500Name getInstance(ASN1TaggedObject taggedObject, boolean declaredExplicit)
@@ -250,9 +250,11 @@ public class X500Name
             return hashCodeValue;
         }
 
-        isHashCodeCalculated = true;
-
+        // set only once the value is in hand: marking it calculated first meant a style that threw
+        // left every later call returning 0, turning one loud failure into a silent collision source
         hashCodeValue = style.calculateHashCode(this);
+
+        isHashCodeCalculated = true;
 
         return hashCodeValue;
     }

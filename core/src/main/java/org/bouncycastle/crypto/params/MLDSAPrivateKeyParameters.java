@@ -1,10 +1,13 @@
 package org.bouncycastle.crypto.params;
 
+import javax.security.auth.Destroyable;
+
 import org.bouncycastle.crypto.signers.mldsa.MLDSAEngine;
 import org.bouncycastle.util.Arrays;
 
 public class MLDSAPrivateKeyParameters
     extends MLDSAKeyParameters
+    implements Destroyable
 {
     public static final int BOTH = 0;
     public static final int SEED_ONLY = 1;
@@ -21,6 +24,8 @@ public class MLDSAPrivateKeyParameters
     private final byte[] seed;
 
     private final int prefFormat;
+
+    private volatile boolean destroyed;
 
     public MLDSAPrivateKeyParameters(MLDSAParameters params, byte[] encoding)
     {
@@ -51,6 +56,15 @@ public class MLDSAPrivateKeyParameters
         super(true, params);
 
         MLDSAEngine eng = MLDSAEngine.getInstance(params, null);
+
+        int expandedKeyLength = 2 * MLDSAEngine.SeedBytes + MLDSAEngine.TrBytes
+            + (eng.getDilithiumL() + eng.getDilithiumK()) * eng.getDilithiumPolyEtaPackedBytes()
+            + eng.getDilithiumK() * MLDSAEngine.DilithiumPolyT0PackedBytes;
+        if (encoding.length != MLDSAEngine.SeedBytes && encoding.length != expandedKeyLength)
+        {
+            throw new IllegalArgumentException("'encoding' has invalid length");
+        }
+
         if (encoding.length == MLDSAEngine.SeedBytes)
         {
             byte[][] keyDetails = eng.generateKeyPairInternal(encoding);
@@ -146,12 +160,12 @@ public class MLDSAPrivateKeyParameters
 
     public byte[] getEncoded()
     {
-        return Arrays.concatenate(new byte[][]{rho, k, tr, s1, s2, t0});
+        return cloneWithCheck(Arrays.concatenate(new byte[][]{rho, k, tr, s1, s2, t0}));
     }
 
     public byte[] getK()
     {
-        return Arrays.clone(k);
+        return cloneWithCheck(k);
     }
 
     /**
@@ -166,12 +180,12 @@ public class MLDSAPrivateKeyParameters
 
     public byte[] getPublicKey()
     {
-        return MLDSAPublicKeyParameters.getEncoded(rho, t1);
+        return cloneWithCheck(MLDSAPublicKeyParameters.getEncoded(rho, t1));
     }
 
     public byte[] getSeed()
     {
-        return Arrays.clone(seed);
+        return cloneWithCheck(seed);
     }
 
     public MLDSAPublicKeyParameters getPublicKeyParameters()
@@ -180,37 +194,76 @@ public class MLDSAPrivateKeyParameters
         {
             return null;
         }
-        
+
         return new MLDSAPublicKeyParameters(getParameters(), rho, t1);
     }
 
     public byte[] getRho()
     {
-        return Arrays.clone(rho);
+        return cloneWithCheck(rho);
     }
 
     public byte[] getS1()
     {
-        return Arrays.clone(s1);
+        return cloneWithCheck(s1);
     }
 
     public byte[] getS2()
     {
-        return Arrays.clone(s2);
+        return cloneWithCheck(s2);
     }
 
     public byte[] getT0()
     {
-        return Arrays.clone(t0);
+        return cloneWithCheck(t0);
     }
 
     public byte[] getT1()
     {
-        return Arrays.clone(t1);
+        return cloneWithCheck(t1);
     }
 
     public byte[] getTr()
     {
-        return Arrays.clone(tr);
+        return cloneWithCheck(tr);
+    }
+
+    /**
+     * Zeroize the secret key material held by this object.
+     * <p>
+     * Note: the internal arrays may be shared with other parameter objects derived from this one
+     * (for example via {@link #getParametersWithFormat(int)}); destroying them here invalidates
+     * those objects too.
+     */
+    public synchronized void destroy()
+    {
+        if (!destroyed)
+        {
+            destroyed = true;
+            Arrays.clear(rho);
+            Arrays.clear(k);
+            Arrays.clear(tr);
+            Arrays.clear(s1);
+            Arrays.clear(s2);
+            Arrays.clear(t0);
+            Arrays.clear(t1);
+            Arrays.clear(seed);
+        }
+    }
+
+    public boolean isDestroyed()
+    {
+        return destroyed;
+    }
+
+    private byte[] cloneWithCheck(byte[] fieldValue)
+    {
+        byte[] rv = Arrays.clone(fieldValue);
+        if (destroyed)
+        {
+            throw new IllegalStateException("key destroyed");
+        }
+
+        return rv;
     }
 }

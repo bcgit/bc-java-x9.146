@@ -29,7 +29,7 @@ import org.bouncycastle.util.test.SimpleTest;
 /**
  * Tests for the new features added in draft-ietf-plants-merkle-tree-certs-04:
  * trust anchor ID helpers (Section 5.1), CA certificate representation
- * (Section 5.5), and landmark sequence parsing (Section 6.3.3).
+ * (Section 5.5), and landmark sequence parsing (Section 6.4.3).
  */
 public class MTCNewFeaturesTest
     extends SimpleTest
@@ -147,7 +147,7 @@ public class MTCNewFeaturesTest
             }
         });
 
-        // Serial composition per Section 6.1: serial = (log_number << 48) | index,
+        // Serial composition per Section 6.2: serial = (log_number << 48) | index,
         // "positive and at most 2^64-1". log_number >= 32768 overflows a signed
         // long shift, so the composition must be done in BigInteger.
         isTrue("small serial",

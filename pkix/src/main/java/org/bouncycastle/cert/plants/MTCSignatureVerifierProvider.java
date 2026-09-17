@@ -3,6 +3,7 @@ package org.bouncycastle.cert.plants;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.math.BigInteger;
 
 import org.bouncycastle.asn1.plants.MTCObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -11,7 +12,6 @@ import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.operator.ContentVerifier;
 import org.bouncycastle.operator.ContentVerifierProvider;
 import org.bouncycastle.util.Arrays;
-import org.bouncycastle.util.BigIntegers;
 
 /**
  * Single-cosigner {@link ContentVerifierProvider} adapter for MTC verification.
@@ -33,22 +33,28 @@ import org.bouncycastle.util.BigIntegers;
  *       — {@link #get(AlgorithmIdentifier)} returns a wrapping verifier that
  *       integrates with
  *       {@link X509CertificateHolder#isSignatureValid(ContentVerifierProvider)
- *       certHolder.isSignatureValid(provider)} for an MTC certificate:
+ *       certHolder.isSignatureValid(provider)} for an MTC certificate,
+ *       following Section 7.2 of draft-ietf-plants-merkle-tree-certs:
  *       <ol>
  *         <li>The DER-encoded TBSCertificate is captured from
  *             {@link ContentVerifier#getOutputStream()}.</li>
  *         <li>{@link ContentVerifier#verify(byte[])} receives the MTCProof
- *             bytes (the cert's {@code signatureValue}), reparses them,
- *             recomputes the subtree hash via
- *             {@link MerkleTreeCertificateValidator#computeSubtreeHash},
- *             builds the {@link MTCCosignedMessage} for the MTCSignature whose
+ *             bytes (the cert's {@code signatureValue}), checks the
+ *             TBSCertificate names {@code id-alg-mtcProof}, takes the entry
+ *             index and log number from the serial, recomputes the leaf hash
+ *             (including the MTCProof's extensions) via
+ *             {@link MerkleTreeCertificateValidator#computeEntryHash(byte[], byte[], MerkleTreeHash)},
+ *             evaluates the inclusion proof for the MTCProof's subtree, builds
+ *             the {@link MTCCosignedMessage} for the MTCSignature whose
  *             {@code cosigner_id} matches the wrapped verifier's
  *             {@link MTCCosignerVerifier#getCosignerId()} (signatures naming
  *             any other cosigner are unrecognized and ignored), and returns
- *             {@code true} if that cosignature verifies. This matches
- *             single-cosigner deployments — a multi-cosigner /
- *             {@code minCosignatures > 1} policy should continue to use
- *             {@link MerkleTreeCertificateValidator}.</li>
+ *             {@code true} if that cosignature verifies. Anything that fails
+ *             to decode, or a serial that does not name a valid log entry,
+ *             is a signature that does not verify ({@code false}). This
+ *             matches single-cosigner deployments — a multi-cosigner /
+ *             {@code minCosignatures > 1} policy, trusted subtrees or revoked
+ *             ranges need {@link MerkleTreeCertificateValidator}.</li>
  *       </ol>
  *   </li>
  * </ul>
@@ -64,6 +70,7 @@ public class MTCSignatureVerifierProvider
 {
     private static final AlgorithmIdentifier MTC_SIG_ALG =
         new AlgorithmIdentifier(MTCObjectIdentifiers.id_alg_mtcProof);
+    private static final BigInteger UINT48_MASK = BigInteger.valueOf(MTCProof.UINT48_MAX);
 
     private final MTCCertAuth ca;
     private final MTCCosignerVerifier verifier;
@@ -113,8 +120,8 @@ public class MTCSignatureVerifierProvider
     /**
      * Capture-and-validate ContentVerifier used in certificate mode. Buffers
      * the TBSCertificate bytes flowing through {@link #getOutputStream()},
-     * then in {@link #verify(byte[])} performs the MTC subtree-hash recovery
-     * and cosignature verification.
+     * then in {@link #verify(byte[])} performs the Section 7.2 subtree-hash
+     * recovery and cosignature verification.
      */
     private final class CertContentVerifier
         implements ContentVerifier
@@ -138,14 +145,53 @@ public class MTCSignatureVerifierProvider
             {
                 byte[] tbsDer = tbsBuf.toByteArray();
                 TBSCertificate tbs = TBSCertificate.getInstance(tbsDer);
-                long logNumber = BigIntegers.longValueExact(tbs.getSerialNumber().getValue().shiftRight(48));
 
+                // Step 1: the TBSCertificate's signature field is id-alg-mtcProof with absent parameters.
+                AlgorithmIdentifier sigAlg = tbs.getSignature();
+                if (!MTCObjectIdentifiers.id_alg_mtcProof.equals(sigAlg.getAlgorithm())
+                    || sigAlg.getParameters() != null)
+                {
+                    return false;
+                }
+
+                // Steps 3 and 5: serial = (log_number << 48) | index, with log_number in [1, 2^16-1].
+                BigInteger serial = tbs.getSerialNumber().getValue();
+                if (serial.signum() <= 0 || serial.bitLength() > 64)
+                {
+                    return false;
+                }
+                long logNumber = serial.shiftRight(48).longValue();
+                if (logNumber < 1 || logNumber > 0xFFFFL)
+                {
+                    return false;
+                }
+                long index = serial.and(UINT48_MASK).longValue();
+
+                // Step 2: decode the signatureValue as an MTCProof.
                 MTCProof proof = new MTCProof(expected);
                 MTCLog log = new MTCLog(ca, logNumber, proof.getStart(), proof.getEnd());
+                MerkleTreeHash hashFunc = ca.getHashFunc();
 
-                byte[] subtreeHash = MerkleTreeCertificateValidator.computeSubtreeHash(
-                    tbsDer, proof.getInclusionProof(), ca.getHashFunc());
+                // Steps 7-10: leaf hash over the log entry (extensions included), then the inclusion proof.
+                byte[] entryHash = MerkleTreeCertificateValidator.computeEntryHash(
+                    tbsDer, proof.getExtensionsWire(), hashFunc);
+                byte[] subtreeHash;
+                try
+                {
+                    subtreeHash = MerkleTreePrimitives.evaluateSubtreeInclusionProof(
+                        index, proof.getStart(), proof.getEnd(), entryHash,
+                        proof.getHashList(hashFunc.getHashSize()), hashFunc);
+                }
+                catch (IllegalArgumentException e)
+                {
+                    return false;
+                }
+                catch (InvalidProofException e)
+                {
+                    return false;
+                }
 
+                // Step 12, for the one cosigner this adapter knows about.
                 byte[] boundCosignerId = verifier.getCosignerId();
                 for (MTCSignature sig : proof.getSignatures())
                 {
@@ -171,8 +217,9 @@ public class MTCSignatureVerifierProvider
             }
             catch (IOException e)
             {
-                throw new IllegalStateException(
-                    "MTC certificate verification failed: " + e.getMessage(), e);
+                // A signatureValue that does not decode as an MTCProof is an
+                // invalid signature (Section 7.2 step 2), not an error.
+                return false;
             }
         }
     }

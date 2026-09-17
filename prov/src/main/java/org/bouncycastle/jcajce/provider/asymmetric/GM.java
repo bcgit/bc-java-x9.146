@@ -7,10 +7,13 @@ import org.bouncycastle.asn1.gm.GMObjectIdentifiers;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.jcajce.provider.config.ConfigurableProvider;
 import org.bouncycastle.jcajce.provider.util.AsymmetricAlgorithmProvider;
+import org.bouncycastle.jcajce.util.SpiUtil;
 
 public class GM
 {
     private static final String PREFIX = "org.bouncycastle.jcajce.provider.asymmetric" + ".ec.";
+
+    private static final String SM9_PREFIX = "org.bouncycastle.jcajce.provider.asymmetric" + ".sm9.";
 
     private static final Map<String, String> generalSm2Attributes = new HashMap<String, String>();
 
@@ -79,6 +82,25 @@ public class GM
             provider.addAlgorithm("Alg.Alias.Cipher." + GMObjectIdentifiers.sm2encrypt_with_sha384, "SM2WITHSHA384");
             provider.addAlgorithm("Cipher.SM2WITHSHA512", PREFIX + "GMCipherSpi$SM2withSha512");
             provider.addAlgorithm("Alg.Alias.Cipher." + GMObjectIdentifiers.sm2encrypt_with_sha512, "SM2WITHSHA512");
+
+            // SM9 identity-based cryptography (GM/T 0044).
+            provider.addAlgorithm("KeyPairGenerator.SM9-ENC", SM9_PREFIX + "KeyPairGeneratorSpi");
+            provider.addAlgorithm("KeyPairGenerator.SM9-SIGN", SM9_PREFIX + "KeyPairGeneratorSpi$Sign");
+            provider.addAlgorithm("Signature.SM9", SM9_PREFIX + "SignatureSpi");
+            provider.addAlgorithm("Alg.Alias.Signature." + GMObjectIdentifiers.sm9sign, "SM9");
+            provider.addAlgorithm("Cipher.SM9", SM9_PREFIX + "CipherSpi");
+            provider.addAlgorithm("Alg.Alias.Cipher." + GMObjectIdentifiers.sm9encrypt, "SM9");
+            provider.addAlgorithm("KeyGenerator.SM9-KEM", SM9_PREFIX + "SM9KEMKeyGeneratorSpi");
+            provider.addAlgorithm("KeyAgreement.SM9", SM9_PREFIX + "KeyAgreementSpi");
+            provider.addAlgorithm("Alg.Alias.KeyAgreement." + GMObjectIdentifiers.sm9keyagreement, "SM9");
+            provider.addAlgorithm("KeyFactory.SM9", SM9_PREFIX + "KeyFactorySpi");
+            provider.addAlgorithm("Alg.Alias.KeyFactory." + GMObjectIdentifiers.sm9sign, "SM9");
+            provider.addAlgorithm("Alg.Alias.KeyFactory." + GMObjectIdentifiers.sm9encrypt, "SM9");
+
+            if (SpiUtil.hasKEM())
+            {
+                provider.addAlgorithm("KEM.SM9-KEM", SM9_PREFIX + "SM9KEMSpi");
+            }
         }
     }
 }

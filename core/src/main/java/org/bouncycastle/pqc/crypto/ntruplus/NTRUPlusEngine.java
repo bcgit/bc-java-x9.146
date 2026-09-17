@@ -31,7 +31,6 @@ class NTRUPlusEngine
     public short polyBytes;
     public short[] zetas;
     private final NTRUPlusParameters params;
-    private final SHAKEDigest shakeDigest = new SHAKEDigest(256);
 
     public NTRUPlusEngine(NTRUPlusParameters params)
     {
@@ -170,7 +169,7 @@ class NTRUPlusEngine
      * Description: Multiplication followed by Montgomery reduction.
      * Returns:     16-bit integer congruent to a*b*R^-1 mod q.
      **************************************************/
-    public short fqmul(short a, short b)
+    private static short fqmul(short a, short b)
     {
         return montgomery_reduce((int)a * b);
     }
@@ -181,7 +180,7 @@ class NTRUPlusEngine
      *              a 16-bit integer congruent to a * R^-1 mod q,
      *              where R = 2^16.
      **************************************************/
-    public short montgomery_reduce(int a)
+    private static short montgomery_reduce(int a)
     {
         return (short)((a - (short)(a * QINV) * Q) >> 16);
     }
@@ -191,7 +190,7 @@ class NTRUPlusEngine
      * Description: Barrett reduction; given a 16-bit integer a, computes a
      *              centered representative congruent to a mod q.
      **************************************************/
-    public short barrett_reduce(short a)
+    private static short barrett_reduce(short a)
     {
         return (short)(a - ((V * a + (1 << 25)) >> 26) * Q);
     }
@@ -325,6 +324,10 @@ class NTRUPlusEngine
 
     public void shake256(byte[] output, int outOff, int outLen, byte[] input, int inLen)
     {
+        // a SHAKE instance is mutable state, so it is built per call rather than shared -
+        // an engine may be reached concurrently through a cached extractor
+        SHAKEDigest shakeDigest = new SHAKEDigest(256);
+
         shakeDigest.update(input, 0, inLen);
         shakeDigest.doFinal(output, outOff, outLen);
     }
@@ -559,6 +562,7 @@ class NTRUPlusEngine
         // Extract common coefficients (a0, a1, a2, b0, b1, b2)
         short a0 = a[aPos], a1 = a[aPos + 1], a2 = a[aPos + 2];
         short b0 = b[bPos], b1 = b[bPos + 1], b2 = b[bPos + 2];
+        short r0, r1;
         int temp;
 
         if (blockSize == 4)
@@ -567,15 +571,11 @@ class NTRUPlusEngine
             short a3 = a[aPos + 3];
             short b3 = b[bPos + 3];
 
-            // High-degree terms
-            temp = (int)a1 * b3 + (int)a2 * b2 + (int)a3 * b1;
-            r[rPos] = montgomery_reduce(temp);
+            // High-degree terms (held in locals until the low-degree fold below)
+            r0 = montgomery_reduce((int)a1 * b3 + (int)a2 * b2 + (int)a3 * b1);
+            r1 = montgomery_reduce((int)a2 * b3 + (int)a3 * b2);
 
-            temp = (int)a2 * b3 + (int)a3 * b2;
-            r[rPos + 1] = montgomery_reduce(temp);
-
-            temp = (int)a3 * b3;
-            temp = montgomery_reduce(temp);
+            temp = montgomery_reduce((int)a3 * b3);
 
             // Apply zeta to middle terms
             temp = temp * zeta + (int)a0 * b2 + (int)a1 * b1 + (int)a2 * b0;
@@ -588,12 +588,9 @@ class NTRUPlusEngine
         else
         {
             // 3-coefficient specific logic
-            // High-degree terms
-            temp = (int)a2 * b1 + (int)a1 * b2;
-            r[rPos] = montgomery_reduce(temp);
-
-            temp = (int)a2 * b2;
-            r[rPos + 1] = montgomery_reduce(temp);
+            // High-degree terms (held in locals until the low-degree fold below)
+            r0 = montgomery_reduce((int)a2 * b1 + (int)a1 * b2);
+            r1 = montgomery_reduce((int)a2 * b2);
 
             // Compute r2 term
             temp = (int)a2 * b0 + (int)a1 * b1 + (int)a0 * b2;
@@ -601,11 +598,8 @@ class NTRUPlusEngine
         }
 
         // Common low-degree terms (apply zeta to r0 and r1)
-        temp = (int)r[rPos] * zeta + (int)a0 * b0;
-        r[rPos] = montgomery_reduce(temp);
-
-        temp = (int)r[rPos + 1] * zeta + (int)a0 * b1 + (int)a1 * b0;
-        r[rPos + 1] = montgomery_reduce(temp);
+        r[rPos] = montgomery_reduce((int)r0 * zeta + (int)a0 * b0);
+        r[rPos + 1] = montgomery_reduce((int)r1 * zeta + (int)a0 * b1 + (int)a1 * b0);
     }
 
     /**
@@ -692,6 +686,10 @@ class NTRUPlusEngine
      */
     private void shake256(byte[] output, int outOff, int outLen, byte domainSeperation, byte[] input, int inOff, int inLen)
     {
+        // a SHAKE instance is mutable state, so it is built per call rather than shared -
+        // an engine may be reached concurrently through a cached extractor
+        SHAKEDigest shakeDigest = new SHAKEDigest(256);
+
         shakeDigest.update(domainSeperation);
         shakeDigest.update(input, inOff, inLen);
         shakeDigest.doFinal(output, outOff, outLen);

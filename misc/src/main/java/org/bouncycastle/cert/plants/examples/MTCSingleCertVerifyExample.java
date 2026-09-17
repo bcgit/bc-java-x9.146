@@ -36,7 +36,7 @@ import org.bouncycastle.operator.ContentVerifierProvider;
  * translates the X.509 verification flow into an MTC subtree-hash recovery
  * plus cosignature check.
  *
- * <p>The example issues a standalone MTC certificate (Section 6.2 of the
+ * <p>The example issues a standalone MTC certificate (Section 6.3 of the
  * draft) in-memory over the minimal subtree {@code [0, 2)} (so it is
  * self-contained) and then validates it with a single call to
  * {@code cert.isSignatureValid(provider)}. {@link MTCSignatureVerifierProvider}
@@ -63,7 +63,7 @@ public class MTCSingleCertVerifyExample
         SecureRandom random = new SecureRandom();
 
         // --- Issuer side ----------------------------------------------------
-        // Build a standalone MTC cert (Section 6.2) over the subtree [0, 2)
+        // Build a standalone MTC cert (Section 6.3) over the subtree [0, 2)
         // so the verifier side has something to validate. The CA is its own
         // cosigner (Section 5.4).
         AsymmetricCipherKeyPair caKp = generateEd25519KeyPair(random);

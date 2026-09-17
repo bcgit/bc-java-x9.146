@@ -14,10 +14,11 @@ import org.bouncycastle.pqc.crypto.sqisign.SQIsignParameters;
 import org.bouncycastle.pqc.crypto.sqisign.SQIsignPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.sqisign.SQIsignPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.sqisign.SQIsignSigner;
+import org.bouncycastle.util.Arrays;
 
 /**
  * KAT-driven tests for SQIsign. Mirrors the structure of {@link MayoTest}: a
- * single {@link #testTestVectors()} method walks every parameter set / KAT file
+ * method per level walks its parameter set / KAT file
  * pair via {@link TestUtils#testTestVector} with {@code sampleOnly = true}, so
  * {@link TestSampler} exercises a handful of triplets per level rather than
  * all 100. Each triplet is run through keygen, sign, and verify, with
@@ -35,7 +36,9 @@ public class SQIsignTest
         throws Exception
     {
         SQIsignTest test = new SQIsignTest();
-        test.testTestVectors();
+        test.testTestVectorsLvl1();
+        test.testTestVectorsLvl3();
+        test.testTestVectorsLvl5();
     }
 
     private static final SQIsignParameters[] PARAMETER_SETS = new SQIsignParameters[]
@@ -51,11 +54,31 @@ public class SQIsignTest
         "sqisign_lvl5.rsp",
     };
 
-    public void testTestVectors()
+    // one method per level, run from AllTestsSQIsign / AllTestsSQIsignLvl5 so the levels,
+    // each minutes of BigInteger arithmetic even sampled, run as separate (parallel) forks.
+    public void testTestVectorsLvl1()
+        throws Exception
+    {
+        runKats(0);
+    }
+
+    public void testTestVectorsLvl3()
+        throws Exception
+    {
+        runKats(1);
+    }
+
+    public void testTestVectorsLvl5()
+        throws Exception
+    {
+        runKats(2);
+    }
+
+    private static void runKats(final int level)
         throws Exception
     {
         long start = System.currentTimeMillis();
-        TestUtils.testTestVector(true, false, false, "pqc/crypto/sqisign/kat", files,
+        TestUtils.testTestVector(true, false, false, "pqc/crypto/sqisign/kat", new String[]{ files[level] },
             new TestUtils.SignerOperation()
             {
                 @Override
@@ -67,7 +90,7 @@ public class SQIsignTest
                 @Override
                 public AsymmetricCipherKeyPairGenerator getAsymmetricCipherKeyPairGenerator(int fileIndex, SecureRandom random)
                 {
-                    SQIsignParameters parameters = PARAMETER_SETS[fileIndex];
+                    SQIsignParameters parameters = PARAMETER_SETS[level];
 
                     SQIsignKeyPairGenerator kpGen = new SQIsignKeyPairGenerator();
                     kpGen.init(new SQIsignKeyGenerationParameters(random, parameters));
@@ -96,6 +119,14 @@ public class SQIsignTest
                 public MessageSigner getMessageSigner()
                 {
                     return new SQIsignSigner();
+                }
+
+                // the KAT files record the NIST crypto_sign "sm" envelope,
+                // signature || message; the signer returns the bare signature.
+                @Override
+                public byte[] toVectorSignature(byte[] signature, byte[] message)
+                {
+                    return Arrays.concatenate(signature, message);
                 }
             });
         long end = System.currentTimeMillis();

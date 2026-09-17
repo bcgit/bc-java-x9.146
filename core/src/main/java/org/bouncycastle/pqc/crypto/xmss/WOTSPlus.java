@@ -77,6 +77,18 @@ final class WOTSPlus
     }
 
     /**
+     * Zeroize the WOTS+ secret key imported last. The array importKeys retains is always the
+     * per-leaf key derived for it - a fresh PRF output, or the zero placeholder verification uses
+     * - so clearing it in place reaches no caller-owned data. Called when the private key whose
+     * traversal state owns this instance is destroyed; the instance is not usable afterwards
+     * without a fresh import.
+     */
+    void clearSecretKeySeed()
+    {
+        Arrays.clear(secretKeySeed);
+    }
+
+    /**
      * Creates a signature for the n-byte messageDigest.
      *
      * @param messageDigest  Digest to sign.

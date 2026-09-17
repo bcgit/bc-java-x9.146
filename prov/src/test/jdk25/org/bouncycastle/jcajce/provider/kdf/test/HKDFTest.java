@@ -68,13 +68,60 @@ public class HKDFTest
             fail("HKDF failed generator test");
         }
 
-        //TODO: make test for derived keys
-//        kdfHkdf.deriveKey("AES", hkdfParams);
-
         //TODO: do we want users to initialize the digest?
         //KDF kdf = KDF.getInstance("HKDF", "BC");
         //kdf.init(new KDFParameter(new SHA1Digest()));
         //kdf.deriveData(hkdfParams);
+    }
+
+    public void testDeriveKey()
+            throws Exception
+    {
+        setUp();
+        KDF kdfHkdf = KDF.getInstance("HKDF-SHA256", "BC");
+
+        byte[] ikm = Hex.decode("c702e7d0a9e064b09ba55245fb733cf3");
+        byte[] salt = Strings.toByteArray("The Cryptographic Message Syntax");
+        byte[] info = Hex.decode("301b0609608648016503040106300e040c5c79058ba2f43447639d29e2");
+        byte[] okm = Hex.decode("2124ffb29fac4e0fbbc7d5d87492bff3");
+
+        HKDFParameterSpec.ExtractThenExpand hkdfParams1 = HKDFParameterSpec.ofExtract().addIKM(ikm)
+                .addSalt(salt).thenExpand(info, okm.length);
+
+        SecretKey key = kdfHkdf.deriveKey("AES", hkdfParams1);
+
+        assertEquals("AES", key.getAlgorithm());
+        assertEquals("RAW", key.getFormat());
+
+        if (!areEqual(key.getEncoded(), okm))
+        {
+            fail("HKDF deriveKey failed extract-then-expand test");
+        }
+
+        if (!areEqual(key.getEncoded(), kdfHkdf.deriveData(hkdfParams1)))
+        {
+            fail("HKDF deriveKey disagrees with deriveData for extract-then-expand");
+        }
+
+        // Extract Only
+        okm = Hex.decode("4d757351dc7a354f041aacd288c8957e341ac8903ba8b4debde8e856f1b58e31");
+
+        HKDFParameterSpec.Extract hkdfParams2 = HKDFParameterSpec.ofExtract().addIKM(ikm).addSalt(salt).extractOnly();
+
+        key = kdfHkdf.deriveKey("AES", hkdfParams2);
+
+        assertEquals("AES", key.getAlgorithm());
+        assertEquals("RAW", key.getFormat());
+
+        if (!areEqual(key.getEncoded(), okm))
+        {
+            fail("HKDF deriveKey failed extract-only test");
+        }
+
+        if (!areEqual(key.getEncoded(), kdfHkdf.deriveData(hkdfParams2)))
+        {
+            fail("HKDF deriveKey disagrees with deriveData for extract-only");
+        }
     }
 
     private boolean doComparison(String algorithm, byte[] ikm, byte[] salt, byte[] info)
@@ -91,6 +138,82 @@ public class HKDFTest
         SecretKey factSecret = fact.generateSecret(pre25spec);
 
         return Arrays.areEqual(kdfSecret, factSecret.getEncoded());
+    }
+
+    /**
+     * Regression for the HKDF thread-safety fix: both the SecretKeyFactory (HKDF.HKDFBase) and the
+     * KDF SPI (HKDFSpi) used to hold one HKDFBytesGenerator, whose digest carries mutable state, so a
+     * shared instance raced between concurrent derivations. Each now builds a generator from a copy of
+     * the template digest. Plain Thread/join and a synchronized counter, matching the TLS12 KDF test.
+     */
+    public void testConcurrentSharedInstances()
+            throws Exception
+    {
+        setUp();
+        byte[] ikm = Hex.decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
+        byte[] salt = Hex.decode("000102030405060708090a0b0c");
+        byte[] info = Hex.decode("f0f1f2f3f4f5f6f7f8f9");
+
+        final SecretKeyFactory kFact = SecretKeyFactory.getInstance("HKDF-SHA256", "BC");
+        final org.bouncycastle.jcajce.spec.HKDFParameterSpec bcSpec =
+                new org.bouncycastle.jcajce.spec.HKDFParameterSpec(ikm, salt, info, 42);
+        final KDF kdf = KDF.getInstance("HKDF-SHA256", (KDFParameters)null, "BC");
+        final HKDFParameterSpec jdkSpec = HKDFParameterSpec.ofExtract()
+                .addIKM(ikm).addSalt(salt).thenExpand(info, 42);
+
+        final byte[] expectedFactory = kFact.generateSecret(bcSpec).getEncoded();
+        final byte[] expectedKdf = kdf.deriveData(jdkSpec);
+
+        final int threads = 6, iters = 1000;
+        final int[] failures = new int[1];
+        final Object startLock = new Object();
+        final boolean[] go = new boolean[1];
+
+        Thread[] ts = new Thread[threads];
+        for (int i = 0; i != threads; i++)
+        {
+            ts[i] = new Thread(new Runnable()
+            {
+                public void run()
+                {
+                    synchronized (startLock)
+                    {
+                        while (!go[0])
+                        {
+                            try { startLock.wait(); } catch (InterruptedException e) { return; }
+                        }
+                    }
+                    for (int j = 0; j != iters; j++)
+                    {
+                        try
+                        {
+                            if (!areEqual(expectedFactory, kFact.generateSecret(bcSpec).getEncoded())
+                                    || !areEqual(expectedKdf, kdf.deriveData(jdkSpec)))
+                            {
+                                synchronized (failures) { failures[0]++; }
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            synchronized (failures) { failures[0]++; }
+                        }
+                    }
+                }
+            });
+            ts[i].start();
+        }
+        synchronized (startLock)
+        {
+            go[0] = true;
+            startLock.notifyAll();
+        }
+        for (int i = 0; i != threads; i++)
+        {
+            ts[i].join();
+        }
+
+        assertEquals("HKDF shared-instance concurrency produced " + failures[0] + " wrong/failed results",
+                0, failures[0]);
     }
 
     public void testSecretKeyFactoryComparison()

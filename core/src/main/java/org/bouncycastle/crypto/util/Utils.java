@@ -1,6 +1,7 @@
 package org.bouncycastle.crypto.util;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -25,7 +26,6 @@ import org.bouncycastle.crypto.params.SLHDSAParameters;
 import org.bouncycastle.internal.asn1.iso.ISOIECObjectIdentifiers;
 import org.bouncycastle.internal.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.pqc.crypto.falcon.FalconParameters;
-import org.bouncycastle.pqc.crypto.frodo.FrodoParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCParameters;
 import org.bouncycastle.pqc.crypto.mayo.MayoParameters;
 import org.bouncycastle.pqc.crypto.ntru.NTRUParameters;
@@ -40,8 +40,6 @@ class Utils
     static final AlgorithmIdentifier SPHINCS_SHA3_256 = new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha3_256);
     static final AlgorithmIdentifier SPHINCS_SHA512_256 = new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha512_256);
 
-    static final Map frodoOids = new HashMap();
-    static final Map frodoParams = new HashMap();
 
     static final Map saberOids = new HashMap();
     static final Map saberParams = new HashMap();
@@ -519,16 +517,6 @@ class Utils
         return (org.bouncycastle.crypto.params.CMCEParameters)cmceParams.get(oid);
     }
 
-    static ASN1ObjectIdentifier frodoOidLookup(FrodoParameters params)
-    {
-        return (ASN1ObjectIdentifier)frodoOids.get(params);
-    }
-
-    static FrodoParameters frodoParamsLookup(ASN1ObjectIdentifier oid)
-    {
-        return (FrodoParameters)frodoParams.get(oid);
-    }
-
     static ASN1ObjectIdentifier saberOidLookup(SABERParameters params)
     {
         return (ASN1ObjectIdentifier)saberOids.get(params);
@@ -677,6 +665,30 @@ class Utils
         }
 
         return null;
+    }
+
+    static ASN1OctetString parseOctetString(ASN1OctetString octStr, int expectedLength)
+        throws IOException
+    {
+        byte[] data = octStr.getOctets();
+        //
+        // it's the right length for a RAW encoding, just return it.
+        //
+        if (data.length == expectedLength)
+        {
+            return octStr;
+        }
+
+        //
+        // possible internal OCTET STRING, possibly long form with or without the internal OCTET STRING
+        ASN1OctetString obj = Utils.parseOctetData(data);
+
+        if (obj != null)
+        {
+            return ASN1OctetString.getInstance(obj);
+        }
+
+        return octStr;
     }
 
     static ASN1Primitive parseData(byte[] data)

@@ -54,11 +54,18 @@ import org.bouncycastle.jcajce.util.NamedJcaJceHelper;
 import org.bouncycastle.jcajce.util.ProviderJcaJceHelper;
 import org.bouncycastle.util.CollectionStore;
 import org.bouncycastle.util.Iterable;
+import org.bouncycastle.util.Properties;
 import org.bouncycastle.util.Selector;
 import org.bouncycastle.util.Store;
 
 /**
  * X.509 Certificate Revocation Checker - still lacks OCSP support and support for delta CRLs.
+ * <p/>
+ * Where the CRLs supplied to the builder cannot answer for a certificate, the checker will fetch
+ * from the certificate's CRL Distribution Points extension, but only if the
+ * {@link Properties#X509_ENABLE_CRLDP} property is set - the same opt-in the provider's CertPath
+ * validator applies, and the one that property's javadoc has always described. The protocols a
+ * distribution point may name can be narrowed further with {@link Properties#X509_CRLDP_PROTOCOLS}.
  */
 public class X509RevocationChecker
     extends PKIXCertPathChecker
@@ -465,15 +472,24 @@ public class X509RevocationChecker
                 throw e;
             }
 
-            Set<CRL> crls;
-            try
+            Set<CRL> crls = new HashSet<CRL>();
+
+            // Fetching from the distribution point is opt-in, as it already was for the provider's
+            // CertPath validator: the URI being dereferenced comes out of the certificate, so the
+            // outbound connection is something a caller asks for rather than something they get.
+            // With the property unset this proceeds as an unproductive fetch always did - soft
+            // failing where the caller configured that, rethrowing where they did not.
+            if (Properties.isOverrideSet(Properties.X509_ENABLE_CRLDP))
             {
-                crls = downloadCRLs(cert.getIssuerX500Principal(), validityDate,
-                    RevocationUtilities.getExtensionValue(cert, Extension.cRLDistributionPoints), helper);
-            }
-            catch(AnnotatedException e1)
-            {
-                throw new CertPathValidatorException(e1.getMessage(), e1.getCause());
+                try
+                {
+                    crls = downloadCRLs(cert.getIssuerX500Principal(), validityDate,
+                        RevocationUtilities.getExtensionValue(cert, Extension.cRLDistributionPoints), helper);
+                }
+                catch(AnnotatedException e1)
+                {
+                    throw new CertPathValidatorException(e1.getMessage(), e1.getCause());
+                }
             }
 
             if (!crls.isEmpty())
@@ -823,6 +839,18 @@ public class X509RevocationChecker
             {
                 lastException = e;
             }
+            catch (CRLNotFoundException e)
+            {
+                // The fallback runs without the CRLDP-derived stores, so finding nothing here says
+                // nothing about the distribution point attempts above (github #2427).
+                if (lastException == null)
+                {
+                    throw e;
+                }
+                throw new CRLNotFoundException(e.getMessage()
+                    + ". The CRL distribution points of the certificate were tried first and failed: "
+                    + lastException.getMessage(), lastException);
+            }
         }
 
         if (!validCrlFound)
@@ -840,7 +868,11 @@ public class X509RevocationChecker
             df.setTimeZone(TimeZone.getTimeZone("UTC"));
             String message = "certificate [issuer=\"" + cert.getIssuerX500Principal() + "\",serialNumber="
                                            + cert.getSerialNumber() + ",subject=\"" + cert.getSubjectX500Principal() + "\"] revoked after " + df.format(certStatus.getRevocationDate());
-            message += ", reason: " + crlReasons[certStatus.getCertStatus()];
+            int certReason = certStatus.getCertStatus();
+            // The reason code is copied unvalidated from the (attacker-controlled) CRL entry, so an
+            // out-of-range value must not index the fixed crlReasons table out of bounds (AIOOBE).
+            message += ", reason: " + (certReason >= 0 && certReason < crlReasons.length
+                ? crlReasons[certReason] : "unknown (" + certReason + ")");
             throw new AnnotatedException(message);
         }
         if (!reasonsMask.isAllReasons() && certStatus.getCertStatus() == CertStatus.UNREVOKED)

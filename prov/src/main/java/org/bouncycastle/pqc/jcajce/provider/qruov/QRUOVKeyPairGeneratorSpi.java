@@ -1,6 +1,7 @@
 package org.bouncycastle.pqc.jcajce.provider.qruov;
 
 import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidParameterException;
 import java.security.KeyPair;
 import java.security.SecureRandom;
 import java.security.spec.AlgorithmParameterSpec;
@@ -59,7 +60,8 @@ public class QRUOVKeyPairGeneratorSpi
 
     public void initialize(int strength, SecureRandom random)
     {
-        throw new IllegalArgumentException("use AlgorithmParameterSpec");
+        // what the JCA specifies here; it extends IllegalArgumentException, so catches still match
+        throw new InvalidParameterException("use AlgorithmParameterSpec");
     }
 
     public void initialize(AlgorithmParameterSpec params, SecureRandom random)
@@ -68,7 +70,14 @@ public class QRUOVKeyPairGeneratorSpi
         String name = getNameFromParams(params);
         if (name != null && parameters.containsKey(name))
         {
-            param = new QRUOVKeyGenerationParameters(random, (QRUOVParameters)parameters.get(name));
+            QRUOVParameters qruovParams = (QRUOVParameters)parameters.get(name);
+
+            if (qruovParameters != null && !qruovParams.getName().equals(qruovParameters.getName()))
+            {
+                throw new InvalidAlgorithmParameterException("key pair generator locked to " + getAlgorithm());
+            }
+
+            param = new QRUOVKeyGenerationParameters(random, qruovParams);
             engine.init(param);
             initialised = true;
         }
@@ -84,7 +93,10 @@ public class QRUOVKeyPairGeneratorSpi
         {
             return Strings.toLowerCase(((QRUOVParameterSpec)paramSpec).getName());
         }
-        return Strings.toLowerCase(SpecUtil.getNameFrom(paramSpec));
+        String name = SpecUtil.getNameFrom(paramSpec);
+
+        // null where the spec has no getName(), which the caller reports as the exception it declares
+        return (name == null) ? null : Strings.toLowerCase(name);
     }
 
     public KeyPair generateKeyPair()

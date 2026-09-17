@@ -35,6 +35,10 @@ public class AllTests
         suite.addTestSuite(CompositeMLKEMTest.class);
         suite.addTestSuite(BouncyCastleProviderTest.class);
         suite.addTestSuite(PQCSignatureTest.class);
+        suite.addTestSuite(PQCKeyDestructionTest.class);
+        suite.addTestSuite(ECRSAKeyDestructionTest.class);
+        suite.addTestSuite(ClassicalKeyDestructionTest.class);
+        suite.addTestSuite(HashBasedKeyDestructionTest.class);
         suite.addTestSuite(SecretKeyUtilTest.class);
         suite.addTestSuite(PKCS12PBMAC1StoreTest.class);
 

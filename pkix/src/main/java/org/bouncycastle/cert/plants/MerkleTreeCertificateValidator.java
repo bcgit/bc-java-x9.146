@@ -39,7 +39,7 @@ import org.bouncycastle.util.BigIntegers;
  * {@link MTCProof} carried in the certificate's {@code signatureValue},
  * recomputes the entry hash from the TBSCertificate, evaluates the inclusion
  * proof against the supplied {@link MerkleTreeHash}, and then either matches
- * the resulting subtree hash against a {@link ValidationParams.TrustedSubtree}
+ * the resulting subtree hash against a {@link TrustedSubtree}
  * or counts valid cosignatures against the relying party's
  * {@link MTCCosignerVerifierProvider} until {@code minCosignatures} is met.</p>
  */
@@ -226,7 +226,7 @@ public class MerkleTreeCertificateValidator
      * A half-open range {@code [start, end)} of revoked certificate serial
      * numbers, per Section 7.5 of the draft. The serial packs the log number
      * into the upper 16 bits and the entry index into the lower 48 (Section
-     * 6.1), so ranges can revoke spans of entries within one log, whole logs,
+     * 6.2), so ranges can revoke spans of entries within one log, whole logs,
      * or spans of logs. The relying party's list of ranges is checked against
      * the full serial before it is decomposed (Section 7.2 step 4).
      *
@@ -389,7 +389,12 @@ public class MerkleTreeCertificateValidator
             }
         }
 
-        // Step 2: decode the signatureValue as an MTCProof.
+        // Step 2: decode the signatureValue as an MTCProof. A BIT STRING with
+        // unused bits is not a multiple of 8 bits and fails verification.
+        if (certHolder.toASN1Structure().getSignature().getPadBits() != 0)
+        {
+            throw new SecurityException("signatureValue is not a multiple of 8 bits");
+        }
         MTCProof proof = new MTCProof(certHolder.getSignature());
 
         // Step 3: the serial number must be positive and fit in a uint64.
@@ -424,7 +429,7 @@ public class MerkleTreeCertificateValidator
             }
         }
 
-        // Step 5: decompose the serial number per Section 6.1 of the draft:
+        // Step 5: decompose the serial number per Section 6.2 of the draft:
         //   serial = (log_number << 48) | index
         long index = serialBig.and(BigInteger.valueOf(0xFFFFFFFFFFFFL)).longValue();
         long logNumber = BigIntegers.longValueExact(serialBig.shiftRight(48));

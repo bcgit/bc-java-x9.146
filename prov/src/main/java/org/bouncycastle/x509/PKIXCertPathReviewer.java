@@ -6,6 +6,7 @@ import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URL;
+import java.net.URLConnection;
 import java.security.GeneralSecurityException;
 import java.security.PublicKey;
 import java.security.SignatureException;
@@ -74,11 +75,12 @@ import org.bouncycastle.i18n.filter.UntrustedUrlInput;
 import org.bouncycastle.jce.provider.AnnotatedException;
 import org.bouncycastle.jce.provider.PKIXNameConstraintValidator;
 import org.bouncycastle.jce.provider.PKIXNameConstraintValidatorException;
-import org.bouncycastle.jce.provider.PKIXPolicyNode;
+import org.bouncycastle.jcajce.PKIXPolicyNode;
 import org.bouncycastle.util.Exceptions;
 import org.bouncycastle.util.Integers;
 import org.bouncycastle.util.Objects;
 import org.bouncycastle.util.Properties;
+import org.bouncycastle.util.Strings;
 
 /**
  * PKIXCertPathReviewer<br>
@@ -453,26 +455,29 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
         }
 
         //
-        // process each certificate except the last in the path
+        // process each certificate in the path, target certificate included
         //
         int index;
         int i;
-        
-        try 
+
+        try
         {
-            for (index = certs.size()-1; index>0; index--) 
+            for (index = certs.size()-1; index>=0; index--)
             {
                 i = n - index;
-                
+
                 //
                 // certificate processing
-                //    
-                
+                //
+
                 cert = (X509Certificate) certs.get(index);
-                
+
                 // b),c)
-                
-                if (!isSelfIssued(cert))
+
+                // RFC 5280 sec. 6.1.3 (b) and (c) skip a self-issued certificate only when it is
+                // not the final certificate in the path, so the target certificate (i == n) is
+                // always checked - as RFC3280CertPathUtilities.processCertBC does.
+                if (i >= n || !isSelfIssued(cert))
                 {
                     X500Principal principal = getSubjectPrincipal(cert);
                     ASN1InputStream aIn = new ASN1InputStream(new ByteArrayInputStream(principal.getEncoded()));
@@ -552,7 +557,14 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
                 //
                 // prepare for next certificate
                 //
-                
+
+                // RFC 5280 sec. 6.1.4 runs only where a next certificate exists, so the target
+                // certificate contributes no name constraints of its own.
+                if (i == n)
+                {
+                    continue;
+                }
+
                 //
                 // (g) handle the name constraints extension
                 //
@@ -2249,7 +2261,14 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
                     }
                     if (reasonCode != null)
                     {
-                        reason = crlReasons[reasonCode.intValueExact()];
+                        // Bound the (attacker-controlled) reason code before indexing crlReasons: an
+                        // out-of-range or out-of-int value falls through to the crlReasons[7] "unknown"
+                        // below rather than throwing AIOOBE / ArithmeticException from intValueExact().
+                        BigInteger rc = reasonCode.getValue();
+                        if (rc.signum() >= 0 && rc.compareTo(BigInteger.valueOf(crlReasons.length)) < 0)
+                        {
+                            reason = crlReasons[rc.intValue()];
+                        }
                     }
                 }
 
@@ -2472,29 +2491,56 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
         return urls;
     }
     
+    /**
+     * The protocols a CRL distribution point may name here: http, https and ftp, the set the
+     * provider's CrlCache documents, narrowed further when org.bouncycastle.x509.CRLDP_protocols
+     * names a smaller one. A distribution point using anything else is passed over as before -
+     * this reviewer reports on a path rather than fetching from arbitrary URL handlers.
+     * <p>
+     * ftp is included because a downcast to HttpURLConnection here (removed with this method's
+     * introduction) meant an ftp distribution point was silently skipped, the same defect
+     * github #1867 fixed in CrlCache.
+     * </p>
+     */
+    static boolean isPermittedProtocol(String protocol)
+    {
+        Set permitted = Properties.asKeySet(Properties.X509_CRLDP_PROTOCOLS);
+
+        if (!permitted.isEmpty())
+        {
+            return permitted.contains(protocol);
+        }
+
+        return "http".equals(protocol) || "https".equals(protocol) || "ftp".equals(protocol);
+    }
+
     private X509CRL getCRL(String location) throws CertPathReviewerException
     {
         X509CRL result = null;
         try
         {
             URL url = new URL(location);
-            
-            if (url.getProtocol().equals("http") || url.getProtocol().equals("https"))
+
+            if (isPermittedProtocol(Strings.toLowerCase(url.getProtocol())))
             {
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                URLConnection conn = url.openConnection();
                 conn.setUseCaches(false);
-                //conn.setConnectTimeout(2000);
+                // NOTE: URLConnection.setConnectTimeout and setReadTimeout are Java 5, and this
+                // class is still compiled by the jdk1.4 build, so no timeout can be set here.
                 conn.setDoInput(true);
                 conn.connect();
-                if (conn.getResponseCode() == HttpURLConnection.HTTP_OK)
+
+                if (conn instanceof HttpURLConnection)
                 {
-                    CertificateFactory cf = CertificateFactory.getInstance("X.509","BC");
-                    result = (X509CRL) cf.generateCRL(conn.getInputStream());
+                    HttpURLConnection httpConn = (HttpURLConnection)conn;
+                    if (httpConn.getResponseCode() != HttpURLConnection.HTTP_OK)
+                    {
+                        throw new Exception(httpConn.getResponseMessage());
+                    }
                 }
-                else
-                {
-                    throw new Exception(conn.getResponseMessage());
-                }
+
+                CertificateFactory cf = CertificateFactory.getInstance("X.509","BC");
+                result = (X509CRL) cf.generateCRL(conn.getInputStream());
             }
         }
         catch (Exception e)

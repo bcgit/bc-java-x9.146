@@ -23,6 +23,7 @@ public class AllTests
 
         suite.addTestSuite(BcTlsCryptoTest.class);
         suite.addTestSuite(JcaTlsCryptoTest.class);
+        suite.addTestSuite(JcaTlsRSAPSSAltProviderTest.class);
 
         return new BCTestSetup(suite);
     }

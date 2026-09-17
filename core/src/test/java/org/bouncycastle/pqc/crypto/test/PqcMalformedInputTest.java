@@ -5,31 +5,32 @@ import java.security.SecureRandom;
 import junit.framework.TestCase;
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
 import org.bouncycastle.crypto.digests.SHA256Digest;
+import org.bouncycastle.pqc.crypto.aimer.AIMerParameters;
+import org.bouncycastle.pqc.crypto.aimer.AIMerPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.aimer.AIMerPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.aimer.AIMerSigner;
 import org.bouncycastle.pqc.crypto.falcon.FalconParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconSigner;
-import org.bouncycastle.pqc.crypto.cmce.CMCEParameters;
-import org.bouncycastle.pqc.crypto.cmce.CMCEPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.frodo.FrodoParameters;
-import org.bouncycastle.pqc.crypto.frodo.FrodoPublicKeyParameters;
 import org.bouncycastle.crypto.params.FrodoKEMParameters;
 import org.bouncycastle.crypto.params.FrodoKEMPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.haetae.HAETAEParameters;
 import org.bouncycastle.pqc.crypto.haetae.HAETAEPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.hawk.HawkParameters;
-import org.bouncycastle.pqc.crypto.hawk.HawkPublicKeyParameters;
+import org.bouncycastle.pqc.legacy.hawk.HawkParameters;
+import org.bouncycastle.pqc.legacy.hawk.HawkPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.lms.HSSKeyGenerationParameters;
-import org.bouncycastle.pqc.crypto.lms.HSSKeyPairGenerator;
-import org.bouncycastle.pqc.crypto.lms.HSSSigner;
-import org.bouncycastle.pqc.crypto.lms.LMOtsParameters;
-import org.bouncycastle.pqc.crypto.lms.LMSKeyGenerationParameters;
-import org.bouncycastle.pqc.crypto.lms.LMSKeyPairGenerator;
-import org.bouncycastle.pqc.crypto.lms.LMSParameters;
-import org.bouncycastle.pqc.crypto.lms.LMSSigner;
-import org.bouncycastle.pqc.crypto.lms.LMSigParameters;
+import org.bouncycastle.crypto.params.HSSKeyGenerationParameters;
+import org.bouncycastle.crypto.generators.HSSKeyPairGenerator;
+import org.bouncycastle.crypto.signers.HSSSigner;
+import org.bouncycastle.crypto.params.LMOtsParameters;
+import org.bouncycastle.crypto.params.LMSKeyGenerationParameters;
+import org.bouncycastle.crypto.generators.LMSKeyPairGenerator;
+import org.bouncycastle.crypto.params.LMSParameters;
+import org.bouncycastle.crypto.signers.LMSSigner;
+import org.bouncycastle.crypto.params.LMSigParameters;
 import org.bouncycastle.pqc.crypto.mayo.MayoParameters;
+import org.bouncycastle.pqc.crypto.mayo.MayoPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.mayo.MayoPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.mayo.MayoSigner;
 import org.bouncycastle.pqc.crypto.ntru.NTRUParameters;
@@ -41,16 +42,20 @@ import org.bouncycastle.pqc.crypto.ntruprime.NTRULPRimePublicKeyParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.SNTRUPrimeParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.SNTRUPrimePublicKeyParameters;
 import org.bouncycastle.pqc.crypto.qruov.QRUOVParameters;
+import org.bouncycastle.pqc.crypto.qruov.QRUOVPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.qruov.QRUOVPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.qruov.QRUOVSigner;
 import org.bouncycastle.pqc.crypto.saber.SABERParameters;
 import org.bouncycastle.pqc.crypto.saber.SABERPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.snova.SnovaParameters;
+import org.bouncycastle.pqc.crypto.snova.SnovaPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.snova.SnovaPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.snova.SnovaSigner;
 import org.bouncycastle.pqc.crypto.sphincs.SPHINCSPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.sqisign.SQIsignParameters;
+import org.bouncycastle.pqc.crypto.sqisign.SQIsignPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.sqisign.SQIsignPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.sqisign.SQIsignSigner;
 import org.bouncycastle.pqc.crypto.xmss.XMSSKeyGenerationParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSKeyPairGenerator;
 import org.bouncycastle.pqc.crypto.xmss.XMSSMTKeyGenerationParameters;
@@ -73,7 +78,10 @@ public class PqcMalformedInputTest
 {
     private static final byte[] MESSAGE = new byte[]{ 0x01, 0x02, 0x03, 0x04 };
 
-    // #15: verifySignature must return false (not throw) on an empty or one-byte signature.
+    // #15: verifySignature must return false (not throw) on an empty or one-byte
+    // signature. The trailing-bytes half of the same rule - a valid signature with
+    // data appended must not verify either - needs a genuine signature to bite and
+    // so lives in PqcSignatureEncodingTest, not here.
     public void testMalformedSignatureReturnsFalse()
         throws Exception
     {
@@ -99,12 +107,27 @@ public class PqcMalformedInputTest
         assertFalse(snova.verifySignature(MESSAGE, new byte[0]));
         assertFalse(snova.verifySignature(MESSAGE, new byte[1]));
 
-        // QR-UOV (signature || message envelope, must carry at least the signature).
+        // QR-UOV (fixed-size signature).
         QRUOVParameters qruovParams = QRUOVParameters.qruov_1_q127_L3_v156_m54_shake;
         QRUOVSigner qruov = new QRUOVSigner();
         qruov.init(false, new QRUOVPublicKeyParameters(qruovParams, new byte[qruovParams.getPublicKeyBytes()]));
         assertFalse(qruov.verifySignature(MESSAGE, new byte[0]));
         assertFalse(qruov.verifySignature(MESSAGE, new byte[1]));
+
+        // SQIsign (fixed-size signature).
+        SQIsignParameters sqisignParams = SQIsignParameters.sqisign_lvl1;
+        SQIsignSigner sqisign = new SQIsignSigner();
+        sqisign.init(false, new SQIsignPublicKeyParameters(sqisignParams, new byte[sqisignParams.getPublicKeyLength()]));
+        assertFalse(sqisign.verifySignature(MESSAGE, new byte[0]));
+        assertFalse(sqisign.verifySignature(MESSAGE, new byte[1]));
+
+        // AIMer (fixed-size signature, read at a fixed offset - a short buffer used
+        // to be indexed past its end rather than reported, github #2401).
+        AIMerParameters aimerParams = AIMerParameters.aimer128f;
+        AIMerSigner aimer = new AIMerSigner();
+        aimer.init(false, new AIMerPublicKeyParameters(aimerParams, new byte[aimerParams.getPublicKeyBytes()]));
+        assertFalse(aimer.verifySignature(MESSAGE, new byte[0]));
+        assertFalse(aimer.verifySignature(MESSAGE, new byte[1]));
 
         // XMSS (stateful, parse must not throw out of verify).
         XMSSKeyPairGenerator xmssGen = new XMSSKeyPairGenerator();
@@ -158,14 +181,6 @@ public class PqcMalformedInputTest
             {
                 new org.bouncycastle.crypto.params.MLDSAPublicKeyParameters(
                     org.bouncycastle.crypto.params.MLDSAParameters.ml_dsa_44, new byte[1]);
-            }
-        });
-        expectInvalidLength("ML-DSA (pqc.crypto.mldsa)", new Runnable()
-        {
-            public void run()
-            {
-                new org.bouncycastle.pqc.crypto.mldsa.MLDSAPublicKeyParameters(
-                    org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters.ml_dsa_44, new byte[1]);
             }
         });
         expectInvalidLength("Falcon", new Runnable()
@@ -226,26 +241,12 @@ public class PqcMalformedInputTest
         });
 
         // KEM schemes.
-        expectInvalidLength("Classic McEliece (legacy, non-standardised)", new Runnable()
-        {
-            public void run()
-            {
-                new CMCEPublicKeyParameters(CMCEParameters.mceliece348864r3, tooShort);
-            }
-        });
         expectInvalidLength("Classic McEliece (ISO 18033-2 standardised)", new Runnable()
         {
             public void run()
             {
                 new org.bouncycastle.crypto.params.CMCEPublicKeyParameters(
                     org.bouncycastle.crypto.params.CMCEParameters.mceliece460896, tooShort);
-            }
-        });
-        expectInvalidLength("Frodo (legacy, non-standardised)", new Runnable()
-        {
-            public void run()
-            {
-                new FrodoPublicKeyParameters(FrodoParameters.frodokem640aes, tooShort);
             }
         });
         expectInvalidLength("FrodoKEM (ISO 18033-2 standardised)", new Runnable()
@@ -306,12 +307,83 @@ public class PqcMalformedInputTest
         });
     }
 
+    // The private-key counterpart of testMalformedPublicKeyRejected, for the five schemes of
+    // github #2403. A private key encoding reaches these constructors straight from a PKCS#8 blob,
+    // so a wrong length has to be reported here: SNOVA had no check at all, where a long seed-form
+    // key was silently accepted and signed under a different derived key, and a short expanded-form
+    // key sized the signer's decode buffer negatively.
+    public void testMalformedPrivateKeyRejected()
+    {
+        final byte[] tooShort = new byte[1];
+
+        expectInvalidLength("MAYO", new Runnable()
+        {
+            public void run()
+            {
+                new MayoPrivateKeyParameters(MayoParameters.mayo1, tooShort);
+            }
+        });
+        expectInvalidLength("SNOVA (seed form)", new Runnable()
+        {
+            public void run()
+            {
+                new SnovaPrivateKeyParameters(SnovaParameters.SNOVA_24_5_4_SSK, tooShort);
+            }
+        });
+        expectInvalidLength("SNOVA (expanded form)", new Runnable()
+        {
+            public void run()
+            {
+                new SnovaPrivateKeyParameters(SnovaParameters.SNOVA_24_5_4_ESK, tooShort);
+            }
+        });
+        expectInvalidLength("SNOVA (seed form, too long)", new Runnable()
+        {
+            public void run()
+            {
+                SnovaParameters p = SnovaParameters.SNOVA_24_5_4_SSK;
+                new SnovaPrivateKeyParameters(p, new byte[p.getPrivateKeyLength() + 1]);
+            }
+        });
+        expectInvalidLength("QR-UOV", new Runnable()
+        {
+            public void run()
+            {
+                new QRUOVPrivateKeyParameters(QRUOVParameters.qruov_1_q127_L3_v156_m54_shake, tooShort);
+            }
+        });
+        expectInvalidLength("SQIsign", new Runnable()
+        {
+            public void run()
+            {
+                new SQIsignPrivateKeyParameters(SQIsignParameters.sqisign_lvl1, tooShort);
+            }
+        });
+        expectInvalidLength("AIMer", new Runnable()
+        {
+            public void run()
+            {
+                new AIMerPrivateKeyParameters(AIMerParameters.aimer128f, tooShort);
+            }
+        });
+
+        // A seed-form parameter set's private key is the seed pair, not the expanded central map -
+        // getPrivateKeyLength() has to report the one the constructor will accept.
+        SnovaParameters ssk = SnovaParameters.SNOVA_24_5_4_SSK;
+        SnovaParameters esk = SnovaParameters.SNOVA_24_5_4_ESK;
+        assertEquals("SNOVA seed-form private key length", 48, ssk.getPrivateKeyLength());
+        assertTrue("SNOVA expanded private key is longer than the seed pair",
+            esk.getPrivateKeyLength() > ssk.getPrivateKeyLength());
+        new SnovaPrivateKeyParameters(ssk, new byte[ssk.getPrivateKeyLength()]);
+        new SnovaPrivateKeyParameters(esk, new byte[esk.getPrivateKeyLength()]);
+    }
+
     private void expectInvalidLength(String name, Runnable construct)
     {
         try
         {
             construct.run();
-            fail(name + " accepted a malformed-length public key encoding");
+            fail(name + " accepted a malformed-length key encoding");
         }
         catch (IllegalArgumentException e)
         {

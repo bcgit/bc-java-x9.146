@@ -2,6 +2,10 @@ package org.bouncycastle.pqc.crypto.xmss;
 
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
 
+/**
+ * @deprecated use {@link org.bouncycastle.crypto.params.XMSSMTKeyParameters} instead.
+ */
+@Deprecated
 public class XMSSMTKeyParameters
     extends AsymmetricKeyParameter
 {

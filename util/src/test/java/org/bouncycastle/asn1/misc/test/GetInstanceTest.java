@@ -274,15 +274,12 @@ import org.bouncycastle.asn1.x509.SubjectKeyIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x509.TBSCertList;
 import org.bouncycastle.asn1.x509.TBSCertificate;
-import org.bouncycastle.asn1.x509.TBSCertificateStructure;
 import org.bouncycastle.asn1.x509.Target;
 import org.bouncycastle.asn1.x509.TargetInformation;
 import org.bouncycastle.asn1.x509.Targets;
 import org.bouncycastle.asn1.x509.Time;
 import org.bouncycastle.asn1.x509.UserNotice;
 import org.bouncycastle.asn1.x509.V2Form;
-import org.bouncycastle.asn1.x509.X509CertificateStructure;
-import org.bouncycastle.asn1.x509.X509Extensions;
 import org.bouncycastle.asn1.x509.X509ObjectIdentifiers;
 import org.bouncycastle.asn1.x509.qualified.BiometricData;
 import org.bouncycastle.asn1.x509.qualified.Iso4217CurrencyCode;
@@ -292,9 +289,7 @@ import org.bouncycastle.asn1.x509.qualified.SemanticsInformation;
 import org.bouncycastle.asn1.x509.qualified.TypeOfBiometricData;
 import org.bouncycastle.asn1.x509.sigi.NameOrPseudonym;
 import org.bouncycastle.asn1.x509.sigi.PersonalData;
-import org.bouncycastle.asn1.x9.DHDomainParameters;
 import org.bouncycastle.asn1.x9.DHPublicKey;
-import org.bouncycastle.asn1.x9.DHValidationParms;
 import org.bouncycastle.asn1.x9.X962Parameters;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.asn1.misc.CAST5CBCParameters;
@@ -481,6 +476,11 @@ public class GetInstanceTest
         }
     }
 
+    // Deliberate coverage of deprecated types: getInstance(null) is exercised for every
+    // ASN.1 type in these packages. The deprecated ones are named in full below rather
+    // than imported, because a deprecation warning on an import declaration is outside
+    // the scope of any @SuppressWarnings.
+    @SuppressWarnings("deprecation")
     public void testGetInstance()
         throws Exception
     {
@@ -848,8 +848,8 @@ public class GetInstanceTest
         Targets.getInstance(null);
         TBSCertificate.getInstance(null);
         TBSCertificate.getInstance(null);
-        TBSCertificateStructure.getInstance(null);
-        TBSCertificateStructure.getInstance(null);
+        org.bouncycastle.asn1.x509.TBSCertificateStructure.getInstance(null);
+        org.bouncycastle.asn1.x509.TBSCertificateStructure.getInstance(null);
         TBSCertList.CRLEntry.getInstance(null);
         TBSCertList.getInstance(null);
         TBSCertList.getInstance(null);
@@ -858,18 +858,18 @@ public class GetInstanceTest
         doFullGetInstanceTest(UserNotice.class, new UserNotice(noticeReference, "hello world"));
         V2Form.getInstance(null);
         V2Form.getInstance(null);
-        X509CertificateStructure.getInstance(null);
-        X509CertificateStructure.getInstance(null);
-        X509Extensions.getInstance(null);
-        X509Extensions.getInstance(null);
+        org.bouncycastle.asn1.x509.X509CertificateStructure.getInstance(null);
+        org.bouncycastle.asn1.x509.X509CertificateStructure.getInstance(null);
+        org.bouncycastle.asn1.x509.X509Extensions.getInstance(null);
+        org.bouncycastle.asn1.x509.X509Extensions.getInstance(null);
         X500Name.getInstance(null);
         X500Name.getInstance(null);
-        DHDomainParameters.getInstance(null);
-        DHDomainParameters.getInstance(null);
+        org.bouncycastle.asn1.x9.DHDomainParameters.getInstance(null);
+        org.bouncycastle.asn1.x9.DHDomainParameters.getInstance(null);
         DHPublicKey.getInstance(null);
         DHPublicKey.getInstance(null);
-        DHValidationParms.getInstance(null);
-        DHValidationParms.getInstance(null);
+        org.bouncycastle.asn1.x9.DHValidationParms.getInstance(null);
+        org.bouncycastle.asn1.x9.DHValidationParms.getInstance(null);
         X962Parameters.getInstance(null);
         X962Parameters.getInstance(null);
         X9ECParameters.getInstance(null);
@@ -1050,6 +1050,38 @@ public class GetInstanceTest
         // TimeStampReq needs 2 mandatory fields (version INTEGER, messageImprint MessageImprint).
         checkTooShort(TimeStampReq.class, new DERSequence(new ASN1Encodable[]{
             ASN1Integer.ONE}));
+    }
+
+    public void testTooShortSequenceRejectedRecipientInfos()
+    {
+        // Fixed-arity CMS/CRMF/CMP SEQUENCE types with mandatory positional
+        // fields must reject a too-short encoding with a clean
+        // IllegalArgumentException rather than leaking an
+        // ArrayIndexOutOfBoundsException from positional getObjectAt,
+        // mirroring the sibling guards checked above (e.g. KeyTransRecipientInfo).
+
+        AlgorithmIdentifier algId = new AlgorithmIdentifier(new ASN1ObjectIdentifier("1.1"));
+
+        // KEKRecipientInfo needs 4 mandatory fields (version, kekid, keyEncryptionAlgorithm, encryptedKey).
+        checkTooShort(KEKRecipientInfo.class, new DERSequence(new ASN1Encodable[]{
+            ASN1Integer.ZERO, new KEKIdentifier(new byte[1], null, null), algId}));
+
+        // PasswordRecipientInfo needs at least 3 fields (version, keyEncryptionAlgorithm, encryptedKey) ...
+        checkTooShort(PasswordRecipientInfo.class, new DERSequence(new ASN1Encodable[]{
+            ASN1Integer.ZERO, algId}));
+
+        // ... and 4 when the optional [0] keyDerivationAlgorithm is present.
+        checkTooShort(PasswordRecipientInfo.class, new DERSequence(new ASN1Encodable[]{
+            ASN1Integer.ZERO, new DERTaggedObject(false, 0, algId), algId}));
+
+        // CertRequest needs 2 mandatory fields (certReqId, certTemplate); controls is OPTIONAL.
+        checkTooShort(CertRequest.class, new DERSequence(new ASN1Encodable[]{
+            ASN1Integer.ONE}));
+
+        // RevAnnContent needs 4 mandatory fields (status, certId, willBeRevokedAt, badSinceDate); crlDetails is OPTIONAL.
+        checkTooShort(RevAnnContent.class, new DERSequence(new ASN1Encodable[]{
+            PKIStatus.granted, new CertId(new GeneralName(new X500Name("CN=Test")), BigInteger.ONE),
+            new ASN1GeneralizedTime(new Date())}));
     }
 
     private void checkTooShort(Class clazz, DERSequence tooShort)

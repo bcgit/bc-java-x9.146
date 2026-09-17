@@ -18,6 +18,7 @@ import org.bouncycastle.jcajce.provider.asymmetric.util.KdfUtil;
 import org.bouncycastle.jcajce.spec.KEMExtractSpec;
 import org.bouncycastle.jcajce.spec.KEMGenerateSpec;
 import org.bouncycastle.jcajce.spec.KEMKDFSpec;
+import org.bouncycastle.util.Exceptions;
 
 /**
  * JCE KeyGenerator SPI for Composite ML-KEM as defined in the IETF LAMPS draft:
@@ -32,6 +33,7 @@ public class CompositeKeyGeneratorSpi
     private KEMGenerateSpec genSpec;
     private SecureRandom random;
     private KEMExtractSpec extSpec;
+    private ASN1ObjectIdentifier keyAlgorithm;
 
     protected CompositeKeyGeneratorSpi(ASN1ObjectIdentifier fixedOid)
     {
@@ -83,6 +85,9 @@ public class CompositeKeyGeneratorSpi
         {
             throw new InvalidAlgorithmParameterException("Key generator locked to " + fixedOid + ", but key uses " + keyOid);
         }
+
+        // the key's own OID, not fixedOid, which is null for a generator not locked to a parameter set
+        this.keyAlgorithm = keyOid;
     }
 
     @Override
@@ -98,7 +103,7 @@ public class CompositeKeyGeneratorSpi
         String algorithm;
         KEMKDFSpec spec;
         byte[] kemSecret;
-        CompositeMLKEMEngine engine = new CompositeMLKEMEngine(fixedOid, random);
+        CompositeMLKEMEngine engine = new CompositeMLKEMEngine(keyAlgorithm, random);
         if (genSpec != null)
         {
             // --- Encapsulation (sender side) ---
@@ -114,7 +119,7 @@ public class CompositeKeyGeneratorSpi
             }
             catch (Exception e)
             {
-                throw new IllegalStateException("Encapsulation failed: " + e.getMessage(), e);
+                throw Exceptions.illegalStateException("Encapsulation failed: " + e.getMessage(), e);
             }
         }
         else
@@ -130,7 +135,7 @@ public class CompositeKeyGeneratorSpi
             }
             catch (Exception e)
             {
-                throw new IllegalStateException("Decapsulation failed: " + e.getMessage(), e);
+                throw Exceptions.illegalStateException("Decapsulation failed: " + e.getMessage(), e);
             }
         }
         SecretKeySpec secretKey = new SecretKeySpec(KdfUtil.makeKeyBytes(spec, kemSecret), algorithm);
@@ -195,12 +200,12 @@ public class CompositeKeyGeneratorSpi
         }
     }
 
-    public static class MLKEM768_ECDH_BP256_SHA3_256
+    public static class MLKEM768_ECDH_brainpoolP256r1_SHA3_256
         extends CompositeKeyGeneratorSpi
     {
-        public MLKEM768_ECDH_BP256_SHA3_256()
+        public MLKEM768_ECDH_brainpoolP256r1_SHA3_256()
         {
-            super(IANAObjectIdentifiers.id_MLKEM768_ECDH_BP256_SHA3_256);
+            super(IANAObjectIdentifiers.id_MLKEM768_ECDH_brainpoolP256r1_SHA3_256);
         }
     }
 
@@ -222,12 +227,12 @@ public class CompositeKeyGeneratorSpi
         }
     }
 
-    public static class MLKEM1024_ECDH_BP384_SHA3_256
+    public static class MLKEM1024_ECDH_brainpoolP384r1_SHA3_256
         extends CompositeKeyGeneratorSpi
     {
-        public MLKEM1024_ECDH_BP384_SHA3_256()
+        public MLKEM1024_ECDH_brainpoolP384r1_SHA3_256()
         {
-            super(IANAObjectIdentifiers.id_MLKEM1024_ECDH_BP384_SHA3_256);
+            super(IANAObjectIdentifiers.id_MLKEM1024_ECDH_brainpoolP384r1_SHA3_256);
         }
     }
 

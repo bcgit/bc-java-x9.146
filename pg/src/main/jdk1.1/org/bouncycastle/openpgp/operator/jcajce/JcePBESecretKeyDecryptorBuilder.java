@@ -1,13 +1,9 @@
 package org.bouncycastle.openpgp.operator.jcajce;
 
 import java.security.GeneralSecurityException;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.InvalidKeyException;
 import java.security.Provider;
 
-import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
-import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -16,9 +12,6 @@ import org.bouncycastle.bcpg.SymmetricKeyUtils;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.generators.HKDFBytesGenerator;
 import org.bouncycastle.crypto.params.HKDFParameters;
-import org.bouncycastle.jcajce.util.DefaultJcaJceHelper;
-import org.bouncycastle.jcajce.util.NamedJcaJceHelper;
-import org.bouncycastle.jcajce.util.ProviderJcaJceHelper;
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPUtil;
 import org.bouncycastle.openpgp.operator.PBESecretKeyDecryptor;
@@ -27,7 +20,7 @@ import org.bouncycastle.util.Arrays;
 
 public class JcePBESecretKeyDecryptorBuilder
 {
-    private OperatorHelper helper = new OperatorHelper(new DefaultJcaJceHelper());
+    private OperatorHelper helper = OperatorUtils.createDefaultHelper();
     private PGPDigestCalculatorProvider calculatorProvider;
     private JceAEADUtil aeadUtil = new JceAEADUtil(helper);
 
@@ -45,7 +38,7 @@ public class JcePBESecretKeyDecryptorBuilder
 
     public JcePBESecretKeyDecryptorBuilder setProvider(Provider provider)
     {
-        this.helper = new OperatorHelper(new ProviderJcaJceHelper(provider));
+        this.helper = OperatorUtils.createProviderHelper(provider);
         this.aeadUtil = new JceAEADUtil(helper);
 
         if (calculatorProviderBuilder != null)
@@ -58,7 +51,7 @@ public class JcePBESecretKeyDecryptorBuilder
 
     public JcePBESecretKeyDecryptorBuilder setProvider(String providerName)
     {
-        this.helper = new OperatorHelper(new NamedJcaJceHelper(providerName));
+        this.helper = OperatorUtils.createNamedHelper(providerName);
         this.aeadUtil = new JceAEADUtil(helper);
 
         if (calculatorProviderBuilder != null)
@@ -82,30 +75,8 @@ public class JcePBESecretKeyDecryptorBuilder
             public byte[] recoverKeyData(int encAlgorithm, byte[] key, byte[] iv, byte[] keyData, int keyOff, int keyLen)
                 throws PGPException
             {
-                try
-                {
-                    Cipher c = helper.createCipher(PGPUtil.getSymmetricCipherName(encAlgorithm) + "/CFB/NoPadding");
-
-                    c.init(Cipher.DECRYPT_MODE, JcaJcePGPUtil.makeSymmetricKey(encAlgorithm, key), new IvParameterSpec(iv));
-
-                    return c.doFinal(keyData, keyOff, keyLen);
-                }
-                catch (IllegalBlockSizeException e)
-                {
-                    throw new PGPException("illegal block size: " + e.getMessage(), e);
-                }
-                catch (BadPaddingException e)
-                {
-                    throw new PGPException("bad padding: " + e.getMessage(), e);
-                }
-                catch (InvalidAlgorithmParameterException e)
-                {
-                    throw new PGPException("invalid parameter: " + e.getMessage(), e);
-                }
-                catch (InvalidKeyException e)
-                {
-                    throw new PGPException("invalid key: " + e.getMessage(), e);
-                }
+                return JcePBEKeyDataDecryptor.decryptKeyData(helper, encAlgorithm, "CFB", key,
+                    new IvParameterSpec(iv), keyData, keyOff, keyLen);
             }
 
             @Override

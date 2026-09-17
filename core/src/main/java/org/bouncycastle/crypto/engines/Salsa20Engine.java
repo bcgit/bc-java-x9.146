@@ -36,6 +36,7 @@ public class Salsa20Engine
     }
 
     /** @deprecated */
+    @Deprecated
     protected final static byte[]
         sigma = Strings.toByteArray("expand 32-byte k"),
         tau   = Strings.toByteArray("expand 16-byte k");
@@ -294,6 +295,15 @@ public class Salsa20Engine
 
     public long skip(long numberOfBytes)
     {
+        // split Long.MIN_VALUE in two: its negation below overflows back to itself
+        if (numberOfBytes == Long.MIN_VALUE)
+        {
+            skip(numberOfBytes / 2);
+            skip(numberOfBytes / 2);
+
+            return numberOfBytes;
+        }
+
         if (numberOfBytes >= 0)
         {
             long remaining = numberOfBytes;

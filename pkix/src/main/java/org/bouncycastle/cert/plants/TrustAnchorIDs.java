@@ -66,7 +66,7 @@ public final class TrustAnchorIDs
     }
 
     /**
-     * Composes the 64-bit certificate serial number per Section 6.1 of
+     * Composes the 64-bit certificate serial number per Section 6.2 of
      * draft-ietf-plants-merkle-tree-certs:
      * <pre>
      *     serial = (log_number &lt;&lt; 48) | index
@@ -89,7 +89,7 @@ public final class TrustAnchorIDs
             throw new IllegalArgumentException("index out of uint48 range: " + index);
         }
         // (logNumber << 48) overflows a signed long for log_number >= 32768; the
-        // draft requires serials to be positive and at most 2^64-1 (Section 6.1).
+        // draft requires serials to be positive and at most 2^64-1 (Section 6.2).
         return BigInteger.valueOf(logNumber).shiftLeft(48).or(BigInteger.valueOf(index));
     }
 

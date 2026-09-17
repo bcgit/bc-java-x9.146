@@ -9,13 +9,20 @@ import java.util.Date;
 import java.util.List;
 
 import org.bouncycastle.bcpg.AEADAlgorithmTags;
+import org.bouncycastle.bcpg.BCPGOutputStream;
 import org.bouncycastle.bcpg.CompressionAlgorithmTags;
+import org.bouncycastle.bcpg.HashAlgorithmTags;
 import org.bouncycastle.bcpg.KeyIdentifier;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
 import org.bouncycastle.openpgp.OpenPGPTestKeys;
 import org.bouncycastle.openpgp.PGPEncryptedDataGenerator;
 import org.bouncycastle.openpgp.PGPException;
+import org.bouncycastle.openpgp.PGPKeyPair;
+import org.bouncycastle.openpgp.PGPLiteralData;
+import org.bouncycastle.openpgp.PGPLiteralDataGenerator;
 import org.bouncycastle.openpgp.PGPSessionKey;
+import org.bouncycastle.openpgp.PGPSignature;
+import org.bouncycastle.openpgp.PGPSignatureGenerator;
 import org.bouncycastle.openpgp.api.KeyPassphraseProvider;
 import org.bouncycastle.openpgp.api.MessageEncryptionMechanism;
 import org.bouncycastle.openpgp.api.OpenPGPApi;
@@ -58,7 +65,12 @@ public class OpenPGPMessageProcessorTest
 
         testVerificationOfSEIPD1MessageWithTamperedCiphertext(api);
 
+        truncatedSEIPD2SignedMessageIsRejected(api);
+        truncatedSEIPD1SignedMessageIsRejected(api);
+
         policyRejectedInlineSignatureIsNotReported(api);
+        prefixedSignedMessageWithMissingCertificateIsNotFatal(api);
+        prefixedSignedMessageWithCertificateVerifies(api);
 
         roundtripUnarmoredPlaintextMessage(api);
         roundtripArmoredPlaintextMessage(api);
@@ -86,6 +98,7 @@ public class OpenPGPMessageProcessorTest
 
         verifyMessageByRevokedKey(api);
         incompleteMessageProcessing(api);
+        processUnencryptedMessage(api);
     }
 
     private void roundtripUnarmoredPlaintextMessage(OpenPGPApi api)
@@ -560,6 +573,76 @@ public class OpenPGPMessageProcessorTest
             signatures.isEmpty());
     }
 
+    /**
+     * Build a prefixed (old style, non-one-pass) signed message: the signature packet precedes the
+     * literal data packet, so the signature cannot be initialised before the data is read.
+     */
+    private byte[] prefixedSignedMessage(OpenPGPApi api, OpenPGPKey signingKey)
+        throws PGPException, IOException
+    {
+        OpenPGPCertificate.OpenPGPComponentKey signingComponent = signingKey.getSigningKeys().get(0);
+        PGPKeyPair signingPair = signingKey.getSecretKey(signingComponent).unlock(new char[0]).getKeyPair();
+
+        PGPSignatureGenerator sGen = new PGPSignatureGenerator(
+            api.getImplementation().pgpContentSignerBuilder(
+                signingPair.getPublicKey().getAlgorithm(), HashAlgorithmTags.SHA512),
+            signingPair.getPublicKey());
+        sGen.init(PGPSignature.BINARY_DOCUMENT, signingPair.getPrivateKey());
+        sGen.update(PLAINTEXT);
+        PGPSignature signature = sGen.generate();
+
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+        BCPGOutputStream pgpOut = new BCPGOutputStream(bOut);
+        signature.encode(pgpOut);
+
+        PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
+        OutputStream litOut = litGen.open(pgpOut, PGPLiteralData.BINARY, "", PLAINTEXT.length, new Date());
+        litOut.write(PLAINTEXT);
+        litGen.close();
+        pgpOut.close();
+
+        return bOut.toByteArray();
+    }
+
+    private void prefixedSignedMessageWithMissingCertificateIsNotFatal(OpenPGPApi api)
+        throws PGPException, IOException
+    {
+        OpenPGPKey aliceKey = api.readKeyOrCertificate().parseKey(OpenPGPTestKeys.ALICE_KEY);
+        byte[] message = prefixedSignedMessage(api, aliceKey);
+
+        // process the message without supplying the signers certificate - the prefixed signature
+        // cannot be initialised, so it must be skipped rather than fed data out of read().
+        OpenPGPMessageProcessor processor = api.decryptAndOrVerifyMessage();
+        OpenPGPMessageInputStream verifIn = processor.process(new ByteArrayInputStream(message));
+        ByteArrayOutputStream plainOut = new ByteArrayOutputStream();
+        Streams.pipeAll(verifIn, plainOut);
+        verifIn.close();
+
+        isEncodingEqual(PLAINTEXT, plainOut.toByteArray());
+        isTrue("a prefixed signature with no available certificate must not be reported as a verification result",
+            verifIn.getResult().getSignatures().isEmpty());
+    }
+
+    private void prefixedSignedMessageWithCertificateVerifies(OpenPGPApi api)
+        throws PGPException, IOException
+    {
+        OpenPGPKey aliceKey = api.readKeyOrCertificate().parseKey(OpenPGPTestKeys.ALICE_KEY);
+        byte[] message = prefixedSignedMessage(api, aliceKey);
+
+        OpenPGPCertificate aliceCert = api.readKeyOrCertificate().parseCertificate(OpenPGPTestKeys.ALICE_CERT);
+        OpenPGPMessageProcessor processor = api.decryptAndOrVerifyMessage()
+            .addVerificationCertificate(aliceCert);
+        OpenPGPMessageInputStream verifIn = processor.process(new ByteArrayInputStream(message));
+        ByteArrayOutputStream plainOut = new ByteArrayOutputStream();
+        Streams.pipeAll(verifIn, plainOut);
+        verifIn.close();
+
+        isEncodingEqual(PLAINTEXT, plainOut.toByteArray());
+        List<OpenPGPSignature.OpenPGPDocumentSignature> signatures = verifIn.getResult().getSignatures();
+        isEquals(1, signatures.size());
+        isTrue("prefixed signature is expected to verify", signatures.get(0).isValid());
+    }
+
     private void inlineSignWithV4KeyAlice(OpenPGPApi api)
         throws IOException, PGPException
     {
@@ -710,6 +793,189 @@ public class OpenPGPMessageProcessorTest
         OpenPGPMessageInputStream.Result result = in.getResult();
         OpenPGPSignature.OpenPGPDocumentSignature sig = result.getSignatures().get(0);
         isFalse(sig.isValid());
+    }
+
+    private void processUnencryptedMessage(OpenPGPApi api)
+            throws PGPException, IOException
+    {
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+        OpenPGPMessageOutputStream mOut = api.signAndOrEncryptMessage()
+                .open(bOut);
+        mOut.write(PLAINTEXT);
+        mOut.close();
+
+        ByteArrayInputStream bIn = new ByteArrayInputStream(bOut.toByteArray());
+        OpenPGPMessageInputStream mIn = api.decryptAndOrVerifyMessage().process(bIn);
+        byte[] plain = Streams.readAll(mIn);
+        mIn.close();
+        isEncodingEqual(PLAINTEXT, plain);
+
+        OpenPGPMessageInputStream.Result result = mIn.getResult();
+        isTrue(result.getEncryptionMethod().equals(MessageEncryptionMechanism.unencrypted()));
+        isNull(result.getEncryptionMethod().getMode());
+
+        // the null mode must not reach the hashCode/toString of an otherwise ordinary object -
+        // equals() holding while hashCode() throws would also break any hashed collection
+        isEquals(MessageEncryptionMechanism.unencrypted().hashCode(), result.getEncryptionMethod().hashCode());
+        isEquals("unencrypted", result.getEncryptionMethod().toString());
+    }
+
+    // IntegrityProtectedInputStream verifies the MDC from close(), which a truncated message never reached.
+    private void truncatedSEIPD1SignedMessageIsRejected(OpenPGPApi api)
+        throws IOException, PGPException
+    {
+        // a v4 key negotiates SEIPDv1, so this exercises the MDC rather than the AEAD final tag
+        OpenPGPKey key = api.readKeyOrCertificate().parseKey(OpenPGPTestKeys.ALICE_KEY);
+        OpenPGPCertificate cert = api.readKeyOrCertificate().parseCertificate(OpenPGPTestKeys.ALICE_CERT);
+
+        for (int n = 0; n <= 48; n++)
+        {
+            byte[] plaintext = new byte[n];
+            for (int i = 0; i != n; i++)
+            {
+                plaintext[i] = (byte)('a' + (i % 26));
+            }
+
+            OpenPGPMessageGenerator gen = api.signAndOrEncryptMessage()
+                .setArmored(false)
+                .addSigningKey(key)
+                .addEncryptionCertificate(key)
+                .setCompressionNegotiator(new OpenPGPMessageGenerator.CompressionNegotiator()
+                {
+                    public int negotiateCompression(OpenPGPMessageGenerator messageGenerator, OpenPGPPolicy policy)
+                    {
+                        return CompressionAlgorithmTags.UNCOMPRESSED;
+                    }
+                });
+
+            ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+            OutputStream msgOut = gen.open(bOut);
+            msgOut.write(plaintext);
+            msgOut.close();
+
+            byte[] message = bOut.toByteArray();
+
+            // the intact message still reads back byte at a time, with its signature. This also covers the
+            // close() idempotency the fix depends on: the stream self-closes on -1 and is then closed again
+            // by OpenPGPMessageInputStream.close(), and PGPEncryptedData.verify() cannot be run twice.
+            isEncodingEqual("truncation guard broke an intact SEIPDv1 message (n=" + n + ")",
+                plaintext, readByteAtATime(api, key, cert, message, 1));
+
+            for (int drop = 1; drop <= 160; drop += 4)
+            {
+                if (drop >= message.length)
+                {
+                    break;
+                }
+
+                byte[] truncated = Arrays.copyOfRange(message, 0, message.length - drop);
+
+                boolean rejected;
+                try
+                {
+                    readByteAtATime(api, key, cert, truncated, -1);
+                    rejected = false;
+                }
+                catch (Exception e)
+                {
+                    rejected = true;
+                }
+
+                isTrue("truncated SEIPDv1 message accepted without error (n=" + n + ", drop=" + drop + ")", rejected);
+            }
+        }
+    }
+
+    // The AEAD counterpart: the laundered EOFException ended the message before the final tag was reached.
+    private void truncatedSEIPD2SignedMessageIsRejected(OpenPGPApi api)
+        throws IOException, PGPException
+    {
+        OpenPGPKey key = api.readKeyOrCertificate().parseKey(OpenPGPTestKeys.V6_KEY);
+        OpenPGPCertificate cert = api.readKeyOrCertificate().parseCertificate(OpenPGPTestKeys.V6_CERT);
+
+        for (int n = 0; n <= 64; n++)
+        {
+            byte[] plaintext = new byte[n];
+            for (int i = 0; i != n; i++)
+            {
+                plaintext[i] = (byte)('a' + (i % 26));
+            }
+
+            OpenPGPMessageGenerator gen = api.signAndOrEncryptMessage()
+                .setArmored(false)
+                .setAllowPadding(true)
+                .addSigningKey(key)
+                .addEncryptionCertificate(key)
+                .setCompressionNegotiator(new OpenPGPMessageGenerator.CompressionNegotiator()
+                {
+                    public int negotiateCompression(OpenPGPMessageGenerator messageGenerator, OpenPGPPolicy policy)
+                    {
+                        return CompressionAlgorithmTags.UNCOMPRESSED;
+                    }
+                });
+
+            ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+            OutputStream msgOut = gen.open(bOut);
+            msgOut.write(plaintext);
+            msgOut.close();
+
+            byte[] message = bOut.toByteArray();
+
+            // the intact message still reads back byte at a time, with its signature
+            isEncodingEqual("truncation guard broke an intact message (n=" + n + ")",
+                plaintext, readByteAtATime(api, key, cert, message, 1));
+
+            for (int drop = 1; drop <= 256; drop += 8)
+            {
+                if (drop >= message.length)
+                {
+                    break;
+                }
+
+                byte[] truncated = Arrays.copyOfRange(message, 0, message.length - drop);
+
+                boolean rejected;
+                try
+                {
+                    readByteAtATime(api, key, cert, truncated, -1);
+                    rejected = false;
+                }
+                catch (Exception e)
+                {
+                    // truncation early enough to hit the AEAD stream's constructor surfaces through
+                    // PGPDataDecryptor.getInputStream(), which cannot throw IOException and so reports it
+                    // unchecked - any exception is an acceptable "clear error message" here
+                    rejected = true;
+                }
+
+                isTrue("truncated message accepted without error (n=" + n + ", drop=" + drop + ")", rejected);
+            }
+        }
+    }
+
+    // reads a byte at a time, the pattern that lands the next-packet look-ahead on the truncation
+    private byte[] readByteAtATime(OpenPGPApi api, OpenPGPKey key, OpenPGPCertificate cert, byte[] message, int expectedSignatures)
+        throws IOException, PGPException
+    {
+        OpenPGPMessageInputStream msgIn = api.decryptAndOrVerifyMessage()
+            .addDecryptionKey(key)
+            .addVerificationCertificate(cert)
+            .process(new ByteArrayInputStream(message));
+
+        ByteArrayOutputStream plainOut = new ByteArrayOutputStream();
+        int ch;
+        while ((ch = msgIn.read()) >= 0)
+        {
+            plainOut.write(ch);
+        }
+        msgIn.close();
+
+        if (expectedSignatures >= 0)
+        {
+            isEquals("wrong number of verified signatures", expectedSignatures, msgIn.getResult().getSignatures().size());
+        }
+
+        return plainOut.toByteArray();
     }
 
     private void testVerificationOfSEIPD1MessageWithTamperedCiphertext(OpenPGPApi api)

@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
+import javax.security.auth.Destroyable;
+
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.crypto.params.CMCEPrivateKeyParameters;
 import org.bouncycastle.crypto.util.PrivateKeyFactory;
@@ -11,9 +13,10 @@ import org.bouncycastle.crypto.util.PrivateKeyInfoFactory;
 import org.bouncycastle.jcajce.interfaces.CMCEPrivateKey;
 import org.bouncycastle.jcajce.spec.CMCEParameterSpec;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
 
 public class BCCMCEPrivateKey
-    implements CMCEPrivateKey
+    implements CMCEPrivateKey, Destroyable
 {
     private static final long serialVersionUID = 1L;
 
@@ -57,6 +60,12 @@ public class BCCMCEPrivateKey
         {
             BCCMCEPrivateKey otherKey = (BCCMCEPrivateKey)o;
 
+            // a destroyed key no longer exposes its value, so it is only equal to itself.
+            if (isDestroyed() || otherKey.isDestroyed())
+            {
+                return false;
+            }
+
             return Arrays.constantTimeAreEqual(this.getEncoded(), otherKey.getEncoded());
         }
 
@@ -79,6 +88,11 @@ public class BCCMCEPrivateKey
 
     public byte[] getEncoded()
     {
+        if (params.isDestroyed())
+        {
+            throw new IllegalStateException("key destroyed");
+        }
+
         try
         {
             PrivateKeyInfo pki = PrivateKeyInfoFactory.createPrivateKeyInfo(params);
@@ -99,6 +113,22 @@ public class BCCMCEPrivateKey
     public CMCEParameterSpec getParameterSpec()
     {
         return CMCEParameterSpec.fromName(params.getParameters().getName());
+    }
+
+    /**
+     * Destroy this key, zeroizing the secret key material it holds.
+     * <p>
+     * After destruction {@link #isDestroyed()} returns true and {@link #getEncoded()} throws
+     * {@link IllegalStateException}.
+     */
+    public synchronized void destroy()
+    {
+        params.destroy();
+    }
+
+    public boolean isDestroyed()
+    {
+        return params.isDestroyed();
     }
 
     CMCEPrivateKeyParameters getKeyParams()
@@ -123,6 +153,13 @@ public class BCCMCEPrivateKey
     {
         out.defaultWriteObject();
 
-        out.writeObject(this.getEncoded());
+        try
+        {
+            out.writeObject(this.getEncoded());
+        }
+        catch (IllegalStateException e)
+        {
+            throw Exceptions.ioException(e.getMessage(), e);
+        }
     }
 }

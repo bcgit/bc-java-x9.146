@@ -8,6 +8,8 @@ import java.util.Set;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
+import org.bouncycastle.jcajce.spec.MLKEMParameterSpec;
+import org.bouncycastle.jcajce.spec.XDHParameterSpec;
 import org.bouncycastle.jce.spec.ECNamedCurveGenParameterSpec;
 import org.bouncycastle.util.Strings;
 import org.bouncycastle.util.encoders.Hex;
@@ -25,6 +27,7 @@ public class CompositeIndex
     private static final Map<ASN1ObjectIdentifier, String> algorithmNames = new HashMap<ASN1ObjectIdentifier, String>();
     private static final Map<ASN1ObjectIdentifier, byte[]> kemLabels = new HashMap<ASN1ObjectIdentifier, byte[]>();
     private static final Map<ASN1ObjectIdentifier, AlgorithmParameterSpec[]> kpgInitSpecs = new HashMap<ASN1ObjectIdentifier, AlgorithmParameterSpec[]>();
+    private static final Map<ASN1ObjectIdentifier, String[]> algorithmAliases = new HashMap<ASN1ObjectIdentifier, String[]>();
 
     static
     {
@@ -75,8 +78,8 @@ public class CompositeIndex
         );
 
         registerKEMAlgorithm(
-            IANAObjectIdentifiers.id_MLKEM768_ECDH_BP256_SHA3_256,
-            "MLKEM768-ECDH-BP256-SHA3-256",
+            IANAObjectIdentifiers.id_MLKEM768_ECDH_brainpoolP256r1_SHA3_256,
+            "MLKEM768-ECDH-brainpoolP256r1-SHA3-256",
             Strings.toByteArray("MLKEM768-BP256"),
             new String[]{"ML-KEM-768", "EC"}
         );
@@ -98,8 +101,8 @@ public class CompositeIndex
         );
 
         registerKEMAlgorithm(
-            IANAObjectIdentifiers.id_MLKEM1024_ECDH_BP384_SHA3_256,
-            "MLKEM1024-ECDH-BP384-SHA3-256",
+            IANAObjectIdentifiers.id_MLKEM1024_ECDH_brainpoolP384r1_SHA3_256,
+            "MLKEM1024-ECDH-brainpoolP384r1-SHA3-256",
             Strings.toByteArray("MLKEM1024-BP384"),
             new String[]{"ML-KEM-1024", "EC"}
         );
@@ -119,27 +122,33 @@ public class CompositeIndex
             new String[]{"ML-KEM-1024", "EC"}
         );
 
-        // Per-component KeyPairGenerator init specs (in pairing order: ML-KEM first, traditional
-        // second). The ML-KEM component is generated through its parameter-set-specific
-        // KeyPairGenerator name ("ML-KEM-768" / "ML-KEM-1024") so it needs no spec.
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_RSA2048_SHA3_256, new AlgorithmParameterSpec[]{null, new RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4)});
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_RSA3072_SHA3_256, new AlgorithmParameterSpec[]{null, new RSAKeyGenParameterSpec(3072, RSAKeyGenParameterSpec.F4)});
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_RSA4096_SHA3_256, new AlgorithmParameterSpec[]{null, new RSAKeyGenParameterSpec(4096, RSAKeyGenParameterSpec.F4)});
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_X25519_SHA3_256, new AlgorithmParameterSpec[]{null, null});
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_P256_SHA3_256, new AlgorithmParameterSpec[]{null, new ECNamedCurveGenParameterSpec("P-256")});
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_P384_SHA3_256, new AlgorithmParameterSpec[]{null, new ECNamedCurveGenParameterSpec("P-384")});
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_BP256_SHA3_256, new AlgorithmParameterSpec[]{null, new ECNamedCurveGenParameterSpec("brainpoolP256r1")});
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM1024_RSA3072_SHA3_256, new AlgorithmParameterSpec[]{null, new RSAKeyGenParameterSpec(3072, RSAKeyGenParameterSpec.F4)});
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_P384_SHA3_256, new AlgorithmParameterSpec[]{null, new ECNamedCurveGenParameterSpec("P-384")});
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_BP384_SHA3_256, new AlgorithmParameterSpec[]{null, new ECNamedCurveGenParameterSpec("brainpoolP384r1")});
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM1024_X448_SHA3_256, new AlgorithmParameterSpec[]{null, null});
-        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_P521_SHA3_256, new AlgorithmParameterSpec[]{null, new ECNamedCurveGenParameterSpec("P-521")});
+        // The two brainpool sets were originally registered with the curve abbreviated to BP256 /
+        // BP384; those names are kept as aliases of the draft's spelling.
+        algorithmAliases.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_brainpoolP256r1_SHA3_256, new String[]{"MLKEM768-ECDH-BP256-SHA3-256"});
+        algorithmAliases.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_brainpoolP384r1_SHA3_256, new String[]{"MLKEM1024-ECDH-BP384-SHA3-256"});
+
+        // Per-component KeyPairGenerator init specs, in pairing order: ML-KEM first, traditional
+        // second. Every component carries one, including those whose parameter set the component's
+        // KeyPairGenerator name already fixes (ML-KEM, X25519, X448), because initialize(null, random)
+        // can only reach a component through a spec - a null slot silently drops the caller's random.
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_RSA2048_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_768, new RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4)});
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_RSA3072_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_768, new RSAKeyGenParameterSpec(3072, RSAKeyGenParameterSpec.F4)});
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_RSA4096_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_768, new RSAKeyGenParameterSpec(4096, RSAKeyGenParameterSpec.F4)});
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_X25519_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_768, new XDHParameterSpec(XDHParameterSpec.X25519)});
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_P256_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_768, new ECNamedCurveGenParameterSpec("P-256")});
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_P384_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_768, new ECNamedCurveGenParameterSpec("P-384")});
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_brainpoolP256r1_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_768, new ECNamedCurveGenParameterSpec("brainpoolP256r1")});
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM1024_RSA3072_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_1024, new RSAKeyGenParameterSpec(3072, RSAKeyGenParameterSpec.F4)});
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_P384_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_1024, new ECNamedCurveGenParameterSpec("P-384")});
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_brainpoolP384r1_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_1024, new ECNamedCurveGenParameterSpec("brainpoolP384r1")});
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM1024_X448_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_1024, new XDHParameterSpec(XDHParameterSpec.X448)});
+        kpgInitSpecs.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_P521_SHA3_256, new AlgorithmParameterSpec[]{MLKEMParameterSpec.ml_kem_1024, new ECNamedCurveGenParameterSpec("P-521")});
     }
 
     /**
      * Per-component {@link AlgorithmParameterSpec}s used to initialise the component
-     * KeyPairGenerators, in pairing order. An entry may be {@code null} when the component's
-     * KeyPairGenerator name already fixes the parameter set (ML-KEM, X25519, X448).
+     * KeyPairGenerators, in pairing order. Every entry is non-null: the specs are also the only route
+     * a caller-supplied SecureRandom has to a component generator.
      */
     public static AlgorithmParameterSpec[] getKeyPairSpecs(ASN1ObjectIdentifier algorithm)
     {
@@ -159,6 +168,17 @@ public class CompositeIndex
     public static String[] getPairing(ASN1ObjectIdentifier algorithm)
     {
         return pairings.get(algorithm);
+    }
+
+    /**
+     * Additional names a composite KEM algorithm is registered under, beyond the one
+     * {@link #getAlgorithmName} returns. Empty for every parameter set that has only one name.
+     */
+    public static String[] getAlgorithmAliases(ASN1ObjectIdentifier algorithm)
+    {
+        String[] aliases = algorithmAliases.get(algorithm);
+
+        return (aliases != null) ? aliases : new String[0];
     }
 
     private static void registerKEMAlgorithm(ASN1ObjectIdentifier oid, String algorithmName,
@@ -201,19 +221,19 @@ public class CompositeIndex
             return null;
         }
 
-        if (compositeName.contains("RSA"))
+        if (compositeName.indexOf("RSA") >= 0)
         {
             return "RSA";
         }
-        else if (compositeName.contains("ECDH"))
+        else if (compositeName.indexOf("ECDH") >= 0)
         {
             return "ECDH";
         }
-        else if (compositeName.contains("X25519"))
+        else if (compositeName.indexOf("X25519") >= 0)
         {
             return "X25519";
         }
-        else if (compositeName.contains("X448"))
+        else if (compositeName.indexOf("X448") >= 0)
         {
             return "X448";
         }
@@ -221,15 +241,17 @@ public class CompositeIndex
         return null;
     }
 
+    /**
+     * Maps a component algorithm name to the KeyFactory / KeyPairGenerator name it is reached by.
+     * Only the RSA components need translating; the pairings already name "EC", "X25519" and "X448"
+     * as the provider registers them, and "ML-KEM-768" / "ML-KEM-1024" are service names in their
+     * own right.
+     */
     static String getBaseName(String name)
     {
         if (name.indexOf("RSA") >= 0)
         {
             return "RSA";
-        }
-        if (name.indexOf("ECDSA") >= 0)
-        {
-            return "EC";
         }
 
         return name;

@@ -4,6 +4,7 @@ import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
 import org.bouncycastle.jcajce.provider.config.ConfigurableProvider;
 import org.bouncycastle.jcajce.provider.util.AsymmetricAlgorithmProvider;
 import org.bouncycastle.jcajce.provider.util.AsymmetricKeyInfoConverter;
+import org.bouncycastle.jcajce.util.SpiUtil;
 import org.bouncycastle.pqc.jcajce.provider.ntruplus.NTRUPlusKeyFactorySpi;
 
 public class NTRUPlus
@@ -21,20 +22,20 @@ public class NTRUPlus
         {
             provider.addAlgorithm("KeyFactory.NTRUPLUS", PREFIX + "NTRUPlusKeyFactorySpi");
             provider.addAlgorithm("Alg.Alias.KeyFactory.NTRUPLUS", "NTRUPLUS");
-            addKeyFactoryAlgorithm(provider, "NTRU+KEM-768", PREFIX + "NTRUPlusKeyFactorySpi$NTRUPlus768", BCObjectIdentifiers.ntruplus768, new NTRUPlusKeyFactorySpi.NTRUPlus768());
-            addKeyFactoryAlgorithm(provider, "NTRU+KEM-864", PREFIX + "NTRUPlusKeyFactorySpi$NTRUPlus864", BCObjectIdentifiers.ntruplus864,  new NTRUPlusKeyFactorySpi.NTRUPlus864());
-            addKeyFactoryAlgorithm(provider, "NTRU+KEM-1152", PREFIX + "NTRUPlusKeyFactorySpi$NTRUPlus1152", BCObjectIdentifiers.ntruplus1152,  new NTRUPlusKeyFactorySpi.NTRUPlus1152());
+            addKeyFactoryAlgorithm(provider, "NTRU+KEM768", PREFIX + "NTRUPlusKeyFactorySpi$NTRUPlus768", BCObjectIdentifiers.ntruplus768, new NTRUPlusKeyFactorySpi.NTRUPlus768());
+            addKeyFactoryAlgorithm(provider, "NTRU+KEM864", PREFIX + "NTRUPlusKeyFactorySpi$NTRUPlus864", BCObjectIdentifiers.ntruplus864,  new NTRUPlusKeyFactorySpi.NTRUPlus864());
+            addKeyFactoryAlgorithm(provider, "NTRU+KEM1152", PREFIX + "NTRUPlusKeyFactorySpi$NTRUPlus1152", BCObjectIdentifiers.ntruplus1152,  new NTRUPlusKeyFactorySpi.NTRUPlus1152());
 
             provider.addAlgorithm("KeyPairGenerator.NTRUPLUS", PREFIX + "NTRUPlusKeyPairGeneratorSpi");
             provider.addAlgorithm("Alg.Alias.KeyPairGenerator.NTRUPLUS", "NTRUPLUS");
-            addKeyPairGeneratorAlgorithm(provider, "NTRU+KEM-768", PREFIX + "NTRUPlusKeyPairGeneratorSpi$NTRUPlus768", BCObjectIdentifiers.ntruplus768);
-            addKeyPairGeneratorAlgorithm(provider, "NTRU+KEM-864", PREFIX + "NTRUPlusKeyPairGeneratorSpi$NTRUPlus864", BCObjectIdentifiers.ntruplus864);
-            addKeyPairGeneratorAlgorithm(provider, "NTRU+KEM-1152", PREFIX + "NTRUPlusKeyPairGeneratorSpi$NTRUPlus1152", BCObjectIdentifiers.ntruplus1152);
+            addKeyPairGeneratorAlgorithm(provider, "NTRU+KEM768", PREFIX + "NTRUPlusKeyPairGeneratorSpi$NTRUPlus768", BCObjectIdentifiers.ntruplus768);
+            addKeyPairGeneratorAlgorithm(provider, "NTRU+KEM864", PREFIX + "NTRUPlusKeyPairGeneratorSpi$NTRUPlus864", BCObjectIdentifiers.ntruplus864);
+            addKeyPairGeneratorAlgorithm(provider, "NTRU+KEM1152", PREFIX + "NTRUPlusKeyPairGeneratorSpi$NTRUPlus1152", BCObjectIdentifiers.ntruplus1152);
 
             provider.addAlgorithm("KeyGenerator.NTRUPLUS", PREFIX + "NTRUPlusKeyGeneratorSpi");
-            addKeyGeneratorAlgorithm(provider, "NTRU+KEM-768", PREFIX + "NTRUPlusKeyGeneratorSpi$NTRUPlus768", BCObjectIdentifiers.ntruplus768);
-            addKeyGeneratorAlgorithm(provider, "NTRU+KEM-864", PREFIX + "NTRUPlusKeyGeneratorSpi$NTRUPlus864", BCObjectIdentifiers.ntruplus864);
-            addKeyGeneratorAlgorithm(provider, "NTRU+KEM-1152", PREFIX + "NTRUPlusKeyGeneratorSpi$NTRUPlus1152", BCObjectIdentifiers.ntruplus1152);
+            addKeyGeneratorAlgorithm(provider, "NTRU+KEM768", PREFIX + "NTRUPlusKeyGeneratorSpi$NTRUPlus768", BCObjectIdentifiers.ntruplus768);
+            addKeyGeneratorAlgorithm(provider, "NTRU+KEM864", PREFIX + "NTRUPlusKeyGeneratorSpi$NTRUPlus864", BCObjectIdentifiers.ntruplus864);
+            addKeyGeneratorAlgorithm(provider, "NTRU+KEM1152", PREFIX + "NTRUPlusKeyGeneratorSpi$NTRUPlus1152", BCObjectIdentifiers.ntruplus1152);
 
             AsymmetricKeyInfoConverter keyFact = new NTRUPlusKeyFactorySpi();
 
@@ -42,14 +43,43 @@ public class NTRUPlus
             provider.addAlgorithm("Alg.Alias.Cipher.NTRUPLUS", "NTRUPLUS");
             provider.addAlgorithm("Alg.Alias.Cipher." + BCObjectIdentifiers.pqc_kem_ntruplus, "NTRUPLUS");
 
-            addCipherAlgorithm(provider, "NTRU+KEM-768", PREFIX + "NTRUPlusCipherSpi$NTRUPlus768", BCObjectIdentifiers.ntruplus768);
-            addCipherAlgorithm(provider, "NTRU+KEM-864", PREFIX + "NTRUPlusCipherSpi$NTRUPlus864", BCObjectIdentifiers.ntruplus864);
-            addCipherAlgorithm(provider, "NTRU+KEM-1152", PREFIX + "NTRUPlusCipherSpi$NTRUPlus1152", BCObjectIdentifiers.ntruplus1152);
+            addCipherAlgorithm(provider, "NTRU+KEM768", PREFIX + "NTRUPlusCipherSpi$NTRUPlus768", BCObjectIdentifiers.ntruplus768);
+            addCipherAlgorithm(provider, "NTRU+KEM864", PREFIX + "NTRUPlusCipherSpi$NTRUPlus864", BCObjectIdentifiers.ntruplus864);
+            addCipherAlgorithm(provider, "NTRU+KEM1152", PREFIX + "NTRUPlusCipherSpi$NTRUPlus1152", BCObjectIdentifiers.ntruplus1152);
+
+            addParameterSetNameAliases(provider, "NTRU+KEM-768", "NTRU+KEM768");
+            addParameterSetNameAliases(provider, "NTRU+KEM-864", "NTRU+KEM864");
+            addParameterSetNameAliases(provider, "NTRU+KEM-1152", "NTRU+KEM1152");
 
             registerOid(provider, BCObjectIdentifiers.pqc_kem_ntruplus, "NTRUPLUS", keyFact);
             provider.addKeyInfoConverter(BCObjectIdentifiers.ntruplus768, keyFact);
             provider.addKeyInfoConverter(BCObjectIdentifiers.ntruplus864, keyFact);
             provider.addKeyInfoConverter(BCObjectIdentifiers.ntruplus1152, keyFact);
+
+            if (SpiUtil.hasKEM())
+            {
+                addKEMAlgorithm(provider, "NTRUPLUS", PREFIX + "NTRUPlusKEMSpi$Base", BCObjectIdentifiers.pqc_kem_ntruplus);
+
+                addKEMAlgorithm(provider, "NTRU+KEM768", PREFIX + "NTRUPlusKEMSpi$NTRUPlus768", BCObjectIdentifiers.ntruplus768);
+                addKEMAlgorithm(provider, "NTRU+KEM864", PREFIX + "NTRUPlusKEMSpi$NTRUPlus864", BCObjectIdentifiers.ntruplus864);
+                addKEMAlgorithm(provider, "NTRU+KEM1152", PREFIX + "NTRUPlusKEMSpi$NTRUPlus1152", BCObjectIdentifiers.ntruplus1152);
+
+                // the hyphenated spellings the other services alias, for the KEM type only -
+                // addParameterSetNameAliases covers KeyFactory/KeyPairGenerator/KeyGenerator/Cipher
+                // and re-running it here would register those a second time, which addAlgorithm
+                // rejects as a duplicate provider key
+                provider.addAlgorithm("Alg.Alias.KEM.NTRU+KEM-768", "NTRU+KEM768");
+                provider.addAlgorithm("Alg.Alias.KEM.NTRU+KEM-864", "NTRU+KEM864");
+                provider.addAlgorithm("Alg.Alias.KEM.NTRU+KEM-1152", "NTRU+KEM1152");
+            }
+        }
+
+        private void addParameterSetNameAliases(ConfigurableProvider provider, String alias, String algorithm)
+        {
+            provider.addAlgorithm("Alg.Alias.KeyFactory." + alias, algorithm);
+            provider.addAlgorithm("Alg.Alias.KeyPairGenerator." + alias, algorithm);
+            provider.addAlgorithm("Alg.Alias.KeyGenerator." + alias, algorithm);
+            provider.addAlgorithm("Alg.Alias.Cipher." + alias, algorithm);
         }
     }
 }

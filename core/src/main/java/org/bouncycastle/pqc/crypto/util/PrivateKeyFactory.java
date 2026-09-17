@@ -13,7 +13,6 @@ import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
-import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -25,7 +24,6 @@ import org.bouncycastle.pqc.crypto.sdith.SDitHParameters;
 import org.bouncycastle.pqc.crypto.sdith.SDitHPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.uov.UOVParameters;
 import org.bouncycastle.pqc.crypto.uov.UOVPrivateKeyParameters;
-import org.bouncycastle.pqc.asn1.CMCEPrivateKey;
 import org.bouncycastle.pqc.asn1.FalconPrivateKey;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.pqc.asn1.SPHINCS256KeyParams;
@@ -39,47 +37,37 @@ import org.bouncycastle.pqc.crypto.aimer.AIMerParameters;
 import org.bouncycastle.pqc.crypto.aimer.AIMerPrivateKeyParameters;
 import org.bouncycastle.pqc.legacy.bike.BIKEParameters;
 import org.bouncycastle.pqc.legacy.bike.BIKEPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.cmce.CMCEParameters;
-import org.bouncycastle.pqc.crypto.cmce.CMCEPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumParameters;
-import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPublicKeyParameters;
+import org.bouncycastle.pqc.legacy.crystals.dilithium.DilithiumParameters;
+import org.bouncycastle.pqc.legacy.crystals.dilithium.DilithiumPrivateKeyParameters;
+import org.bouncycastle.pqc.legacy.crystals.dilithium.DilithiumPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.faest.FaestParameters;
 import org.bouncycastle.pqc.crypto.faest.FaestPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.qruov.QRUOVParameters;
 import org.bouncycastle.pqc.crypto.qruov.QRUOVPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.frodo.FrodoParameters;
-import org.bouncycastle.pqc.crypto.frodo.FrodoPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.haetae.HAETAEParameters;
 import org.bouncycastle.pqc.crypto.haetae.HAETAEPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.hawk.HawkParameters;
-import org.bouncycastle.pqc.crypto.hawk.HawkPrivateKeyParameters;
+import org.bouncycastle.pqc.legacy.hawk.HawkParameters;
+import org.bouncycastle.pqc.legacy.hawk.HawkPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.lms.HSSPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.mayo.MayoParameters;
 import org.bouncycastle.pqc.crypto.mayo.MayoPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.mlkem.MLKEMParameters;
-import org.bouncycastle.pqc.crypto.mlkem.MLKEMPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.mlkem.MLKEMPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.newhope.NHPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.ntru.NTRUParameters;
 import org.bouncycastle.pqc.crypto.ntru.NTRUPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.ntruplus.NTRUPlusParameters;
 import org.bouncycastle.pqc.crypto.ntruplus.NTRUPlusPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.smaugt.SmaugTParameters;
+import org.bouncycastle.pqc.crypto.smaugt.SmaugTPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.NTRULPRimeParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.NTRULPRimePrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.SNTRUPrimeParameters;
 import org.bouncycastle.pqc.crypto.ntruprime.SNTRUPrimePrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.saber.SABERParameters;
 import org.bouncycastle.pqc.crypto.saber.SABERPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAParameters;
-import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.snova.SnovaParameters;
 import org.bouncycastle.pqc.crypto.snova.SnovaPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.sqisign.SQIsignParameters;
@@ -92,12 +80,6 @@ import org.bouncycastle.pqc.crypto.xmss.XMSSMTPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSUtil;
-import org.bouncycastle.pqc.legacy.bike.BIKEParameters;
-import org.bouncycastle.pqc.legacy.bike.BIKEPrivateKeyParameters;
-import org.bouncycastle.pqc.legacy.picnic.PicnicParameters;
-import org.bouncycastle.pqc.legacy.picnic.PicnicPrivateKeyParameters;
-import org.bouncycastle.pqc.legacy.rainbow.RainbowParameters;
-import org.bouncycastle.pqc.legacy.rainbow.RainbowPrivateKeyParameters;
 import org.bouncycastle.pqc.legacy.sphincsplus.SPHINCSPlusParameters;
 import org.bouncycastle.pqc.legacy.sphincsplus.SPHINCSPlusPrivateKeyParameters;
 import org.bouncycastle.util.Arrays;
@@ -185,7 +167,7 @@ public class PrivateKeyFactory
             }
             return HSSPrivateKeyParameters.getInstance(Arrays.copyOfRange(keyEnc, 4, keyEnc.length));
         }
-        else if (algOID.on(BCObjectIdentifiers.sphincsPlus) || algOID.on(BCObjectIdentifiers.sphincsPlus_interop))
+        else if (Utils.sphincsPlusParams.containsKey(algOID))
         {
             SPHINCSPlusParameters spParams = Utils.sphincsPlusParamsLookup(algOID);
 
@@ -202,92 +184,21 @@ public class PrivateKeyFactory
                 return new SPHINCSPlusPrivateKeyParameters(spParams, ASN1OctetString.getInstance(obj).getOctets());
             }
         }
-        else if (Utils.slhdsaParams.containsKey(algOID))
-        {
-            SLHDSAParameters spParams = Utils.slhdsaParamsLookup(algOID);
-            ASN1OctetString slhdsaKey = parseOctetString(keyInfo.getPrivateKey(), spParams.getN() * 4);
-
-            return new SLHDSAPrivateKeyParameters(spParams, slhdsaKey.getOctets());
-        }
-        else if (algOID.on(BCObjectIdentifiers.picnic))
-        {
-            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
-            PicnicParameters pParams = Utils.picnicParamsLookup(algOID);
-
-            return new PicnicPrivateKeyParameters(pParams, keyEnc);
-        }
-        else if (algOID.on(BCObjectIdentifiers.pqc_kem_mceliece))
-        {
-            CMCEPrivateKey cmceKey = CMCEPrivateKey.getInstance(keyInfo.parsePrivateKey());
-            CMCEParameters spParams = Utils.mcElieceParamsLookup(algOID);
-
-            return new CMCEPrivateKeyParameters(spParams, cmceKey.getDelta(), cmceKey.getC(), cmceKey.getG(), cmceKey.getAlpha(), cmceKey.getS());
-        }
-        else if (algOID.on(BCObjectIdentifiers.pqc_kem_frodo))
-        {
-            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
-            FrodoParameters spParams = Utils.frodoParamsLookup(algOID);
-
-            return new FrodoPrivateKeyParameters(spParams, keyEnc);
-        }
-        else if (algOID.on(BCObjectIdentifiers.pqc_kem_saber))
+        else if (Utils.saberParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             SABERParameters spParams = Utils.saberParamsLookup(algOID);
 
             return new SABERPrivateKeyParameters(spParams, keyEnc);
         }
-        else if (algOID.on(BCObjectIdentifiers.pqc_kem_ntru))
+        else if (Utils.ntruParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             NTRUParameters spParams = Utils.ntruParamsLookup(algOID);
 
             return new NTRUPrivateKeyParameters(spParams, keyEnc);
         }
-        else if (algOID.equals(NISTObjectIdentifiers.id_alg_ml_kem_512) ||
-            algOID.equals(NISTObjectIdentifiers.id_alg_ml_kem_768) ||
-            algOID.equals(NISTObjectIdentifiers.id_alg_ml_kem_1024))
-        {
-            ASN1Primitive mlkemKey = parsePrimitiveString(keyInfo.getPrivateKey(), 64);
-            MLKEMParameters mlkemParams = Utils.mlkemParamsLookup(algOID);
-
-            MLKEMPublicKeyParameters pubParams = null;
-            if (keyInfo.getPublicKeyData() != null)
-            {
-                pubParams = PublicKeyFactory.MLKEMConverter.getPublicKeyParams(mlkemParams, keyInfo.getPublicKeyData());
-            }
-
-            if (mlkemKey instanceof ASN1OctetString)
-            {
-                // TODO This should be explicitly EXPANDED_KEY or SEED (tag already removed) but is length-flexible
-                return new MLKEMPrivateKeyParameters(mlkemParams, ((ASN1OctetString)mlkemKey).getOctets(), pubParams);
-            }
-            else if (mlkemKey instanceof ASN1Sequence)
-            {
-                ASN1Sequence keySeq = (ASN1Sequence)mlkemKey;
-                byte[] seed = ASN1OctetString.getInstance(keySeq.getObjectAt(0)).getOctets();
-                byte[] encoding = ASN1OctetString.getInstance(keySeq.getObjectAt(1)).getOctets();
-
-                // TODO This should only allow seed but is length-flexible
-                MLKEMPrivateKeyParameters mlkemPriv = new MLKEMPrivateKeyParameters(mlkemParams, seed, pubParams);
-
-                /*
-                 * RFC 9881 8.2. When receiving a private key that contains both the seed and the expandedKey, the
-                 * recipient SHOULD perform a seed consistency check to ensure that the sender properly generated
-                 * the private key. [..] If the check is done and the seed and the expandedKey are not consistent,
-                 * the recipient MUST reject the private key as malformed.
-                 */
-                if (!Arrays.constantTimeAreEqual(mlkemPriv.getEncoded(), encoding))
-                {
-                    throw new IllegalArgumentException("inconsistent " + mlkemParams.getName() + " private key");
-                }
-
-                return mlkemPriv;
-            }
-
-            throw new IllegalArgumentException("invalid " + mlkemParams.getName() + " private key");
-        }
-        else if (algOID.on(BCObjectIdentifiers.pqc_kem_ntrulprime))
+        else if (Utils.ntruprimeParams.containsKey(algOID))
         {
             ASN1Sequence keyEnc = ASN1Sequence.getInstance(keyInfo.parsePrivateKey());
 
@@ -299,7 +210,7 @@ public class PrivateKeyFactory
                 ASN1OctetString.getInstance(keyEnc.getObjectAt(2)).getOctets(),
                 ASN1OctetString.getInstance(keyEnc.getObjectAt(3)).getOctets());
         }
-        else if (algOID.on(BCObjectIdentifiers.pqc_kem_sntruprime))
+        else if (Utils.sntruprimeParams.containsKey(algOID))
         {
             ASN1Sequence keyEnc = ASN1Sequence.getInstance(keyInfo.parsePrivateKey());
 
@@ -311,40 +222,6 @@ public class PrivateKeyFactory
                 ASN1OctetString.getInstance(keyEnc.getObjectAt(2)).getOctets(),
                 ASN1OctetString.getInstance(keyEnc.getObjectAt(3)).getOctets(),
                 ASN1OctetString.getInstance(keyEnc.getObjectAt(4)).getOctets());
-        }
-        else if (Utils.mldsaParams.containsKey(algOID))
-        {
-            ASN1Encodable mldsaKey = parsePrimitiveString(keyInfo.getPrivateKey(), 32);
-            MLDSAParameters mldsaParams = Utils.mldsaParamsLookup(algOID);
-
-            MLDSAPublicKeyParameters pubParams = null;
-            if (keyInfo.getPublicKeyData() != null)
-            {
-                pubParams = PublicKeyFactory.MLDSAConverter.getPublicKeyParams(mldsaParams, keyInfo.getPublicKeyData());
-            }
-
-            if (mldsaKey instanceof ASN1OctetString)
-            {
-                // TODO This should be explicitly EXPANDED_KEY or SEED (tag already removed) but is length-flexible
-                return new MLDSAPrivateKeyParameters(mldsaParams, ((ASN1OctetString)mldsaKey).getOctets(), pubParams);
-            }
-            else if (mldsaKey instanceof ASN1Sequence)
-            {
-                ASN1Sequence keySeq = (ASN1Sequence)mldsaKey;
-                byte[] seed = ASN1OctetString.getInstance(keySeq.getObjectAt(0)).getOctets();
-                byte[] encoding = ASN1OctetString.getInstance(keySeq.getObjectAt(1)).getOctets();
-
-                // TODO This should only allow seed but is length-flexible
-                MLDSAPrivateKeyParameters mldsaPriv = new MLDSAPrivateKeyParameters(mldsaParams, seed, pubParams);
-                if (!Arrays.constantTimeAreEqual(mldsaPriv.getEncoded(), encoding))
-                {
-                    throw new IllegalArgumentException("inconsistent " + mldsaParams.getName() + " private key");
-                }
-
-                return mldsaPriv;
-            }
-
-            throw new IllegalArgumentException("invalid " + mldsaParams.getName() + " private key");
         }
         else if (algOID.equals(BCObjectIdentifiers.dilithium2)
             || algOID.equals(BCObjectIdentifiers.dilithium3) || algOID.equals(BCObjectIdentifiers.dilithium5))
@@ -416,7 +293,7 @@ public class PrivateKeyFactory
 
             return new FalconPrivateKeyParameters(falconParams, falconKey.getf(), falconKey.getG(), falconKey.getF(), falconKey.getPublicKey().getH());
         }
-        else if (algOID.on(BCObjectIdentifiers.pqc_kem_bike))
+        else if (Utils.bikeParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             BIKEParameters bikeParams = Utils.bikeParamsLookup(algOID);
@@ -426,19 +303,12 @@ public class PrivateKeyFactory
             byte[] sigma = Arrays.copyOfRange(keyEnc, 2 * bikeParams.getRByte(), keyEnc.length);
             return new BIKEPrivateKeyParameters(bikeParams, h0, h1, sigma);
         }
-        else if (algOID.on(BCObjectIdentifiers.pqc_kem_hqc))
+        else if (Utils.hqcParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             HQCParameters hqcParams = Utils.hqcParamsLookup(algOID);
 
             return new HQCPrivateKeyParameters(hqcParams, keyEnc);
-        }
-        else if (algOID.on(BCObjectIdentifiers.rainbow))
-        {
-            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
-            RainbowParameters rainbowParams = Utils.rainbowParamsLookup(algOID);
-
-            return new RainbowPrivateKeyParameters(rainbowParams, keyEnc);
         }
         else if (algOID.equals(PQCObjectIdentifiers.xmss))
         {
@@ -464,7 +334,7 @@ public class PrivateKeyFactory
 
                 if (xmssPrivateKey.getBdsState() != null)
                 {
-                    BDS bds = (BDS)XMSSUtil.deserialize(xmssPrivateKey.getBdsState(), BDS.class);
+                    BDS bds = (BDS)XMSSUtil.deserialize(xmssPrivateKey.getBdsState(), BDS.class, xmssPrivateKey.getPublicSeed());
                     keyBuilder.withBDSState(bds.withWOTSDigest(treeDigest));
                 }
 
@@ -499,7 +369,7 @@ public class PrivateKeyFactory
 
                 if (xmssMtPrivateKey.getBdsState() != null)
                 {
-                    BDSStateMap bdsState = (BDSStateMap)XMSSUtil.deserialize(xmssMtPrivateKey.getBdsState(), BDSStateMap.class);
+                    BDSStateMap bdsState = (BDSStateMap)XMSSUtil.deserialize(xmssMtPrivateKey.getBdsState(), BDSStateMap.class, xmssMtPrivateKey.getPublicSeed());
                     keyBuilder.withBDSState(bdsState.withWOTSDigest(treeDigest));
                 }
 
@@ -568,13 +438,13 @@ public class PrivateKeyFactory
             MayoParameters mayoParams = Utils.mayoParamsLookup(algOID);
             return new MayoPrivateKeyParameters(mayoParams, keyEnc);
         }
-        else if (algOID.on(BCObjectIdentifiers.snova))
+        else if (Utils.snovaParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             SnovaParameters snovaParams = Utils.snovaParamsLookup(algOID);
             return new SnovaPrivateKeyParameters(snovaParams, keyEnc);
         }
-        else if (algOID.on(BCObjectIdentifiers.hawk))
+        else if (Utils.hawkParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             HawkParameters hawkParams = Utils.hawkParamsLookup(algOID);
@@ -595,37 +465,43 @@ public class PrivateKeyFactory
             SDitHParameters sdithParameters = Utils.sdithParamsLookup(algOID);
             return new SDitHPrivateKeyParameters(sdithParameters, keyInfo.getPrivateKey().getOctets());
         }
-        else if (algOID.on(BCObjectIdentifiers.pqc_kem_ntruplus))
+        else if (Utils.ntruPlusParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             NTRUPlusParameters ntruPlusParams = Utils.ntruPlusParamsLookup(algOID);
             return new NTRUPlusPrivateKeyParameters(ntruPlusParams, keyEnc);
         }
-        else if (algOID.on(BCObjectIdentifiers.aimer))
+        else if (Utils.aimerParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             AIMerParameters aimerParams = Utils.aimerParamsLookup(algOID);
             return new AIMerPrivateKeyParameters(aimerParams, keyEnc);
         }
-        else if (algOID.on(BCObjectIdentifiers.faest))
+        else if (Utils.smaugTParams.containsKey(algOID))
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
+            SmaugTParameters smaugTParams = Utils.smaugTParamsLookup(algOID);
+            return new SmaugTPrivateKeyParameters(smaugTParams, keyEnc);
+        }
+        else if (Utils.faestParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             FaestParameters faestParams = Utils.faestParamsLookup(algOID);
             return new FaestPrivateKeyParameters(faestParams, keyEnc);
         }
-        else if (algOID.on(BCObjectIdentifiers.qruov))
+        else if (Utils.qruovParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             QRUOVParameters qruovParams = Utils.qruovParamsLookup(algOID);
             return new QRUOVPrivateKeyParameters(qruovParams, keyEnc);
         }
-        else if (algOID.on(BCObjectIdentifiers.sqisign))
+        else if (Utils.sqisignParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             SQIsignParameters sqisignParams = Utils.sqisignParamsLookup(algOID);
             return new SQIsignPrivateKeyParameters(sqisignParams, keyEnc);
         }
-        else if (algOID.on(BCObjectIdentifiers.haetae))
+        else if (Utils.haetaeParams.containsKey(algOID))
         {
             byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
             HAETAEParameters haetaeParams = Utils.haetaeParamsLookup(algOID);
@@ -633,7 +509,7 @@ public class PrivateKeyFactory
         }
         else
         {
-            throw new RuntimeException("algorithm identifier in private key not recognised");
+            throw new IOException("algorithm identifier in private key not recognised: " + algOID);
         }
     }
 

@@ -273,6 +273,7 @@ public class
         TestSuite suite = new TestSuite("OpenSSL Tests");
         
         suite.addTestSuite(AllTests.class);
+        suite.addTestSuite(CompositeKeyTest.class);
         
         return new BCTestSetup(suite);
     }

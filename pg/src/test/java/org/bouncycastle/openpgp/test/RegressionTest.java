@@ -9,6 +9,7 @@ import org.bouncycastle.util.test.Test;
 public class RegressionTest
 {
     public static Test[] tests = {
+        new PGPPadTest(),
         new BcPGPKeyRingTest(),
         new PGPKeyRingTest(),
         new BcPGPRSATest(),
@@ -54,6 +55,7 @@ public class RegressionTest
         new IgnoreUnknownEncryptedSessionKeys(),
         new PGPEncryptedDataTest(),
         new PGPAeadTest(),
+        new BcAEADBufferingTest(),
         new CRC24Test(),
         new WildcardKeyIDTest(),
         new ArmorCRCTest(),
@@ -79,6 +81,7 @@ public class RegressionTest
         new LegacyX448KeyPairTest(),
 
         new PGPv6MessageDecryptionTest(),
+        new JceExternalPublicKeyDataDecryptorFactoryBuilderTest(),
         new Curve25519PrivateKeyEncodingTest(),
         new EdDSAKeyConversionWithLeadingZeroTest(),
         new JcaECDSAKeyConverterTest(),
@@ -90,6 +93,7 @@ public class RegressionTest
         new PGPv6SignatureTest(),
         new PGPKeyPairGeneratorTest(),
         new PGPKeyRingGeneratorTest(),
+        new PGPShortEncSessionKeyTest(),
     };
 
     public static void main(String[] args)

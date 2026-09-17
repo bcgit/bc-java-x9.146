@@ -207,6 +207,69 @@ public class PKCS12Util
         return content;
     }
 
+    // The RFC 9579 sec. 9 floor for a PBMAC1 MAC key; see validateMacKeyLength, which is the only
+    // thing that applies it - a PBES2 content-encryption keyLength legitimately goes below it.
+    private static final BigInteger MIN_MAC_KEY_LENGTH = BigInteger.valueOf(20);
+    // Any keyLength beyond this is rejected as abusive, whatever it is sizing.
+    private static final BigInteger MAX_KEY_LENGTH = BigInteger.valueOf(1024);
+
+    /**
+     * Validate a PBKDF2 keyLength from a PFX. As with the iteration count, the value arrives in a
+     * PFX whose MAC has not been checked yet and sizes the derivation output, so it has to be
+     * bounded before deriving; it is also multiplied by 8 at the call sites, which overflows to a
+     * negative bit count for a large enough value.
+     *
+     * @param keyLength the keyLength from the wire.
+     * @return the validated keyLength in bytes.
+     * @throws IllegalStateException if the keyLength is absent, not positive, or larger than the
+     *         maximum supported.
+     */
+    public static int validateKeyLength(BigInteger keyLength)
+    {
+        if (keyLength == null || keyLength.signum() <= 0)
+        {
+            throw new IllegalStateException("keyLength must be positive");
+        }
+
+        if (keyLength.compareTo(MAX_KEY_LENGTH) > 0)
+        {
+            throw new IllegalStateException("keyLength " + keyLength + " greater than " + MAX_KEY_LENGTH);
+        }
+
+        return BigIntegers.intValueExact(keyLength);
+    }
+
+    /**
+     * Validate a PBKDF2 keyLength that will size a <b>PBMAC1 MAC key</b>. As
+     * {@link #validateKeyLength(BigInteger)}, plus the floor RFC 9579 sec. 9 asks for: "It's
+     * RECOMMENDED to reject any KDF parameters that specify key lengths less than 20 octets." A MAC
+     * key of one or two octets is brute-forceable, so a PFX declaring one would have its integrity
+     * MAC checked against a key an attacker can guess without knowing the password. Sec. 5 has the
+     * length SHOULD match the HMAC output size, so no conforming file comes near the floor.
+     * <p>
+     * This is deliberately separate from {@link #validateKeyLength(BigInteger)}, which also bounds
+     * the PBES2 <i>content-encryption</i> keyLength - where 16 octets (AES-128) is legal and BC
+     * writes it itself. The upper bound stays at 1024 rather than the HMAC output size for the
+     * mirror-image reason: BC's PKCS12-PBMAC1 keystore asked for a 256-octet MAC key up to release
+     * 1.86, so a cap at the output size would refuse files BC itself produced.
+     *
+     * @param keyLength the keyLength from the wire.
+     * @return the validated keyLength in bytes.
+     * @throws IllegalStateException if the keyLength is absent, not positive, below 20 octets, or
+     *         larger than the maximum supported.
+     */
+    public static int validateMacKeyLength(BigInteger keyLength)
+    {
+        int length = validateKeyLength(keyLength);
+
+        if (keyLength.compareTo(MIN_MAC_KEY_LENGTH) < 0)
+        {
+            throw new IllegalStateException("keyLength " + keyLength + " less than " + MIN_MAC_KEY_LENGTH);
+        }
+
+        return length;
+    }
+
     /**
      * Validate an iteration count from a PFX, enforcing the cap configured via the
      * {@link org.bouncycastle.util.Properties#PKCS12_MAX_IT_COUNT} security property (default
@@ -318,7 +381,7 @@ public class PKCS12Util
             pbkdf2Params.getSalt(),
             validateIterationCount(pbkdf2Params.getIterationCount()));
 
-        CipherParameters key = generator.generateDerivedParameters(BigIntegers.intValueExact(pbkdf2Params.getKeyLength()) * 8);
+        CipherParameters key = generator.generateDerivedParameters(validateMacKeyLength(pbkdf2Params.getKeyLength()) * 8);
 
         Arrays.clear(generator.getPassword());
 

@@ -9,19 +9,25 @@ import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.KeyStoreSpi;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Security;
 import java.security.Signature;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.spec.RSAPrivateCrtKeySpec;
 import java.security.spec.RSAPublicKeySpec;
+import java.util.Date;
 import java.util.Enumeration;
 
 import org.bouncycastle.asn1.ASN1BMPString;
+import org.bouncycastle.asn1.ASN1EncodableVector;
+import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1OctetString;
@@ -29,6 +35,7 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1StreamParser;
 import org.bouncycastle.asn1.DERBMPString;
+import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERSequence;
@@ -40,6 +47,7 @@ import org.bouncycastle.asn1.pkcs.ContentInfo;
 import org.bouncycastle.asn1.pkcs.EncryptedData;
 import org.bouncycastle.asn1.pkcs.EncryptedPrivateKeyInfo;
 import org.bouncycastle.asn1.pkcs.MacData;
+import org.bouncycastle.asn1.pkcs.PKCS12PBEParams;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.Pfx;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
@@ -49,8 +57,13 @@ import org.bouncycastle.asn1.x500.X500NameBuilder;
 import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.KeyPurposeId;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.asn1.x509.Time;
+import org.bouncycastle.asn1.x509.V1TBSCertificateGenerator;
 import org.bouncycastle.internal.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.jcajce.PKCS12StoreParameter;
+import org.bouncycastle.jcajce.provider.keystore.pkcs12.PKCS12KeyStoreSpi;
+import org.bouncycastle.jcajce.provider.keystore.pkcs12.PKCS12PBMAC1KeyStoreSpi;
 import org.bouncycastle.jcajce.spec.MLDSAParameterSpec;
 import org.bouncycastle.jce.PKCS12Util;
 import org.bouncycastle.jce.interfaces.PKCS12BagAttributeCarrier;
@@ -2545,6 +2558,137 @@ public class PKCS12StoreTest
         System.clearProperty(Properties.PKCS12_MAX_IT_COUNT);
     }
 
+    private byte[] storeFreshPKCS12()
+        throws Exception
+    {
+        KeyPairGenerator kpGen = KeyPairGenerator.getInstance("EC", BC);
+        KeyPair kp = kpGen.generateKeyPair();
+        X509Certificate cert = TestUtils.createSelfSignedCert(new X500Name("CN=PKCS12 Iteration Count Test"), "SHA256withECDSA", kp);
+
+        KeyStore keyStore = KeyStore.getInstance("PKCS12", BC);
+
+        keyStore.load(null, null);
+
+        keyStore.setKeyEntry("key", kp.getPrivate(), null, new Certificate[]{cert});
+
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+
+        keyStore.store(bOut, passwd);
+
+        return bOut.toByteArray();
+    }
+
+    private int macIterationCount(byte[] pfxEncoding)
+    {
+        return Pfx.getInstance(pfxEncoding).getMacData().getIterationCount().intValue();
+    }
+
+    private int keyBagIterationCount(byte[] pfxEncoding)
+        throws IOException
+    {
+        Pfx pfx = Pfx.getInstance(pfxEncoding);
+        AuthenticatedSafe authSafe = AuthenticatedSafe.getInstance(
+            ASN1OctetString.getInstance(pfx.getAuthSafe().getContent()).getOctets());
+        ContentInfo[] infos = authSafe.getContentInfo();
+
+        for (int i = 0; i != infos.length; i++)
+        {
+            // the shrouded key bags are the unencrypted SafeContents, the certificates
+            // live in the EncryptedData block alongside them
+            if (!infos[i].getContentType().equals(PKCSObjectIdentifiers.data))
+            {
+                continue;
+            }
+
+            ASN1Sequence bags = ASN1Sequence.getInstance(
+                ASN1OctetString.getInstance(infos[i].getContent()).getOctets());
+
+            for (int j = 0; j != bags.size(); j++)
+            {
+                SafeBag bag = SafeBag.getInstance(bags.getObjectAt(j));
+
+                if (bag.getBagId().equals(PKCSObjectIdentifiers.pkcs8ShroudedKeyBag))
+                {
+                    EncryptedPrivateKeyInfo encInfo = EncryptedPrivateKeyInfo.getInstance(bag.getBagValue());
+                    PKCS12PBEParams pbeParams = PKCS12PBEParams.getInstance(
+                        encInfo.getEncryptionAlgorithm().getParameters());
+
+                    return pbeParams.getIterations().intValue();
+                }
+            }
+        }
+
+        fail("no pkcs8ShroudedKeyBag found");
+
+        return -1;
+    }
+
+    private void testStoreIterationCount()
+        throws Exception
+    {
+        // the test harness itself sets PKCS12_STORE_IT_COUNT low so the suite doesn't spend
+        // its time on the KDF, so put back whatever was there on the way out rather than
+        // assuming the property was unset.
+        String ambient = System.getProperty(Properties.PKCS12_STORE_IT_COUNT);
+
+        try
+        {
+            //
+            // PKCS12_STORE_IT_COUNT is the write-side counterpart of PKCS12_MAX_IT_COUNT:
+            // an operator trading password-cracking resistance for store/load time.
+            //
+            System.setProperty(Properties.PKCS12_STORE_IT_COUNT, "51200");
+
+            byte[] lowered = storeFreshPKCS12();
+
+            isEquals("lowered key bag iteration count", 51200, keyBagIterationCount(lowered));
+            isEquals("lowered MAC iteration count", 102400, macIterationCount(lowered));
+
+            KeyStore inStore = KeyStore.getInstance("PKCS12", BC);
+
+            inStore.load(new ByteArrayInputStream(lowered), passwd);
+
+            isTrue("lowered store did not round trip", inStore.getKey("key", null) != null);
+
+            //
+            // a value outside 1..2,500,000 is ignored - a mistyped property must not be
+            // able to write a file with no PBE work in it at all. This is the one case
+            // that has to pay for a full strength store.
+            //
+            System.setProperty(Properties.PKCS12_STORE_IT_COUNT, "0");
+
+            byte[] ignored = storeFreshPKCS12();
+
+            isEquals("out of range key bag iteration count honoured", 600000, keyBagIterationCount(ignored));
+            isEquals("out of range MAC iteration count honoured", 1200000, macIterationCount(ignored));
+        }
+        finally
+        {
+            if (ambient == null)
+            {
+                System.clearProperty(Properties.PKCS12_STORE_IT_COUNT);
+            }
+            else
+            {
+                System.setProperty(Properties.PKCS12_STORE_IT_COUNT, ambient);
+            }
+        }
+
+        //
+        // a file that arrived with its own MAC count keeps it on the way back out.
+        //
+        KeyStore reStore = KeyStore.getInstance("PKCS12", BC);
+
+        reStore.load(new ByteArrayInputStream(pkcs12), passwd);
+
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+
+        reStore.store(bOut, passwd);
+
+        isEquals("loaded MAC iteration count not preserved",
+            macIterationCount(pkcs12), macIterationCount(bOut.toByteArray()));
+    }
+
     private void testPBMac1PBKdf2()
         throws Exception
     {
@@ -2742,6 +2886,145 @@ public class PKCS12StoreTest
         isTrue(ks.isCertificateEntry("cert0"));
     }
 
+    private void testCertificateAliasConsistency()
+        throws Exception
+    {
+        implCertificateAliasConsistency("PKCS12");
+        implCertificateAliasConsistency("PKCS12-PBMAC1");
+    }
+
+    private void implCertificateAliasConsistency(String storeType)
+        throws Exception
+    {
+        KeyPairGenerator kpGen = KeyPairGenerator.getInstance("EC", "BC");
+        KeyPair kp = kpGen.generateKeyPair();
+
+        // enough entries that the enumeration order of a copied hashtable diverges from
+        // the original's - getCertificateAlias returned the alias of an unrelated
+        // certificate when the alias and certificate enumerations were paired
+        // positionally (github #2384).
+        X509Certificate[] certs = new X509Certificate[12];
+        for (int i = 0; i != certs.length; i++)
+        {
+            certs[i] = TestUtils.createSelfSignedCert(new X500Name("CN=alias-cert-" + i), "SHA256withECDSA", kp);
+        }
+
+        X509Certificate absent = TestUtils.createSelfSignedCert(new X500Name("CN=alias-cert-absent"), "SHA256withECDSA", kp);
+
+        KeyStore store = KeyStore.getInstance(storeType, "BC");
+        store.load(null, null);
+
+        for (int i = 0; i != certs.length; i++)
+        {
+            store.setCertificateEntry("cert-" + i, certs[i]);
+        }
+
+        for (int i = 0; i != certs.length; i++)
+        {
+            isEquals(storeType + " alias mismatch", "cert-" + i, store.getCertificateAlias(certs[i]));
+        }
+
+        isTrue(storeType + " alias found for absent certificate", store.getCertificateAlias(absent) == null);
+
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+
+        store.store(bOut, passwd);
+
+        KeyStore inStore = KeyStore.getInstance(storeType, "BC");
+
+        inStore.load(new ByteArrayInputStream(bOut.toByteArray()), passwd);
+
+        for (int i = 0; i != certs.length; i++)
+        {
+            isEquals(storeType + " alias mismatch after reload", "cert-" + i, inStore.getCertificateAlias(certs[i]));
+        }
+
+        isTrue(storeType + " alias found for absent certificate after reload", inStore.getCertificateAlias(absent) == null);
+    }
+
+    private void testNullPublicKeyCertificate()
+        throws Exception
+    {
+        implNullPublicKeyCertificate("PKCS12", new PKCS12KeyStoreSpi.BCPKCS12KeyStore());
+        implNullPublicKeyCertificate("PKCS12-PBMAC1", new PKCS12PBMAC1KeyStoreSpi.BCPKCS12KeyStore());
+    }
+
+    private void implNullPublicKeyCertificate(String storeType, KeyStoreSpi storeSpi)
+        throws Exception
+    {
+        // a certificate naming an algorithm the provider has no key info converter for has a null public key (github #2419)
+        X509Certificate cert = createUnknownAlgorithmCertificate();
+
+        isTrue("public key resolved for unknown algorithm", cert.getPublicKey() == null);
+
+        KeyPair kp = KeyPairGenerator.getInstance("RSA", BC).generateKeyPair();
+
+        KeyStore store = KeyStore.getInstance(storeType, BC);
+
+        store.load(null, null);
+
+        try
+        {
+            store.setKeyEntry("key", kp.getPrivate(), passwd, new Certificate[]{cert});
+            fail(storeType + ": no exception on null public key in chain");
+        }
+        catch (KeyStoreException e)
+        {
+            isEquals("unable to resolve public key for certificate 0 in chain", e.getMessage());
+        }
+
+        isTrue(storeType + ": entry left behind by rejected chain", !store.containsAlias("key"));
+
+        try
+        {
+            store.setCertificateEntry("cert", cert);
+            fail(storeType + ": no exception on null public key certificate");
+        }
+        catch (KeyStoreException e)
+        {
+            isEquals("unable to resolve public key for certificate", e.getMessage());
+        }
+
+        isTrue(storeType + ": entry left behind by rejected certificate", !store.containsAlias("cert"));
+
+        // KeyStore.setKeyEntry screens an empty chain itself, so the SPI is exercised directly here
+        try
+        {
+            storeSpi.engineSetKeyEntry("key", kp.getPrivate(), passwd, new Certificate[0]);
+            fail(storeType + ": no exception on empty chain");
+        }
+        catch (KeyStoreException e)
+        {
+            isEquals("no certificate chain for private key", e.getMessage());
+        }
+    }
+
+    private X509Certificate createUnknownAlgorithmCertificate()
+        throws Exception
+    {
+        AlgorithmIdentifier algId = new AlgorithmIdentifier(new ASN1ObjectIdentifier("1.2.3.4.5.6.7.8"));
+
+        V1TBSCertificateGenerator tbsGen = new V1TBSCertificateGenerator();
+
+        tbsGen.setSerialNumber(new ASN1Integer(BigInteger.ONE));
+        tbsGen.setIssuer(new X500Name("CN=Test"));
+        tbsGen.setSubject(new X500Name("CN=Test"));
+        tbsGen.setStartDate(new Time(new Date(System.currentTimeMillis() - 50000)));
+        tbsGen.setEndDate(new Time(new Date(System.currentTimeMillis() + 50000)));
+        tbsGen.setSignature(algId);
+        tbsGen.setSubjectPublicKeyInfo(new SubjectPublicKeyInfo(algId, new byte[]{1, 2, 3, 4}));
+
+        ASN1EncodableVector v = new ASN1EncodableVector();
+
+        v.add(tbsGen.generateTBSCertificate());
+        v.add(algId);
+        v.add(new DERBitString(new byte[]{0, 0, 0, 0}));
+
+        byte[] certEnc = org.bouncycastle.asn1.x509.Certificate.getInstance(new DERSequence(v)).getEncoded();
+
+        return (X509Certificate)CertificateFactory.getInstance("X.509", BC).generateCertificate(new ByteArrayInputStream(certEnc));
+    }
+
     private void testStoreType(String storeType, boolean isMacExpected)
         throws Exception
     {
@@ -2794,6 +3077,7 @@ public class PKCS12StoreTest
     {
         testPKCS12StoreFriendlyName();
         testIterationCount();
+        testStoreIterationCount();
         testPBMac1PBKdf2();
         testPKCS12Store();
         testGOSTStore();
@@ -2801,6 +3085,8 @@ public class PKCS12StoreTest
         testBCFKSLoad();
         testCertsOnly();
         testJKS();
+        testCertificateAliasConsistency();
+        testNullPublicKeyCertificate();
         testLoadRepeatedLocalKeyID();
         testDilithiumStore();
         testFalconStore();

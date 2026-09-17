@@ -44,7 +44,7 @@ public final class MTCCosignedMessage
     /**
      * Equivalent to {@link #encode(byte[], long, long, long, byte[], byte[])} with
      * {@code timestamp == 0}, which is the only value permitted inside an MTCProof
-     * cosigner signature per Section 6.1 of the draft.
+     * cosigner signature per Section 6.2 of the draft.
      */
     public static byte[] encode(
         byte[] logId,

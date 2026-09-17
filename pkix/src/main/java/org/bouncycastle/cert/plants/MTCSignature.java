@@ -5,7 +5,7 @@ import org.bouncycastle.util.Arrays;
 /**
  * A single cosigner signature, as it appears inside the TLS-encoded MTCProof
  * defined by
- * <a href="https://datatracker.ietf.org/doc/draft-ietf-plants-merkle-tree-certs/#section-6.1">draft-ietf-plants-merkle-tree-certs, Section 6.1</a>:
+ * <a href="https://datatracker.ietf.org/doc/draft-ietf-plants-merkle-tree-certs/#section-6.2">draft-ietf-plants-merkle-tree-certs, Section 6.2</a>:
  *
  * <pre>
  * struct {

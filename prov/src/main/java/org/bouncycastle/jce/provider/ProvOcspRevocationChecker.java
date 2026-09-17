@@ -64,16 +64,12 @@ import org.bouncycastle.jcajce.PKIXCertRevocationChecker;
 import org.bouncycastle.jcajce.PKIXCertRevocationCheckerParameters;
 import org.bouncycastle.jcajce.util.JcaJceHelper;
 import org.bouncycastle.jcajce.util.MessageDigestUtils;
-import org.bouncycastle.jce.exception.ExtCertPathValidatorException;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Properties;
 
 class ProvOcspRevocationChecker
     implements PKIXCertRevocationChecker
 {
-    private static final int DEFAULT_OCSP_TIMEOUT = 15000;
-    private static final int DEFAULT_OCSP_MAX_RESPONSE_SIZE = 32 * 1024;
-
     private static final Map oids = new HashMap();
 
     static
@@ -281,7 +277,14 @@ class ProvOcspRevocationChecker
                                     ASN1GeneralizedTime nextUp = resp.getNextUpdate();
                                     if (nextUp != null && parameters.getValidDate().after(nextUp.getDate()))
                                     {
-                                        throw new ExtCertPathValidatorException("OCSP response expired");
+                                        throw new CertPathValidatorException("OCSP response expired");
+                                    }
+                                    // "Responses whose thisUpdate time is later than the local
+                                    // system time SHOULD be considered unreliable" - RFC 6960
+                                    // sec. 4.2.2.1, allowing for clock skew
+                                    if (OcspCache.isFromTheFuture(resp.getThisUpdate(), parameters.getValidDate()))
+                                    {
+                                        throw new CertPathValidatorException("OCSP response not yet valid");
                                     }
                                     if (certID == null || !isEqualAlgId(certID.getHashAlgorithm(), resp.getCertID().getHashAlgorithm()))
                                     {
@@ -311,12 +314,7 @@ class ProvOcspRevocationChecker
                                 }
                             }
 
-                            // Reaching here means no SingleResponse was bound to this certificate's
-                            // CertID (any full match returns or throws above). A signed-but-unrelated
-                            // stapled response - e.g. a 'good' status for a different serial from the
-                            // same CA - must not be treated as evidence that THIS certificate is good;
-                            // fail recoverably so CRL fallback can run, matching the network-fetch
-                            // path's OcspCache.isCertIDFoundAndCurrent enforcement.
+                            // no SingleResponse was bound to this certificate's CertID: fail recoverably so CRL fallback can run, matching the network-fetch path's binding enforcement.
                             throw new RecoverableCertPathValidatorException(
                                 "no OCSP response found for certificate", null, parameters.getCertPath(), parameters.getIndex());
                         }
@@ -483,10 +481,11 @@ class ProvOcspRevocationChecker
                 if (nonce != null)
                 {
                     Extensions exts = basicResp.getTbsResponseData().getResponseExtensions();
+                    org.bouncycastle.asn1.x509.Extension ext = (exts == null)
+                        ? null : exts.getExtension(OCSPObjectIdentifiers.id_pkix_ocsp_nonce);
 
-                    org.bouncycastle.asn1.x509.Extension ext = exts.getExtension(OCSPObjectIdentifiers.id_pkix_ocsp_nonce);
-
-                    if (!Arrays.areEqual(nonce, ext.getExtnValue().getOctets()))
+                    // a caller-supplied nonce the (validly signed) response does not echo back is a nonce failure, not an internal error: reject cleanly rather than NPE on absent responseExtensions/nonce.
+                    if (ext == null || !Arrays.areEqual(nonce, ext.getExtnValue().getOctets()))
                     {
                         throw new CertPathValidatorException("nonce mismatch in OCSP response", null, parameters.getCertPath(), parameters.getIndex());
                     }

@@ -9,7 +9,7 @@ import org.bouncycastle.util.Exceptions;
 
 /**
  * The published landmark sequence for a single issuance log, as defined by
- * Section 6.3 of draft-ietf-plants-merkle-tree-certs.
+ * Section 6.4 of draft-ietf-plants-merkle-tree-certs.
  *
  * <p>A {@code LandmarkSequence} captures the {@code num_active_landmarks + 1}
  * most recent landmarks (numbered {@code last_landmark - num_active_landmarks}
@@ -17,7 +17,7 @@ import org.bouncycastle.util.Exceptions;
  * always has tree size 0; subsequent landmarks are strictly monotonically
  * increasing in tree size and consecutive in landmark number.</p>
  *
- * <p>The published wire format (Section 6.3.3) is plain UTF-8 text:</p>
+ * <p>The published wire format (Section 6.4.3) is plain UTF-8 text:</p>
  * <pre>
  * &lt;last_landmark&gt; &lt;num_active_landmarks&gt;
  * tree_size of landmark last_landmark
@@ -71,7 +71,7 @@ public final class LandmarkSequence
                 throw new IllegalArgumentException("negative tree size at line " + (i + 1));
             }
         }
-        // Landmark 0 always has tree size 0 (Section 6.3.1); if this sequence
+        // Landmark 0 always has tree size 0 (Section 6.4.1); if this sequence
         // includes landmark 0, the last tree size must be zero.
         long oldestLandmark = lastLandmark - numActive;
         if (oldestLandmark == 0 && treeSizesNewestFirst[numActive] != 0)
@@ -83,7 +83,7 @@ public final class LandmarkSequence
     }
 
     /**
-     * Parses a landmark sequence from its published text form (Section 6.3.3).
+     * Parses a landmark sequence from its published text form (Section 6.4.3).
      */
     public static LandmarkSequence parse(String text)
         throws IOException
@@ -158,7 +158,7 @@ public final class LandmarkSequence
     }
 
     /**
-     * Serializes the landmark sequence in the format defined by Section 6.3.3
+     * Serializes the landmark sequence in the format defined by Section 6.4.3
      * (each line terminated with U+000A).
      */
     public String format()
@@ -199,7 +199,7 @@ public final class LandmarkSequence
 
     /**
      * Returns the landmark subtree intervals determined by this sequence per
-     * Section 6.3.1: between consecutive landmarks (excluding landmark 0) the
+     * Section 6.4.1: between consecutive landmarks (excluding landmark 0) the
      * interval {@code [prev_tree_size, tree_size)} is covered by one or two
      * subtrees from {@link MerkleTreePrimitives#findCoveringSubtrees}. The
      * returned list is ordered oldest-first.

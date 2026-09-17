@@ -9,6 +9,7 @@ import java.util.Iterator;
 import java.util.List;
 
 import org.bouncycastle.util.StringList;
+import org.bouncycastle.util.Properties;
 import org.bouncycastle.util.Strings;
 
 /**
@@ -268,6 +269,20 @@ public class ArmoredInputStream
         return in.available();
     }
 
+    private static final int DEFAULT_MAX_ARMOR_HEADER_LENGTH = 4096;
+    private static final int DEFAULT_MAX_ARMOR_HEADERS = 64;
+
+    /**
+     * A configured limit that cannot be one leaves the default in place, so a mistyped value
+     * cannot turn the limit off.
+     */
+    private static int armorLimit(String propertyName, int defaultValue)
+    {
+        int value = Properties.asInteger(propertyName, defaultValue);
+
+        return value > 0 ? value : defaultValue;
+    }
+
     private boolean parseHeaders()
         throws IOException
     {
@@ -304,6 +319,15 @@ public class ArmoredInputStream
         {
             boolean eolReached = false;
             boolean crLf = false;
+
+            /*
+             * The headers are parsed as the stream is constructed, so these bound what wrapping an
+             * untrusted stream can allocate before the caller has read a byte: a "header line" that
+             * never reaches a terminator, and header lines that never stop arriving.
+             */
+            int maxHeaderLength = armorLimit(Properties.OPENPGP_MAX_ARMOR_HEADER_LENGTH,
+                DEFAULT_MAX_ARMOR_HEADER_LENGTH);
+            int maxHeaders = armorLimit(Properties.OPENPGP_MAX_ARMOR_HEADERS, DEFAULT_MAX_ARMOR_HEADERS);
 
             ByteArrayOutputStream buf = new ByteArrayOutputStream();
             buf.write('-');
@@ -347,12 +371,24 @@ public class ArmoredInputStream
                     {
                         throw new ArmoredInputException("invalid armor header");
                     }
+                    if (headerList.size() >= maxHeaders)
+                    {
+                        throw new ArmoredInputException("more than " + maxHeaders + " armor headers (see "
+                            + Properties.OPENPGP_MAX_ARMOR_HEADERS + ")");
+                    }
+
                     headerList.add(line);
                     buf.reset();
                 }
 
                 if (c != '\n' && c != '\r')
                 {
+                    if (buf.size() >= maxHeaderLength)
+                    {
+                        throw new ArmoredInputException("armor header line exceeds " + maxHeaderLength
+                            + " bytes (see " + Properties.OPENPGP_MAX_ARMOR_HEADER_LENGTH + ")");
+                    }
+
                     buf.write(c);
                     eolReached = false;
                 }
@@ -550,6 +586,15 @@ public class ArmoredInputStream
 
                 if (c == '=')            // crc reached
                 {
+                    // RFC 9580 6.2: the checksum appears once, immediately before the armor tail.
+                    // A second one is malformed, and because the running crc is not reset between
+                    // lines the same four characters keep matching - and each match recursed into
+                    // read() below, so repeating one line drove the stack down until it overflowed.
+                    if (crcFound)
+                    {
+                        throw new ArmoredInputException("multiple crc values found in armored message");
+                    }
+
                     bufPtr = decode(readIgnoreSpace(), readIgnoreSpace(), readIgnoreSpace(), readIgnoreSpace(), outBuf);
                     if (bufPtr != 0)
                     {

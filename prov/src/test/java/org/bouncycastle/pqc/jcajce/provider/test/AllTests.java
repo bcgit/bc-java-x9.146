@@ -30,7 +30,6 @@ public class AllTests
         }
 
         suite.addTestSuite(Sphincs256Test.class);
-//        suite.addTestSuite(RainbowSignatureTest.class);
 //        suite.addTestSuite(McElieceFujisakiCipherTest.class);
 //        suite.addTestSuite(McElieceKobaraImaiCipherTest.class);
 //        suite.addTestSuite(McEliecePointchevalCipherTest.class);
@@ -46,13 +45,8 @@ public class AllTests
         suite.addTestSuite(LMSTest.class);
         suite.addTestSuite(SLHDSAKeyPairGeneratorTest.class);
         suite.addTestSuite(SLHDSATest.class);
-        suite.addTestSuite(PicnicTest.class);
-        suite.addTestSuite(PicnicKeyPairGeneratorTest.class);
-        suite.addTestSuite(CMCEKeyPairGeneratorTest.class);
         suite.addTestSuite(CMCEKEMTest.class);
-        suite.addTestSuite(FrodoTest.class);
         suite.addTestSuite(FrodoKEMTest.class);
-        suite.addTestSuite(FrodoKeyPairGeneratorTest.class);
         suite.addTestSuite(SABERTest.class);
         suite.addTestSuite(SABERKeyPairGeneratorTest.class);
         suite.addTestSuite(FalconTest.class);
@@ -71,6 +65,13 @@ public class AllTests
         suite.addTestSuite(BIKETest.class);
         suite.addTestSuite(HQCKeyPairGeneratorTest.class);
         suite.addTestSuite(HQCTest.class);
+        suite.addTestSuite(NamedKeyPairGeneratorTest.class);
+        suite.addTestSuite(NamedKeyFactoryTest.class);
+        suite.addTestSuite(KeyAlgorithmRoundTripTest.class);
+        suite.addTestSuite(KeyPairGeneratorSpecTest.class);
+        suite.addTestSuite(KeyPairGeneratorStrengthTest.class);
+        suite.addTestSuite(PreHashKeyInteropTest.class);
+        suite.addTestSuite(SignatureSetParameterTest.class);
         suite.addTestSuite(MayoKeyPairGeneratorTest.class);
         suite.addTestSuite(MayoTest.class);
         suite.addTestSuite(SnovaTest.class);
@@ -81,11 +82,12 @@ public class AllTests
         suite.addTestSuite(UOVTest.class);
         suite.addTestSuite(MQOMTest.class);
         suite.addTestSuite(SQIsignTest.class);
-        suite.addTestSuite(HawkTest.class);
         suite.addTestSuite(AIMerTest.class);
         suite.addTestSuite(ParameterSpecRoundTripTest.class);
         suite.addTestSuite(NTRUPlusTest.class);
         suite.addTestSuite(NTRUPlusKeyPairGeneratorTest.class);
+        suite.addTestSuite(SmaugTTest.class);
+        suite.addTestSuite(KeyStoreTest.class);
 
         return new BCTestSetup(suite);
     }

@@ -19,7 +19,8 @@ public class AllTests
             new MerkleTreeCertificatesTest(),
             new LandmarkCertificateManagerTest(),
             new MTCNewFeaturesTest(),
-            new JcajceOperatorsTest() };
+            new JcajceOperatorsTest(),
+            new SubtreeTestVectorsTest() };
 
         for (int i = 0; i != tests.length; i++)
         {

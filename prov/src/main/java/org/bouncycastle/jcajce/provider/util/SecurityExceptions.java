@@ -1,9 +1,15 @@
 package org.bouncycastle.jcajce.provider.util;
 
 import java.security.GeneralSecurityException;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
+import java.security.InvalidParameterException;
+import java.security.NoSuchAlgorithmException;
 import java.security.SignatureException;
 import java.security.UnrecoverableKeyException;
+import java.security.cert.CertPathBuilderException;
+import java.security.cert.CertPathValidatorException;
+import java.security.cert.CertificateEncodingException;
 import java.security.spec.InvalidKeySpecException;
 
 import javax.crypto.BadPaddingException;
@@ -33,6 +39,26 @@ public class SecurityExceptions
         return (InvalidKeyException)new InvalidKeyException(message).initCause(cause);
     }
 
+    public static InvalidAlgorithmParameterException invalidAlgorithmParameterException(String message, Throwable cause)
+    {
+        // InvalidAlgorithmParameterException(String, Throwable) only exists from Java 5; initCause
+        // keeps the legacy (Java 4) builds compiling, so do not "simplify" this to the two-arg
+        // constructor.
+        return (InvalidAlgorithmParameterException)new InvalidAlgorithmParameterException(message).initCause(cause);
+    }
+
+    public static InvalidParameterException invalidParameterException(String message, Throwable cause)
+    {
+        // InvalidParameterException has no (String, Throwable) constructor at all, so initCause is
+        // the only way to keep the cause; do not fold the cause's text into the message instead.
+        return (InvalidParameterException)new InvalidParameterException(message).initCause(cause);
+    }
+
+    public static NoSuchAlgorithmException noSuchAlgorithmException(String message, Throwable cause)
+    {
+        return (NoSuchAlgorithmException)new NoSuchAlgorithmException(message).initCause(cause);
+    }
+
     public static SignatureException signatureException(String message, Throwable cause)
     {
         return (SignatureException)new SignatureException(message).initCause(cause);
@@ -51,5 +77,22 @@ public class SecurityExceptions
     public static BadPaddingException badPaddingException(String message, Throwable cause)
     {
         return (BadPaddingException)new BadPaddingException(message).initCause(cause);
+    }
+
+    public static CertPathValidatorException certPathValidatorException(String message, Throwable cause)
+    {
+        // CertPathValidatorException(String, Throwable) only exists from Java 5; initCause keeps the
+        // legacy (Java 4) builds compiling, so do not "simplify" this to the two-arg constructor.
+        return (CertPathValidatorException)new CertPathValidatorException(message).initCause(cause);
+    }
+
+    public static CertPathBuilderException certPathBuilderException(String message, Throwable cause)
+    {
+        return (CertPathBuilderException)new CertPathBuilderException(message).initCause(cause);
+    }
+
+    public static CertificateEncodingException certificateEncodingException(String message, Throwable cause)
+    {
+        return (CertificateEncodingException)new CertificateEncodingException(message).initCause(cause);
     }
 }

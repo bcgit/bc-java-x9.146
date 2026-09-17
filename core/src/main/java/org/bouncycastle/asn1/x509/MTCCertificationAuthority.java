@@ -27,7 +27,7 @@ import org.bouncycastle.util.BigIntegers;
  * <p>{@code logHash} is the hash algorithm used by all issuance logs operated
  * by this CA. {@code sigAlg} is the CA cosigner's signature algorithm.
  * {@code minSerial} and {@code maxSerial} are the inclusive bounds of the cert
- * serial range this CA is authorized for; per Section 6.1 of the draft a serial
+ * serial range this CA is authorized for; per Section 6.2 of the draft a serial
  * encodes the log number in its upper 16 bits and the entry index in the lower
  * 48 bits (a 64-bit value), so the range can constrain either.</p>
  */

@@ -339,27 +339,10 @@ public class BCPGOutputStream
     }
 
     /**
-     * Write a packet to the stream.
-     * The packet will use the old encoding format if {@link #packetFormat} is {@link PacketFormat#LEGACY}, otherwise
-     * it will be encoded using the new packet format.
-     * @param tag packet tag
-     * @param body packet body
-     * @throws IOException
-     */
-    void writePacket(
-        int tag,
-        byte[] body)
-        throws IOException
-    {
-        this.writeHeader(tag, packetFormat == PacketFormat.LEGACY, false, body.length);
-        this.write(body);
-    }
-
-    /**
      * Write a packet.
      * The packet format will be chosen primarily based on {@link #packetFormat}.
      * If {@link #packetFormat} is {@link PacketFormat#CURRENT}, the packet will be encoded using the new format.
-     * If it is {@link PacketFormat#LEGACY}, the packet will use old encoding format.
+     * If it is {@link PacketFormat#LEGACY}, the packet will use the old encoding format.
      * If it is {@link PacketFormat#ROUNDTRIP}, then the format will be determined by objectPrefersNewPacketFormat.
      *
      * @param objectPrefersNewPacketFormat whether the packet prefers to be encoded using the new packet format

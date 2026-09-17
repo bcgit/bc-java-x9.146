@@ -15,6 +15,7 @@ import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.jcajce.provider.util.AsymmetricKeyInfoConverter;
+import org.bouncycastle.jcajce.provider.util.SecurityExceptions;
 
 public class XMSSKeyFactorySpi
     extends KeyFactorySpi
@@ -34,7 +35,7 @@ public class XMSSKeyFactorySpi
             }
             catch (Exception e)
             {
-                throw new InvalidKeySpecException(e.toString());
+                throw SecurityExceptions.invalidKeySpecException(e.toString(), e);
             }
         }
 
@@ -57,7 +58,7 @@ public class XMSSKeyFactorySpi
             }
             catch (Exception e)
             {
-                throw new InvalidKeySpecException(e.toString());
+                throw SecurityExceptions.invalidKeySpecException(e.toString(), e);
             }
         }
 

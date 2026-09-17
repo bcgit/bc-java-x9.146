@@ -29,6 +29,7 @@ import org.bouncycastle.asn1.eac.EACObjectIdentifiers;
 import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
 import org.bouncycastle.asn1.gm.GMObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
+import org.bouncycastle.asn1.ocsp.OCSPResponse;
 import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
@@ -963,16 +964,19 @@ public class TlsUtils
         {
             return EMPTY_BYTES;
         }
-        byte[] buf = new byte[length];
-        int read = Streams.readFully(input, buf);
-        if (read == 0)
+
+        // one byte read on its own tells "stream is empty" (null) from "stream truncated" (EOF)
+        int first = input.read();
+        if (first < 0)
         {
             return null;
         }
-        if (read != length)
-        {
-            throw new EOFException();
-        }
+
+        byte[] rest = Streams.readLenBytesFully(input, length - 1);
+
+        byte[] buf = new byte[length];
+        buf[0] = (byte)first;
+        System.arraycopy(rest, 0, buf, 1, rest.length);
         return buf;
     }
 
@@ -983,12 +987,9 @@ public class TlsUtils
         {
             return EMPTY_BYTES;
         }
-        byte[] buf = new byte[length];
-        if (length != Streams.readFully(input, buf))
-        {
-            throw new EOFException();
-        }
-        return buf;
+
+        // length comes from the wire: grow the buffer as bytes arrive rather than sizing it up front
+        return Streams.readLenBytesFully(input, length);
     }
 
     public static void readFully(byte[] buf, InputStream input)
@@ -1932,10 +1933,14 @@ public class TlsUtils
         securityParameters.trafficSecretClient = deriveSecret(securityParameters, phaseSecret, clientLabel,
             transcriptHash);
 
+        KeyLog.log13Secret(context, clientLabel, securityParameters.trafficSecretClient);
+
         if (null != serverLabel)
         {
             securityParameters.trafficSecretServer = deriveSecret(securityParameters, phaseSecret, serverLabel,
                 transcriptHash);
+
+            KeyLog.log13Secret(context, serverLabel, securityParameters.trafficSecretServer);
         }
 
         // TODO[tls13] Early data (client->server only)
@@ -1954,6 +1959,8 @@ public class TlsUtils
 
         securityParameters.exporterMasterSecret = deriveSecret(securityParameters, phaseSecret, "exp master",
             serverFinishedTranscriptHash);
+
+        KeyLog.log13Secret(context, "exp master", securityParameters.exporterMasterSecret);
     }
 
     static void establish13PhaseEarly(TlsContext context, byte[] clientHelloTranscriptHash, RecordStream recordStream)
@@ -1973,6 +1980,8 @@ public class TlsUtils
 
         securityParameters.earlyExporterMasterSecret = deriveSecret(securityParameters, phaseSecret, "e exp master",
             clientHelloTranscriptHash);
+
+        KeyLog.log13Secret(context, "e exp master", securityParameters.earlyExporterMasterSecret);
     }
 
     static void establish13PhaseHandshake(TlsContext context, byte[] serverHelloTranscriptHash,
@@ -5632,6 +5641,13 @@ public class TlsUtils
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
 
+        /*
+         * Every (D)TLS 1.2-and-earlier handshake, full or resumed, passes through here exactly once
+         * with the master secret established, which is what RFC 9850 2.2 reports. TLS 1.3 arrives
+         * here too, from establish13TrafficSecrets, and is discarded on the other side.
+         */
+        KeyLog.logMasterSecret(context);
+
         return context.getCrypto().createCipher(new TlsCryptoParameters(context), encryptionAlgorithm, macAlgorithm);
     }
 
@@ -5988,9 +6004,24 @@ public class TlsUtils
 
         checkTlsFeatures(serverCertificate, clientExtensions, serverExtensions);
 
-        if (!isTLSv13)
+        CertificateStatus certificateStatus;
+        CertificateStatus[] certificateStatuses;
+
+        if (isTLSv13)
+        {
+            /*
+             * RFC 8446 4.4.2.1: there is no "certificate_status" message - each response arrived in
+             * an extension of the CertificateEntry carrying the certificate it answers for.
+             */
+            certificateStatuses = read13CertificateStatuses(clientContext, serverCertificate);
+            certificateStatus = certificateStatuses.length < 1 ? null : certificateStatuses[0];
+        }
+        else
         {
             keyExchange.processServerCertificate(serverCertificate);
+
+            certificateStatus = serverCertificateStatus;
+            certificateStatuses = spreadCertificateStatus(serverCertificate, serverCertificateStatus);
         }
 
         /*
@@ -6002,7 +6033,8 @@ public class TlsUtils
          * would pick up the alternate key; that destructive in-place mutation of shared core objects has
          * been removed in favour of the CKS path.
          */
-        clientAuthentication.notifyServerCertificate(new TlsServerCertificateImpl(serverCertificate, serverCertificateStatus));
+        clientAuthentication.notifyServerCertificate(
+            new TlsServerCertificateImpl(serverCertificate, certificateStatus, certificateStatuses));
     }
 
     static SignatureAndHashAlgorithm getCertSigAndHashAlg(TlsCertificate subjectCert, TlsCertificate issuerCert)
@@ -6795,6 +6827,222 @@ public class TlsUtils
     static TlsCredentialedSigner establish13ServerCredentials(TlsServer server) throws IOException
     {
         return validate13Credentials(server.getCredentials());
+    }
+
+    /**
+     * The OCSP staples a TLS 1.3 server attached to its Certificate message, read out per
+     * certificate: the inverse of {@link #add13CertificateStatus(Certificate, CertificateStatus)},
+     * which is how a BC server puts them there.
+     * <p/>
+     * RFC 8446 sec. 4.4.2.1 carries each response in a "status_request" extension of the
+     * CertificateEntry holding the certificate it answers for, so the result is positional -
+     * element <code>i</code> answers for certificate <code>i</code> of the chain, null where that
+     * entry carried no staple.
+     * <p/>
+     * A staple the client did not ask for is ignored rather than made a handshake failure, which is
+     * how this library has always treated an unsolicited one: RFC 8446 sec. 4.2 has a server answer
+     * only the extensions the client sent.
+     *
+     * @param certificate the Certificate message the server sent.
+     * @return one element per certificate of <code>certificate</code>, null where unstapled.
+     * @throws IOException if an entry the client asked about carries something other than an RFC 6066
+     *                     CertificateStatus of type ocsp; RFC 8446 sec. 4.4.2.1 admits nothing else,
+     *                     so this is a decode_error exactly as it is for the TLS 1.2
+     *                     "certificate_status" message.
+     */
+    static CertificateStatus[] read13CertificateStatuses(TlsContext context, Certificate certificate)
+        throws IOException
+    {
+        int certificateCount = certificate.getLength();
+
+        CertificateStatus[] certificateStatuses = new CertificateStatus[certificateCount];
+
+        if (context.getSecurityParametersHandshake().getStatusRequestVersion() < 1)
+        {
+            return certificateStatuses;
+        }
+
+        for (int i = 0; i < certificateCount; ++i)
+        {
+            Hashtable extensions = certificate.getCertificateEntryAt(i).getExtensions();
+
+            byte[] extensionData = getExtensionData(extensions, TlsExtensionsUtils.EXT_status_request);
+            if (null != extensionData)
+            {
+                certificateStatuses[i] = TlsExtensionsUtils.readStatusRequestExtension13(context, extensionData);
+            }
+        }
+
+        return certificateStatuses;
+    }
+
+    /**
+     * The responses of a "certificate_status" message read out per certificate, so that a caller can
+     * pair each one with the certificate it answers for whichever version was negotiated.
+     * {@link CertificateStatusType#ocsp} answers for the end-entity certificate alone, and
+     * {@link CertificateStatusType#ocsp_multi} answers positionally (RFC 6961 sec. 2.2 - the list may
+     * be shorter than the chain, and an element may be absent where no response is held).
+     *
+     * @param certificate       the Certificate message the server sent.
+     * @param certificateStatus the status message it sent, or null for none.
+     * @return one element per certificate of <code>certificate</code>, null where unstapled.
+     */
+    static CertificateStatus[] spreadCertificateStatus(Certificate certificate, CertificateStatus certificateStatus)
+    {
+        int certificateCount = certificate.getLength();
+
+        CertificateStatus[] certificateStatuses = new CertificateStatus[certificateCount];
+
+        if (null != certificateStatus && certificateCount > 0)
+        {
+            switch (certificateStatus.getStatusType())
+            {
+            case CertificateStatusType.ocsp:
+            {
+                certificateStatuses[0] = certificateStatus;
+                break;
+            }
+            case CertificateStatusType.ocsp_multi:
+            {
+                Vector ocspResponseList = certificateStatus.getOCSPResponseList();
+                int count = Math.min(certificateCount, ocspResponseList.size());
+
+                for (int i = 0; i < count; ++i)
+                {
+                    OCSPResponse ocspResponse = (OCSPResponse)ocspResponseList.elementAt(i);
+                    if (null != ocspResponse)
+                    {
+                        certificateStatuses[i] = new CertificateStatus(CertificateStatusType.ocsp, ocspResponse);
+                    }
+                }
+                break;
+            }
+            }
+        }
+
+        return certificateStatuses;
+    }
+
+    /**
+     * Attach a TLS 1.3 server's OCSP staples to the certificate they answer for. RFC 8446
+     * sec. 4.4.2.1: "In TLS 1.3, the server's OCSP information is carried in an extension in the
+     * CertificateEntry containing the associated certificate", the body of that "status_request"
+     * extension being an RFC 6066 CertificateStatus - so a single response per entry, rather than the
+     * one "certificate_status" message TLS 1.2 sends for the whole chain.
+     * <p/>
+     * The status a {@link TlsServer} returns is taken in the shape the 1.2 callback already defines:
+     * {@link CertificateStatusType#ocsp} answers for the end-entity certificate alone, and
+     * {@link CertificateStatusType#ocsp_multi} answers positionally, entry <code>i</code> of its list
+     * for certificate <code>i</code> of the chain, with a null entry wherever there is no response.
+     * An entry the server has already given a "status_request" extension of its own is left as it
+     * stands, so an implementation that attaches its staples to the {@link Certificate} its
+     * credentials supply - which was the only way to do this before - keeps working unchanged.
+     * <p/>
+     * A response too large for the entry to carry is dropped rather than attached; see
+     * {@link #fitsCertificateEntry(Hashtable, byte[])}.
+     *
+     * @param certificate       the Certificate message the server is about to send.
+     * @param certificateStatus the status to distribute across it, or null for none.
+     * @return the Certificate to send, which is <code>certificate</code> itself when there is
+     *         nothing to add.
+     */
+    static Certificate add13CertificateStatus(Certificate certificate, CertificateStatus certificateStatus)
+        throws IOException
+    {
+        if (null == certificateStatus || null == certificate || certificate.isEmpty())
+        {
+            return certificate;
+        }
+
+        int certificateCount = certificate.getLength();
+
+        Vector ocspResponseList;
+        switch (certificateStatus.getStatusType())
+        {
+        case CertificateStatusType.ocsp:
+            ocspResponseList = vectorOfOne(certificateStatus.getOCSPResponse());
+            break;
+        case CertificateStatusType.ocsp_multi:
+            ocspResponseList = certificateStatus.getOCSPResponseList();
+            break;
+        default:
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        if (ocspResponseList.size() > certificateCount)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error,
+                "'certificateStatus' has more responses than the certificate chain has certificates");
+        }
+
+        CertificateEntry[] certificateEntryList = new CertificateEntry[certificateCount];
+
+        boolean anyStaple = false;
+        for (int i = 0; i < certificateCount; ++i)
+        {
+            CertificateEntry certificateEntry = certificate.getCertificateEntryAt(i);
+            Hashtable extensions = certificateEntry.getExtensions();
+
+            OCSPResponse ocspResponse = i < ocspResponseList.size()
+                ?   (OCSPResponse)ocspResponseList.elementAt(i)
+                :   null;
+
+            if (null != ocspResponse
+                && null == TlsUtils.getExtensionData(extensions, TlsExtensionsUtils.EXT_status_request))
+            {
+                byte[] extensionData = TlsExtensionsUtils.createStatusRequestExtension13(
+                    new CertificateStatus(CertificateStatusType.ocsp, ocspResponse));
+
+                if (fitsCertificateEntry(extensions, extensionData))
+                {
+                    extensions = TlsExtensionsUtils.ensureExtensionsInitialised(
+                        null == extensions ? null : new Hashtable(extensions));
+
+                    extensions.put(TlsExtensionsUtils.EXT_status_request, extensionData);
+
+                    certificateEntry = new CertificateEntry(certificateEntry.getCertificate(), extensions);
+                    anyStaple = true;
+                }
+            }
+
+            certificateEntryList[i] = certificateEntry;
+        }
+
+        if (!anyStaple)
+        {
+            return certificate;
+        }
+
+        return new Certificate(certificate.getCertificateType(), certificate.getCertificateRequestContext(),
+            certificateEntryList);
+    }
+
+    /**
+     * Whether a "status_request" extension with this body can still be added to a CertificateEntry
+     * carrying <code>extensions</code>. {@link Certificate#encode} writes an entry's whole extensions
+     * block with {@link #writeOpaque16}, and each extension costs its body plus four bytes of type
+     * and length, so a large enough OCSP response overflows it.
+     * <p/>
+     * Nothing bounds an OCSP response to a size that would rule this out - the responder chooses what
+     * it sends, and it may carry a certificate chain of its own - so the one that does not fit is a
+     * staple to drop rather than a handshake to fail. Stapling is an optimisation; a handshake
+     * proceeds without it, and failing at encode time would turn an oversized response into a dead
+     * connection.
+     */
+    private static boolean fitsCertificateEntry(Hashtable extensions, byte[] extensionData)
+    {
+        long length = 4L + extensionData.length;
+
+        if (null != extensions)
+        {
+            Enumeration e = extensions.elements();
+            while (e.hasMoreElements())
+            {
+                length += 4L + ((byte[])e.nextElement()).length;
+            }
+        }
+
+        return isValidUint16(length);
     }
 
     static void establishServerSigAlgs(SecurityParameters securityParameters, CertificateRequest certificateRequest)

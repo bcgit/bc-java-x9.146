@@ -1,16 +1,13 @@
 package org.bouncycastle.pqc.jcajce.provider.ntru;
 
-import java.util.Objects;
-
 import javax.crypto.DecapsulateException;
 import javax.crypto.KEMSpi;
 import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 
 import org.bouncycastle.jcajce.spec.KTSParameterSpec;
+import org.bouncycastle.jcajce.provider.asymmetric.util.KemSpiUtil;
 import org.bouncycastle.pqc.crypto.ntru.NTRUKEMExtractor;
 import org.bouncycastle.jcajce.provider.asymmetric.util.KdfUtil;
-import org.bouncycastle.util.Arrays;
 
 /*
  *  NOTE: Per javadoc for javax.crypto.KEM, "Encapsulator and Decapsulator objects are also immutable. It is safe to
@@ -20,13 +17,11 @@ import org.bouncycastle.util.Arrays;
 class NTRUDecapsulatorSpi
     implements KEMSpi.DecapsulatorSpi
 {
-//    private final BCNTRUPrivateKey privateKey;
     private final KTSParameterSpec parameterSpec;
     private final NTRUKEMExtractor kemExt;
 
     NTRUDecapsulatorSpi(BCNTRUPrivateKey privateKey, KTSParameterSpec parameterSpec)
     {
-//        this.privateKey = privateKey;
         this.parameterSpec = parameterSpec;
         this.kemExt = new NTRUKEMExtractor(privateKey.getKeyParams());
     }
@@ -35,41 +30,11 @@ class NTRUDecapsulatorSpi
     public SecretKey engineDecapsulate(byte[] encapsulation, int from, int to, String algorithm)
         throws DecapsulateException
     {
-        Objects.checkFromToIndex(from, to, engineSecretSize());
-        Objects.requireNonNull(algorithm, "null algorithm");
-        Objects.requireNonNull(encapsulation, "null encapsulation");
-
-        if (encapsulation.length != engineEncapsulationSize())
-        {
-            throw new DecapsulateException("incorrect encapsulation size");
-        }
-
-        String keyAlgName = parameterSpec.getKeyAlgorithmName();
-        if (!"Generic".equals(keyAlgName))
-        {
-            // if algorithm is Generic then use parameterSpec to wrap key
-            if ("Generic".equals(algorithm))
-            {
-                algorithm = keyAlgName;
-            }
-            // check spec algorithm mismatch provided algorithm
-            else if (!algorithm.equals(keyAlgName))
-            {
-                throw new UnsupportedOperationException(keyAlgName + " does not match " + algorithm);
-            }
-        }
+        algorithm = KemSpiUtil.resolveDecapsulateAlgorithm(encapsulation, from, to, algorithm, engineSecretSize(), engineEncapsulationSize(), parameterSpec);
 
         byte[] kemSecret = kemExt.extractSecret(encapsulation);
-        byte[] kdfSecret = KdfUtil.makeKeyBytes(parameterSpec, kemSecret);
 
-        try
-        {
-            return new SecretKeySpec(kdfSecret, from, to - from, algorithm);
-        }
-        finally
-        {
-            Arrays.clear(kdfSecret);
-        }
+        return KdfUtil.makeSecretKey(parameterSpec, kemSecret, from, to, algorithm);
     }
 
     @Override

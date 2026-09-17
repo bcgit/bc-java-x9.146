@@ -14,6 +14,7 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
 import org.bouncycastle.asn1.cryptopro.ECGOST3410NamedCurves;
 import org.bouncycastle.asn1.cryptopro.GOST3410PublicKeyAlgParameters;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.DHParameter;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
@@ -28,6 +29,8 @@ import org.bouncycastle.asn1.x9.X962Parameters;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.crypto.params.CMCEParameters;
+import org.bouncycastle.crypto.params.CMCEPrivateKeyParameters;
 import org.bouncycastle.crypto.params.DHParameters;
 import org.bouncycastle.crypto.params.DHPrivateKeyParameters;
 import org.bouncycastle.crypto.params.DSAParameters;
@@ -40,27 +43,26 @@ import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters;
 import org.bouncycastle.crypto.params.Ed448PrivateKeyParameters;
 import org.bouncycastle.crypto.params.ElGamalParameters;
 import org.bouncycastle.crypto.params.ElGamalPrivateKeyParameters;
-import org.bouncycastle.crypto.params.CMCEParameters;
-import org.bouncycastle.crypto.params.CMCEPrivateKeyParameters;
+import org.bouncycastle.crypto.params.FrodoKEMParameters;
+import org.bouncycastle.crypto.params.FrodoKEMPrivateKeyParameters;
 import org.bouncycastle.crypto.params.MLDSAParameters;
 import org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters;
 import org.bouncycastle.crypto.params.MLDSAPublicKeyParameters;
-import org.bouncycastle.crypto.params.FrodoKEMParameters;
-import org.bouncycastle.crypto.params.FrodoKEMPrivateKeyParameters;
 import org.bouncycastle.crypto.params.MLKEMParameters;
 import org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters;
 import org.bouncycastle.crypto.params.MLKEMPublicKeyParameters;
-import org.bouncycastle.internal.asn1.iso.ISOIECObjectIdentifiers;
 import org.bouncycastle.crypto.params.RSAPrivateCrtKeyParameters;
 import org.bouncycastle.crypto.params.SLHDSAParameters;
 import org.bouncycastle.crypto.params.SLHDSAPrivateKeyParameters;
 import org.bouncycastle.crypto.params.X25519PrivateKeyParameters;
 import org.bouncycastle.crypto.params.X448PrivateKeyParameters;
 import org.bouncycastle.internal.asn1.edec.EdECObjectIdentifiers;
+import org.bouncycastle.internal.asn1.isara.IsaraObjectIdentifiers;
 import org.bouncycastle.internal.asn1.iso.ISOIECObjectIdentifiers;
 import org.bouncycastle.internal.asn1.oiw.ElGamalParameter;
 import org.bouncycastle.internal.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.internal.asn1.rosstandart.RosstandartObjectIdentifiers;
+import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.util.Arrays;
 
 /**
@@ -258,6 +260,31 @@ public class PrivateKeyFactory
 
             throw new IllegalArgumentException("invalid " + mldsaParams.getName() + " private key");
         }
+        else if (algOID.equals(PKCSObjectIdentifiers.id_alg_hss_lms_hashsig))
+        {
+            return LmsKeyUtil.createPrivateKey(keyInfo);
+        }
+        else if (algOID.equals(PQCObjectIdentifiers.xmss)
+            || algOID.equals(PQCObjectIdentifiers.xmss_mt)
+            || algOID.equals(IsaraObjectIdentifiers.id_alg_xmss)
+            || algOID.equals(IsaraObjectIdentifiers.id_alg_xmssmt)
+            || algOID.equals(IANAObjectIdentifiers.id_alg_xmss_hashsig)
+            || algOID.equals(IANAObjectIdentifiers.id_alg_xmssmt_hashsig))
+        {
+            AsymmetricKeyParameter key = XmssKeyUtil.createPrivateKey(keyInfo);
+
+            // the helper answers null for a key it does not handle, and in the legacy Ant
+            // distributions that excludes XMSS it is a stub that answers null for every key. Say so
+            // here rather than handing the null back to the caller, where it would surface as an
+            // unrelated NullPointerException: before these six OIDs were routed here they fell
+            // through to the same message below.
+            if (key == null)
+            {
+                throw new RuntimeException("algorithm identifier in private key not recognised");
+            }
+
+            return key;
+        }
         else if (algOID.equals(ISOIECObjectIdentifiers.frodokem976_shake) ||
             algOID.equals(ISOIECObjectIdentifiers.frodokem1344_shake) ||
             algOID.equals(ISOIECObjectIdentifiers.efrodokem976_shake) ||
@@ -318,7 +345,7 @@ public class PrivateKeyFactory
         else if (Utils.slhdsaParams.containsKey(algOID))
         {
             SLHDSAParameters spParams = Utils.slhdsaParamsLookup(algOID);
-            ASN1OctetString slhdsaKey = parseOctetString(keyInfo.getPrivateKey(), spParams.getN() * 4);
+            ASN1OctetString slhdsaKey = Utils.parseOctetString(keyInfo.getPrivateKey(), spParams.getN() * 4);
 
             return new SLHDSAPrivateKeyParameters(spParams, slhdsaKey.getOctets());
         }
@@ -429,29 +456,6 @@ public class PrivateKeyFactory
     /**
      * So it seems for the new PQC algorithms, there's a couple of approaches to what goes in the OCTET STRING
      */
-    private static ASN1OctetString parseOctetString(ASN1OctetString octStr, int expectedLength)
-        throws IOException
-    {
-        byte[] data = octStr.getOctets();
-        //
-        // it's the right length for a RAW encoding, just return it.
-        //
-        if (data.length == expectedLength)
-        {
-            return octStr;
-        }
-
-        //
-        // possible internal OCTET STRING, possibly long form with or without the internal OCTET STRING
-        ASN1OctetString obj = Utils.parseOctetData(data);
-
-        if (obj != null)
-        {
-            return ASN1OctetString.getInstance(obj);
-        }
-
-        return octStr;
-    }
     
     /**
      * So it seems for the new PQC algorithms, there's a couple of approaches to what goes in the OCTET STRING

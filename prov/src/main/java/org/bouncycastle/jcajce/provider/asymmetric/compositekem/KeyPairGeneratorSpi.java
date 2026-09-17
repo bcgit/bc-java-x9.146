@@ -1,6 +1,7 @@
 package org.bouncycastle.jcajce.provider.asymmetric.compositekem;
 
 import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidParameterException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
@@ -40,11 +41,7 @@ public class KeyPairGeneratorSpi
             {
                 this.generators[i] = KeyPairGenerator.getInstance(CompositeIndex.getBaseName(algorithms[i]), "BC");
 
-                AlgorithmParameterSpec initSpec = initSpecs[i];
-                if (initSpec != null)
-                {
-                    this.generators[i].initialize(initSpec);
-                }
+                this.generators[i].initialize(initSpecs[i]);
             }
             catch (Exception e)
             {
@@ -60,7 +57,8 @@ public class KeyPairGeneratorSpi
      */
     public void initialize(int keySize, SecureRandom random)
     {
-        throw new IllegalArgumentException("use AlgorithmParameterSpec");
+        // what the JCA specifies here; it extends IllegalArgumentException, so catches still match
+        throw new InvalidParameterException("use AlgorithmParameterSpec");
     }
 
     /**
@@ -76,17 +74,15 @@ public class KeyPairGeneratorSpi
     {
         if (paramSpec != null)
         {
-            throw new IllegalArgumentException("use initialize only for custom SecureRandom; AlgorithmParameterSpec must be null because it is determined by the algorithm name");
+            throw new InvalidAlgorithmParameterException("use initialize only for custom SecureRandom; AlgorithmParameterSpec must be null because it is determined by the algorithm name");
         }
 
         AlgorithmParameterSpec[] initSpecs = CompositeIndex.getKeyPairSpecs(algorithm);
         for (int i = 0; i != initSpecs.length; i++)
         {
-            AlgorithmParameterSpec initSpec = initSpecs[i];
-            if (initSpec != null)
-            {
-                this.generators[i].initialize(initSpec, secureRandom);
-            }
+            // CompositeIndex gives every component a spec precisely because this call is the only way
+            // the caller's SecureRandom can reach one - a null slot here would silently drop it.
+            this.generators[i].initialize(initSpecs[i], secureRandom);
         }
     }
 
@@ -159,12 +155,12 @@ public class KeyPairGeneratorSpi
         }
     }
 
-    public static final class MLKEM768_ECDH_BP256_SHA3_256
+    public static final class MLKEM768_ECDH_brainpoolP256r1_SHA3_256
         extends KeyPairGeneratorSpi
     {
-        public MLKEM768_ECDH_BP256_SHA3_256()
+        public MLKEM768_ECDH_brainpoolP256r1_SHA3_256()
         {
-            super(IANAObjectIdentifiers.id_MLKEM768_ECDH_BP256_SHA3_256);
+            super(IANAObjectIdentifiers.id_MLKEM768_ECDH_brainpoolP256r1_SHA3_256);
         }
     }
 
@@ -186,12 +182,12 @@ public class KeyPairGeneratorSpi
         }
     }
 
-    public static final class MLKEM1024_ECDH_BP384_SHA3_256
+    public static final class MLKEM1024_ECDH_brainpoolP384r1_SHA3_256
         extends KeyPairGeneratorSpi
     {
-        public MLKEM1024_ECDH_BP384_SHA3_256()
+        public MLKEM1024_ECDH_brainpoolP384r1_SHA3_256()
         {
-            super(IANAObjectIdentifiers.id_MLKEM1024_ECDH_BP384_SHA3_256);
+            super(IANAObjectIdentifiers.id_MLKEM1024_ECDH_brainpoolP384r1_SHA3_256);
         }
     }
 

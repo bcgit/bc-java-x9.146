@@ -46,10 +46,22 @@ public class CompositeKEMs
                 provider.addAlgorithm("KeyPairGenerator." + algorithmName, PREFIX + "KeyPairGeneratorSpi$" + className);
                 provider.addAlgorithm("Alg.Alias.KeyPairGenerator", oid, algorithmName);
 
-                provider.addAlgorithm("KeyGenerator." + algorithmName, PREFIX + "CompositeKeyGeneratorSpi$" + className);
+                provider.addAlgorithm("KeyGenerator." + algorithmName, PREFIX + "CompositeKeyGeneratorSpi$" + className, compositesAttributes);
                 provider.addAlgorithm("Alg.Alias.KeyGenerator", oid, algorithmName);
 
+                provider.addAlgorithm("Cipher." + algorithmName, PREFIX + "CompositeKEMCipherSpi$Base", compositesAttributes);
+                provider.addAlgorithm("Alg.Alias.Cipher", oid, algorithmName);
+
                 provider.addKeyInfoConverter(oid, new KeyFactorySpi());
+
+                String[] aliases = CompositeIndex.getAlgorithmAliases(oid);
+                for (int i = 0; i != aliases.length; i++)
+                {
+                    provider.addAlgorithm("Alg.Alias.KeyFactory." + aliases[i], "COMPOSITE");
+                    provider.addAlgorithm("Alg.Alias.KeyPairGenerator." + aliases[i], algorithmName);
+                    provider.addAlgorithm("Alg.Alias.KeyGenerator." + aliases[i], algorithmName);
+                    provider.addAlgorithm("Alg.Alias.Cipher." + aliases[i], algorithmName);
+                }
             }
         }
     }

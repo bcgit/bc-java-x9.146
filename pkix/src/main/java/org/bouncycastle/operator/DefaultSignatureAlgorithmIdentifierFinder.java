@@ -117,6 +117,9 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         addAlgorithm("SHA512(224)WITHRSA", PKCSObjectIdentifiers.sha512_224WithRSAEncryption);
         addAlgorithm("SHA512(256)WITHRSAENCRYPTION", PKCSObjectIdentifiers.sha512_256WithRSAEncryption);
         addAlgorithm("SHA512(256)WITHRSA", PKCSObjectIdentifiers.sha512_256WithRSAEncryption);
+        addAlgorithm("RIPEMD128WITHRSAANDMGF1", PKCSObjectIdentifiers.id_RSASSA_PSS);
+        addAlgorithm("RIPEMD160WITHRSAANDMGF1", PKCSObjectIdentifiers.id_RSASSA_PSS);
+        addAlgorithm("RIPEMD256WITHRSAANDMGF1", PKCSObjectIdentifiers.id_RSASSA_PSS);
         addAlgorithm("SHA1WITHRSAANDMGF1", PKCSObjectIdentifiers.id_RSASSA_PSS);
         addAlgorithm("SHA224WITHRSAANDMGF1", PKCSObjectIdentifiers.id_RSASSA_PSS);
         addAlgorithm("SHA256WITHRSAANDMGF1", PKCSObjectIdentifiers.id_RSASSA_PSS);
@@ -330,21 +333,6 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         addAlgorithm("MAYO_2", BCObjectIdentifiers.mayo_2);
         addAlgorithm("MAYO_3", BCObjectIdentifiers.mayo_3);
         addAlgorithm("MAYO_5", BCObjectIdentifiers.mayo_5);
-
-        addAlgorithm("HASHMLDSA44-RSA2048-PSS-SHA256", MiscObjectIdentifiers.id_HashMLDSA44_RSA2048_PSS_SHA256);
-        addAlgorithm("HASHMLDSA44-RSA2048-PKCS15-SHA256", MiscObjectIdentifiers.id_HashMLDSA44_RSA2048_PKCS15_SHA256);
-        addAlgorithm("HASHMLDSA44-ED25519-SHA512", MiscObjectIdentifiers.id_HashMLDSA44_Ed25519_SHA512);
-        addAlgorithm("HASHMLDSA44-ECDSA-P256-SHA256", MiscObjectIdentifiers.id_HashMLDSA44_ECDSA_P256_SHA256);
-        addAlgorithm("HASHMLDSA65-RSA3072-PSS-SHA512", MiscObjectIdentifiers.id_HashMLDSA65_RSA3072_PSS_SHA512);
-        addAlgorithm("HASHMLDSA65-RSA3072-PKCS15-SHA512", MiscObjectIdentifiers.id_HashMLDSA65_RSA3072_PKCS15_SHA512);
-        addAlgorithm("HASHMLDSA65-RSA4096-PSS-SHA512", MiscObjectIdentifiers.id_HashMLDSA65_RSA4096_PSS_SHA512);
-        addAlgorithm("HASHMLDSA65-RSA4096-PKCS15-SHA512", MiscObjectIdentifiers.id_HashMLDSA65_RSA4096_PKCS15_SHA512);
-        addAlgorithm("HASHMLDSA65-ECDSA-P384-SHA512", MiscObjectIdentifiers.id_HashMLDSA65_ECDSA_P384_SHA512);
-        addAlgorithm("HASHMLDSA65-ECDSA-BRAINPOOLP256R1-SHA512", MiscObjectIdentifiers.id_HashMLDSA65_ECDSA_brainpoolP256r1_SHA512);
-        addAlgorithm("HASHMLDSA65-ED25519-SHA512", MiscObjectIdentifiers.id_HashMLDSA65_Ed25519_SHA512);
-        addAlgorithm("HASHMLDSA87-ECDSA-P384-SHA512", MiscObjectIdentifiers.id_HashMLDSA87_ECDSA_P384_SHA512);
-        addAlgorithm("HASHMLDSA87-ECDSA-BRAINPOOLP384R1-SHA512", MiscObjectIdentifiers.id_HashMLDSA87_ECDSA_brainpoolP384r1_SHA512);
-        addAlgorithm("HASHMLDSA87-ED448-SHA512", MiscObjectIdentifiers.id_HashMLDSA87_Ed448_SHA512);
 
         addAlgorithm("MLDSA44-RSA2048-PSS-SHA256", IANAObjectIdentifiers.id_MLDSA44_RSA2048_PSS_SHA256);
         addAlgorithm("MLDSA44-RSA2048-PKCS15-SHA256", IANAObjectIdentifiers.id_MLDSA44_RSA2048_PKCS15_SHA256);
@@ -607,6 +595,15 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         //
         // explicit params
         //
+        AlgorithmIdentifier ripemd128AlgId = new AlgorithmIdentifier(TeleTrusTObjectIdentifiers.ripemd128, DERNull.INSTANCE);
+        addParameters("RIPEMD128WITHRSAANDMGF1", createPSSParams(ripemd128AlgId, 16));
+
+        AlgorithmIdentifier ripemd160AlgId = new AlgorithmIdentifier(TeleTrusTObjectIdentifiers.ripemd160, DERNull.INSTANCE);
+        addParameters("RIPEMD160WITHRSAANDMGF1", createPSSParams(ripemd160AlgId, 20));
+
+        AlgorithmIdentifier ripemd256AlgId = new AlgorithmIdentifier(TeleTrusTObjectIdentifiers.ripemd256, DERNull.INSTANCE);
+        addParameters("RIPEMD256WITHRSAANDMGF1", createPSSParams(ripemd256AlgId, 32));
+
         AlgorithmIdentifier sha1AlgId = new AlgorithmIdentifier(OIWObjectIdentifiers.idSHA1, DERNull.INSTANCE);
         addParameters("SHA1WITHRSAANDMGF1", createPSSParams(sha1AlgId, 20));
 
@@ -634,6 +631,23 @@ public class DefaultSignatureAlgorithmIdentifierFinder
         AlgorithmIdentifier sha3_512AlgId = new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha3_512, DERNull.INSTANCE);
         addParameters("SHA3-512WITHRSAANDMGF1", createPSSParams(sha3_512AlgId, 64));
 
+    }
+
+    /**
+     * Return true if a signature algorithm of the passed in name is recognised, false otherwise.
+     * Where this returns true {@link #find(String)} returns an identifier; where it returns false
+     * {@code find} throws, so this is the way to test for support without catching.
+     * <p>
+     * Declared here rather than on {@link SignatureAlgorithmIdentifierFinder}, which is long
+     * published - adding a method there would break every implementation outside this library.
+     * </p>
+     *
+     * @param sigAlgName the name of the signature algorithm of interest.
+     * @return true if the name is recognised, false otherwise.
+     */
+    public boolean hasAlgorithm(String sigAlgName)
+    {
+        return algorithms.containsKey(Strings.toUpperCase(sigAlgName));
     }
 
     public AlgorithmIdentifier find(String sigAlgName)

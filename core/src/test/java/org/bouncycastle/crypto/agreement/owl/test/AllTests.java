@@ -4,7 +4,6 @@ import junit.extensions.TestSetup;
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
-import org.bouncycastle.crypto.agreement.owl.OwlUtilTest;
 import org.bouncycastle.test.PrintTestResult;
 
 public class AllTests
@@ -20,7 +19,6 @@ public class AllTests
         TestSuite suite = new TestSuite("Owl Engine Tests");
 
         suite.addTestSuite(OwlCurveTest.class);
-        suite.addTestSuite(OwlUtilTest.class);
         suite.addTestSuite(OwlClientRegistrationTest.class);
         suite.addTestSuite(OwlServerRegistrationTest.class);
         suite.addTestSuite(OwlClientTest.class);

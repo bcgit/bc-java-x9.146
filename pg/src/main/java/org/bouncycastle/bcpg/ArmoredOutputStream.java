@@ -35,7 +35,7 @@ public class ArmoredOutputStream
     private static final String footerStart = "-----END PGP ";
     private static final String footerTail = "-----";
 
-    public static final String DEFAULT_VERSION = "BCPG v1.85";
+    public static final String DEFAULT_VERSION = "BCPG v1.86";
     
     private static final byte[] encodingTable =
         {

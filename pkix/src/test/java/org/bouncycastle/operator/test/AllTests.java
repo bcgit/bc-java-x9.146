@@ -16,6 +16,7 @@ import javax.crypto.spec.SecretKeySpec;
 import junit.framework.Assert;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
+import org.bouncycastle.asn1.gm.GMObjectIdentifiers;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DEROctetString;
@@ -27,6 +28,7 @@ import org.bouncycastle.asn1.eac.EACObjectIdentifiers;
 import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
 import org.bouncycastle.asn1.gnu.GNUObjectIdentifiers;
 import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
+import org.bouncycastle.asn1.iso.ISOIECObjectIdentifiers;
 import org.bouncycastle.asn1.kisa.KISAObjectIdentifiers;
 import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
@@ -44,18 +46,27 @@ import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
 import org.bouncycastle.crypto.CryptoServicesRegistrar;
 import org.bouncycastle.crypto.generators.MLKEMKeyPairGenerator;
 import org.bouncycastle.crypto.kems.MLKEMExtractor;
+import org.bouncycastle.crypto.params.CMCEParameters;
 import org.bouncycastle.crypto.params.MLKEMKeyGenerationParameters;
 import org.bouncycastle.crypto.params.MLKEMParameters;
 import org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.operator.AlgorithmIdentifierFinder;
 import org.bouncycastle.operator.AlgorithmNameFinder;
 import org.bouncycastle.operator.DefaultAlgorithmNameFinder;
 import org.bouncycastle.operator.DefaultDigestAlgorithmIdentifierFinder;
+import org.bouncycastle.operator.DefaultKemAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.DefaultKemEncapsulationLengthProvider;
+import org.bouncycastle.operator.DefaultMacAlgorithmIdentifierFinder;
+import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.DefaultSignatureNameFinder;
+import org.bouncycastle.operator.KemAlgorithmIdentifierFinder;
+import org.bouncycastle.operator.MacAlgorithmIdentifierFinder;
+import org.bouncycastle.operator.DigestAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.InputDecryptor;
 import org.bouncycastle.operator.InputDecryptorProvider;
 import org.bouncycastle.operator.KemEncapsulationLengthProvider;
+import org.bouncycastle.util.Strings;
 import org.bouncycastle.operator.jcajce.JceAsymmetricKeyWrapper;
 import org.bouncycastle.operator.jcajce.JceInputDecryptorProviderBuilder;
 import org.bouncycastle.pqc.crypto.hqc.HQCKEMExtractor;
@@ -90,6 +101,189 @@ public class AllTests
         TestSuite suite = new TestSuite();
         suite.addTestSuite(AllTests.class);
         PrintTestResult.printResult(junit.textui.TestRunner.run(suite));
+    }
+
+    /**
+     * DefaultKemAlgorithmIdentifierFinder is the name-to-OID direction of the KEM entries
+     * DefaultAlgorithmNameFinder holds, so the two tables have to agree. Round-tripping every
+     * name the KEM finder knows back through the name finder locks them together: an entry added
+     * to one and not the other, or spelled differently in the two, fails here.
+     */
+    public void testKemAlgorithmIdentifierFinder()
+        throws Exception
+    {
+        String[] names = new String[]{
+            "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024",
+            "frodokem976shake", "frodokem1344shake", "efrodokem976shake", "efrodokem1344shake",
+            "frodokem976aes", "frodokem1344aes", "efrodokem976aes", "efrodokem1344aes",
+            "mceliece460896", "mceliece460896f", "mceliece460896pc", "mceliece460896pcf",
+            "mceliece6688128", "mceliece6688128f", "mceliece6688128pc", "mceliece6688128pcf",
+            "mceliece6960119", "mceliece6960119f", "mceliece6960119pc", "mceliece6960119pcf",
+            "mceliece8192128", "mceliece8192128f", "mceliece8192128pc", "mceliece8192128pcf"};
+
+        KemAlgorithmIdentifierFinder finder = new DefaultKemAlgorithmIdentifierFinder();
+        DefaultAlgorithmNameFinder nameFinder = new DefaultAlgorithmNameFinder();
+
+        for (int i = 0; i != names.length; i++)
+        {
+            assertTrue("not recognised: " + names[i], finder.hasAlgorithm(names[i]));
+            assertTrue("case not folded by hasAlgorithm: " + names[i],
+                finder.hasAlgorithm(Strings.toLowerCase(names[i])));
+
+            AlgorithmIdentifier algId = finder.find(names[i]);
+
+            // each parameter set has its own OID, so there are never any parameters
+            assertNull("parameters present for " + names[i], algId.getParameters());
+            assertEquals("name did not round trip", names[i], nameFinder.getAlgorithmName(algId));
+        }
+
+        // the KEM, signature and digest finders implement the shared base interface - these
+        // assignments are the compile-time half of the assertion
+        AlgorithmIdentifierFinder[] baseFinders = new AlgorithmIdentifierFinder[]{
+            finder,
+            new DefaultSignatureAlgorithmIdentifierFinder(),
+            new DefaultDigestAlgorithmIdentifierFinder()};
+
+        String[] baseNames = new String[]{"ML-KEM-768", "ML-DSA-44", "SHA-256"};
+        ASN1ObjectIdentifier[] baseOids = new ASN1ObjectIdentifier[]{
+            NISTObjectIdentifiers.id_alg_ml_kem_768, NISTObjectIdentifiers.id_ml_dsa_44,
+            NISTObjectIdentifiers.id_sha256};
+
+        for (int i = 0; i != baseFinders.length; i++)
+        {
+            String who = baseFinders[i].getClass().getName();
+
+            assertEquals(who, baseOids[i], baseFinders[i].find(baseNames[i]).getAlgorithm());
+
+            // all of them fold case, and all throw rather than returning null - the contract
+            // AlgorithmIdentifierFinder documents
+            assertEquals("case not folded by " + who,
+                baseFinders[i].find(baseNames[i]), baseFinders[i].find(Strings.toLowerCase(baseNames[i])));
+
+            try
+            {
+                baseFinders[i].find("NOT-AN-ALGORITHM");
+                fail("no exception thrown by " + who);
+            }
+            catch (IllegalArgumentException e)
+            {
+                // expected
+            }
+        }
+
+        // hasAlgorithm agrees with find on the signature finder too, where it is declared on the
+        // implementation rather than the long-published interface
+        DefaultSignatureAlgorithmIdentifierFinder sigFinder = new DefaultSignatureAlgorithmIdentifierFinder();
+
+        assertTrue(sigFinder.hasAlgorithm("ML-DSA-44"));
+        assertTrue("case not folded by hasAlgorithm", sigFinder.hasAlgorithm("ml-dsa-44"));
+        assertTrue(sigFinder.hasAlgorithm("SHA256WITHRSA"));
+        assertFalse(sigFinder.hasAlgorithm("ML-KEM-512"));
+        assertFalse(sigFinder.hasAlgorithm("NOT-AN-ALGORITHM"));
+
+        try
+        {
+            sigFinder.find("ML-KEM-512");
+            fail("no exception thrown");
+        }
+        catch (IllegalArgumentException e)
+        {
+            assertEquals("Unknown signature type requested: ML-KEM-512", e.getMessage());
+        }
+
+        // the MAC finder is the one left outside the hierarchy: it returns null rather than
+        // throwing for an unrecognised name, though it folds case like the rest
+        MacAlgorithmIdentifierFinder macFinder = new DefaultMacAlgorithmIdentifierFinder();
+
+        assertNull(macFinder.find("NOT-A-MAC"));
+        assertEquals(macFinder.find("HMACSHA256"), macFinder.find("hmacsha256"));
+
+        // the digest finder is in the hierarchy on its name lookup, but keeps its own behaviour on
+        // the other two overloads: it reads a name in dotted OID form, and find(AlgorithmIdentifier)
+        // still returns null for a signature it cannot map - see
+        // testCompositeMLDsaDigestLookupIssue1767
+        DigestAlgorithmIdentifierFinder digFinder = new DefaultDigestAlgorithmIdentifierFinder();
+
+        try
+        {
+            digFinder.find("NOT-A-DIGEST");
+            fail("no exception thrown");
+        }
+        catch (IllegalArgumentException e)
+        {
+            assertEquals("Unknown digest algorithm requested: NOT-A-DIGEST", e.getMessage());
+        }
+
+        assertEquals(NISTObjectIdentifiers.id_sha256,
+            digFinder.find(NISTObjectIdentifiers.id_sha256.getId()).getAlgorithm());
+        assertNull(digFinder.find(new AlgorithmIdentifier(new ASN1ObjectIdentifier("1.2.3.4.5.6.7.8.9"))));
+
+        // names are matched without regard to case, as the other finders do
+        assertEquals(finder.find("ML-KEM-512"), finder.find("ml-kem-512"));
+        assertEquals(finder.find("mceliece8192128pcf"), finder.find("MCELIECE8192128PCF"));
+
+        // an unrecognised name is rejected rather than returning null, and hasAlgorithm agrees:
+        // "mceliece348864" is the pre-standard arc, deliberately not named
+        String[] unknown = new String[]{"ML-KEM-2048", "mceliece348864"};
+
+        for (int i = 0; i != unknown.length; i++)
+        {
+            assertFalse("wrongly recognised: " + unknown[i], finder.hasAlgorithm(unknown[i]));
+
+            try
+            {
+                finder.find(unknown[i]);
+                fail("no exception thrown");
+            }
+            catch (IllegalArgumentException e)
+            {
+                assertEquals("Unknown KEM algorithm requested: " + unknown[i], e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * hasAlgorithm has to answer for exactly the names find(String) accepts, which means both of
+     * find's readings of the name: the digest name table (case folded), and a dotted OID, which
+     * find(ASN1ObjectIdentifier) will name whatever it is.
+     */
+    public void testDigestAlgorithmFinderHasAlgorithm()
+    {
+        DefaultDigestAlgorithmIdentifierFinder f = new DefaultDigestAlgorithmIdentifierFinder();
+
+        String[] known = new String[]{
+            "SHA-1", "SHA-256", "SHA256", "SHA-512-256", "SHA3-512", "SHAKE256", "GOST3411", "MD5",
+            "RIPEMD160", "SM3",
+            // case is folded, as it is on find
+            "sha-256", "Sha3-512", "md5",
+            // and a name in dotted OID form
+            NISTObjectIdentifiers.id_sha256.getId(), OIWObjectIdentifiers.idSHA1.getId()};
+
+        for (int i = 0; i != known.length; i++)
+        {
+            assertTrue("not recognised: " + known[i], f.hasAlgorithm(known[i]));
+
+            // where hasAlgorithm says yes, find must produce an identifier rather than throw
+            assertNotNull(known[i], f.find(known[i]));
+        }
+
+        String[] unknown = new String[]{"NOT-A-DIGEST", "SHA-999", "", "1.2.3.4.not.an.oid"};
+
+        for (int i = 0; i != unknown.length; i++)
+        {
+            assertFalse("wrongly recognised: " + unknown[i], f.hasAlgorithm(unknown[i]));
+
+            // and where it says no, find must throw
+            try
+            {
+                f.find(unknown[i]);
+                fail("no exception thrown for " + unknown[i]);
+            }
+            catch (IllegalArgumentException e)
+            {
+                assertEquals("Unknown digest algorithm requested: " + unknown[i], e.getMessage());
+            }
+        }
     }
 
     public void testAgainstKnownList()
@@ -165,6 +359,9 @@ public class AllTests
             new Object[]{NISTObjectIdentifiers.id_dsa_with_sha3_512, "SHA3-512WITHDSA"},
             new Object[]{BCObjectIdentifiers.falcon_512, "FALCON"},
             new Object[]{BCObjectIdentifiers.falcon_1024, "FALCON"},
+            new Object[]{GMObjectIdentifiers.sm3, "SM3"},
+            new Object[]{GMObjectIdentifiers.sm2sign_with_sm3, "SM3WITHSM2"},
+            new Object[]{GMObjectIdentifiers.sm2sign_with_sha256, "SHA256WITHSM2"},
             new Object[]{EdECObjectIdentifiers.id_Ed25519, "ED25519"},
             new Object[]{EdECObjectIdentifiers.id_Ed448, "ED448"},
             new Object[]{EdECObjectIdentifiers.id_X25519, "X25519"},
@@ -175,6 +372,38 @@ public class AllTests
             new Object[]{NISTObjectIdentifiers.id_hash_ml_dsa_44_with_sha512, "ML-DSA-44-WITH-SHA512"},
             new Object[]{NISTObjectIdentifiers.id_hash_ml_dsa_65_with_sha512, "ML-DSA-65-WITH-SHA512"},
             new Object[]{NISTObjectIdentifiers.id_hash_ml_dsa_87_with_sha512, "ML-DSA-87-WITH-SHA512"},
+            // Composite ML-DSA (draft-ietf-lamps-pq-composite-sigs)
+            new Object[]{IANAObjectIdentifiers.id_MLDSA44_RSA2048_PSS_SHA256, "MLDSA44-RSA2048-PSS-SHA256"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA44_RSA2048_PKCS15_SHA256, "MLDSA44-RSA2048-PKCS15-SHA256"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA44_Ed25519_SHA512, "MLDSA44-Ed25519-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA44_ECDSA_P256_SHA256, "MLDSA44-ECDSA-P256-SHA256"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA65_RSA3072_PSS_SHA512, "MLDSA65-RSA3072-PSS-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA65_RSA3072_PKCS15_SHA512, "MLDSA65-RSA3072-PKCS15-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA65_RSA4096_PSS_SHA512, "MLDSA65-RSA4096-PSS-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA65_RSA4096_PKCS15_SHA512, "MLDSA65-RSA4096-PKCS15-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA65_ECDSA_P256_SHA512, "MLDSA65-ECDSA-P256-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA65_ECDSA_P384_SHA512, "MLDSA65-ECDSA-P384-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA65_ECDSA_brainpoolP256r1_SHA512, "MLDSA65-ECDSA-brainpoolP256r1-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA65_Ed25519_SHA512, "MLDSA65-Ed25519-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA87_ECDSA_P384_SHA512, "MLDSA87-ECDSA-P384-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA87_ECDSA_brainpoolP384r1_SHA512, "MLDSA87-ECDSA-brainpoolP384r1-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA87_Ed448_SHAKE256, "MLDSA87-Ed448-SHAKE256"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA87_RSA3072_PSS_SHA512, "MLDSA87-RSA3072-PSS-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA87_RSA4096_PSS_SHA512, "MLDSA87-RSA4096-PSS-SHA512"},
+            new Object[]{IANAObjectIdentifiers.id_MLDSA87_ECDSA_P521_SHA512, "MLDSA87-ECDSA-P521-SHA512"},
+            // Composite ML-KEM (draft-ietf-lamps-pq-composite-kem)
+            new Object[]{IANAObjectIdentifiers.id_MLKEM768_RSA2048_SHA3_256, "MLKEM768-RSA2048-SHA3-256"},
+            new Object[]{IANAObjectIdentifiers.id_MLKEM768_RSA3072_SHA3_256, "MLKEM768-RSA3072-SHA3-256"},
+            new Object[]{IANAObjectIdentifiers.id_MLKEM768_RSA4096_SHA3_256, "MLKEM768-RSA4096-SHA3-256"},
+            new Object[]{IANAObjectIdentifiers.id_MLKEM768_X25519_SHA3_256, "MLKEM768-X25519-SHA3-256"},
+            new Object[]{IANAObjectIdentifiers.id_MLKEM768_ECDH_P256_SHA3_256, "MLKEM768-ECDH-P256-SHA3-256"},
+            new Object[]{IANAObjectIdentifiers.id_MLKEM768_ECDH_P384_SHA3_256, "MLKEM768-ECDH-P384-SHA3-256"},
+            new Object[]{IANAObjectIdentifiers.id_MLKEM768_ECDH_brainpoolP256r1_SHA3_256, "MLKEM768-ECDH-brainpoolP256r1-SHA3-256"},
+            new Object[]{IANAObjectIdentifiers.id_MLKEM1024_RSA3072_SHA3_256, "MLKEM1024-RSA3072-SHA3-256"},
+            new Object[]{IANAObjectIdentifiers.id_MLKEM1024_ECDH_P384_SHA3_256, "MLKEM1024-ECDH-P384-SHA3-256"},
+            new Object[]{IANAObjectIdentifiers.id_MLKEM1024_ECDH_brainpoolP384r1_SHA3_256, "MLKEM1024-ECDH-brainpoolP384r1-SHA3-256"},
+            new Object[]{IANAObjectIdentifiers.id_MLKEM1024_X448_SHA3_256, "MLKEM1024-X448-SHA3-256"},
+            new Object[]{IANAObjectIdentifiers.id_MLKEM1024_ECDH_P521_SHA3_256, "MLKEM1024-ECDH-P521-SHA3-256"},
             new Object[]{NISTObjectIdentifiers.id_slh_dsa_sha2_128s, "SLH-DSA-SHA2-128S"},
             new Object[]{NISTObjectIdentifiers.id_slh_dsa_sha2_128f, "SLH-DSA-SHA2-128F"},
             new Object[]{NISTObjectIdentifiers.id_slh_dsa_sha2_192s, "SLH-DSA-SHA2-192S"},
@@ -235,6 +464,39 @@ public class AllTests
             new Object[]{BCObjectIdentifiers.sphincsPlus_shake_256f_r3_simple, "SPHINCS+"},
             new Object[]{BCObjectIdentifiers.sphincsPlus_haraka_256s_r3_simple, "SPHINCS+"},
             new Object[]{BCObjectIdentifiers.sphincsPlus_haraka_256f_r3_simple, "SPHINCS+"},
+
+    // ML-KEM (FIPS 203); names as MLKEMParameters.getName() spells them
+            new Object[]{NISTObjectIdentifiers.id_alg_ml_kem_512, "ML-KEM-512"},
+            new Object[]{NISTObjectIdentifiers.id_alg_ml_kem_768, "ML-KEM-768"},
+            new Object[]{NISTObjectIdentifiers.id_alg_ml_kem_1024, "ML-KEM-1024"},
+
+    // FrodoKEM, ISO/IEC 18033-2 arc; names as FrodoKEMParameters.getName() spells them
+            new Object[]{ISOIECObjectIdentifiers.frodokem976_shake, "frodokem976shake"},
+            new Object[]{ISOIECObjectIdentifiers.frodokem1344_shake, "frodokem1344shake"},
+            new Object[]{ISOIECObjectIdentifiers.efrodokem976_shake, "efrodokem976shake"},
+            new Object[]{ISOIECObjectIdentifiers.efrodokem1344_shake, "efrodokem1344shake"},
+            new Object[]{ISOIECObjectIdentifiers.frodokem976_aes, "frodokem976aes"},
+            new Object[]{ISOIECObjectIdentifiers.frodokem1344_aes, "frodokem1344aes"},
+            new Object[]{ISOIECObjectIdentifiers.efrodokem976_aes, "efrodokem976aes"},
+            new Object[]{ISOIECObjectIdentifiers.efrodokem1344_aes, "efrodokem1344aes"},
+
+    // Classic McEliece, ISO/IEC 18033-2 arc; names as CMCEParameters.getName() spells them
+            new Object[]{ISOIECObjectIdentifiers.mceliece460896, "mceliece460896"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece460896f, "mceliece460896f"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece460896pc, "mceliece460896pc"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece460896pcf, "mceliece460896pcf"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece6688128, "mceliece6688128"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece6688128f, "mceliece6688128f"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece6688128pc, "mceliece6688128pc"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece6688128pcf, "mceliece6688128pcf"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece6960119, "mceliece6960119"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece6960119f, "mceliece6960119f"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece6960119pc, "mceliece6960119pc"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece6960119pcf, "mceliece6960119pcf"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece8192128, "mceliece8192128"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece8192128f, "mceliece8192128f"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece8192128pc, "mceliece8192128pc"},
+            new Object[]{ISOIECObjectIdentifiers.mceliece8192128pcf, "mceliece8192128pcf"},
             new Object[]{GNUObjectIdentifiers.Tiger_192, "Tiger"},
             new Object[]{PKCSObjectIdentifiers.id_alg_hss_lms_hashsig, "LMS"},
 
@@ -730,6 +992,74 @@ public class AllTests
 
             assertEquals(ext.getEncapsulationLength(), lengthProvider.getEncapsulationLength(new AlgorithmIdentifier(hqcOids[i])));
         }
+
+        // Classic McEliece keygen is expensive, and the ciphertext size is fixed by the parameter
+        // set, so the parameters are the authority here rather than a generated key.
+        ASN1ObjectIdentifier[] cmceOids = new ASN1ObjectIdentifier[]
+            {
+                ISOIECObjectIdentifiers.mceliece460896,
+                ISOIECObjectIdentifiers.mceliece460896f,
+                ISOIECObjectIdentifiers.mceliece460896pc,
+                ISOIECObjectIdentifiers.mceliece460896pcf,
+                ISOIECObjectIdentifiers.mceliece6688128,
+                ISOIECObjectIdentifiers.mceliece6688128f,
+                ISOIECObjectIdentifiers.mceliece6688128pc,
+                ISOIECObjectIdentifiers.mceliece6688128pcf,
+                ISOIECObjectIdentifiers.mceliece6960119,
+                ISOIECObjectIdentifiers.mceliece6960119f,
+                ISOIECObjectIdentifiers.mceliece6960119pc,
+                ISOIECObjectIdentifiers.mceliece6960119pcf,
+                ISOIECObjectIdentifiers.mceliece8192128,
+                ISOIECObjectIdentifiers.mceliece8192128f,
+                ISOIECObjectIdentifiers.mceliece8192128pc,
+                ISOIECObjectIdentifiers.mceliece8192128pcf
+            };
+
+        CMCEParameters[] cmceParams = new CMCEParameters[]
+            {
+                CMCEParameters.mceliece460896,
+                CMCEParameters.mceliece460896f,
+                CMCEParameters.mceliece460896pc,
+                CMCEParameters.mceliece460896pcf,
+                CMCEParameters.mceliece6688128,
+                CMCEParameters.mceliece6688128f,
+                CMCEParameters.mceliece6688128pc,
+                CMCEParameters.mceliece6688128pcf,
+                CMCEParameters.mceliece6960119,
+                CMCEParameters.mceliece6960119f,
+                CMCEParameters.mceliece6960119pc,
+                CMCEParameters.mceliece6960119pcf,
+                CMCEParameters.mceliece8192128,
+                CMCEParameters.mceliece8192128f,
+                CMCEParameters.mceliece8192128pc,
+                CMCEParameters.mceliece8192128pcf
+            };
+
+        for (int i = 0; i != cmceOids.length; i++)
+        {
+            assertEquals(cmceParams[i].getName(), cmceParams[i].getEncapsulationLength(),
+                lengthProvider.getEncapsulationLength(new AlgorithmIdentifier(cmceOids[i])));
+        }
+
+        // a KEM with no registered encapsulation length must name the algorithm, not throw an NPE.
+        ASN1ObjectIdentifier[] unknownKemOids = new ASN1ObjectIdentifier[]
+            {
+                BCObjectIdentifiers.bike128,
+                new ASN1ObjectIdentifier("1.2.3.4.5.6.7.8.9")
+            };
+
+        for (int i = 0; i != unknownKemOids.length; i++)
+        {
+            try
+            {
+                lengthProvider.getEncapsulationLength(new AlgorithmIdentifier(unknownKemOids[i]));
+                fail("no exception on unknown KEM: " + unknownKemOids[i]);
+            }
+            catch (IllegalArgumentException e)
+            {
+                assertEquals("Unknown KEM algorithm requested: " + unknownKemOids[i], e.getMessage());
+            }
+        }
     }
 
     public void testCompositeMLDsaDigestLookupIssue1767()
@@ -773,6 +1103,69 @@ public class AllTests
             assertNotNull("missing mapping for " + sigOid.getId(), got);
             assertEquals("wrong digest for " + sigOid.getId(),
                 expDig, got.getAlgorithm());
+        }
+    }
+
+    /**
+     * The signature-algorithm finder knew 14 HASHMLDSA* names that mapped onto the superseded
+     * draft-13 OIDs. Those OIDs were never in CompositeIndex.pairings, so no provider service
+     * backed them: find() handed back an AlgorithmIdentifier that JcaContentSignerBuilder then
+     * failed on with NoSuchAlgorithmException. This locks the finder's composite names to what the
+     * BC provider can actually do.
+     */
+    public void testCompositeNamesAreBackedByServices()
+        throws Exception
+    {
+        DefaultSignatureAlgorithmIdentifierFinder finder = new DefaultSignatureAlgorithmIdentifierFinder();
+
+        String[] names = new String[]
+        {
+            "MLDSA44-RSA2048-PSS-SHA256",
+            "MLDSA44-RSA2048-PKCS15-SHA256",
+            "MLDSA44-ED25519-SHA512",
+            "MLDSA44-ECDSA-P256-SHA256",
+            "MLDSA65-RSA3072-PSS-SHA512",
+            "MLDSA65-RSA3072-PKCS15-SHA512",
+            "MLDSA65-RSA4096-PSS-SHA512",
+            "MLDSA65-RSA4096-PKCS15-SHA512",
+            "MLDSA65-ECDSA-P256-SHA512",
+            "MLDSA65-ECDSA-P384-SHA512",
+            "MLDSA65-ECDSA-BRAINPOOLP256R1-SHA512",
+            "MLDSA65-ED25519-SHA512",
+            "MLDSA87-ECDSA-P384-SHA512",
+            "MLDSA87-ECDSA-BRAINPOOLP384R1-SHA512",
+            "MLDSA87-ED448-SHAKE256",
+            "MLDSA87-RSA3072-PSS-SHA512",
+            "MLDSA87-RSA4096-PSS-SHA512",
+            "MLDSA87-ECDSA-P521-SHA512"
+        };
+
+        for (int i = 0; i != names.length; i++)
+        {
+            AlgorithmIdentifier algId = finder.find(names[i]);
+
+            assertNull("composite algorithm identifiers carry no parameters", algId.getParameters());
+            assertNotNull(names[i], Signature.getInstance(algId.getAlgorithm().getId(), "BC"));
+        }
+
+        String[] superseded = new String[]
+        {
+            "HASHMLDSA44-RSA2048-PSS-SHA256",
+            "HASHMLDSA65-ECDSA-P384-SHA512",
+            "HASHMLDSA87-ED448-SHA512"
+        };
+
+        for (int i = 0; i != superseded.length; i++)
+        {
+            try
+            {
+                finder.find(superseded[i]);
+                fail("superseded composite name still resolved: " + superseded[i]);
+            }
+            catch (IllegalArgumentException e)
+            {
+                assertEquals("Unknown signature type requested: " + superseded[i], e.getMessage());
+            }
         }
     }
 

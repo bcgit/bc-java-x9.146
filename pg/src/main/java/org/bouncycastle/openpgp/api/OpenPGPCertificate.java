@@ -21,6 +21,7 @@ import org.bouncycastle.bcpg.BCPGOutputStream;
 import org.bouncycastle.bcpg.FingerprintUtil;
 import org.bouncycastle.bcpg.KeyIdentifier;
 import org.bouncycastle.bcpg.PacketFormat;
+import org.bouncycastle.bcpg.PublicKeyPacket;
 import org.bouncycastle.bcpg.PublicKeyUtils;
 import org.bouncycastle.bcpg.SignatureSubpacket;
 import org.bouncycastle.bcpg.SignatureSubpacketTags;
@@ -718,7 +719,9 @@ public class OpenPGPCertificate
         boolean isPrimaryKey = component == getPrimaryKey();
         if (isPrimaryKey && chainsForComponent.getCertificationAt(evaluationDate) == null)
         {
-            // If cert has no direct-key signatures, consider primary UID bindings instead
+            // If cert has no direct-key signatures, consider primary UID bindings instead.
+            // A version 6 key never reaches this fallback: isBoundBy() refuses the certificate
+            // outright unless a valid Direct Key signature is present (RFC 9580, section 5.2.3.10).
             OpenPGPUserId primaryUserId = getPrimaryUserId(evaluationDate);
             if (primaryUserId != null)
             {
@@ -849,21 +852,31 @@ public class OpenPGPCertificate
                               OpenPGPComponentKey root,
                               Date evaluationTime)
     {
-        OpenPGPSignature.OpenPGPSignatureSubpacket keyExpiration =
-            component.getApplyingSubpacket(evaluationTime, SignatureSubpacketTags.KEY_EXPIRE_TIME);
-        if (keyExpiration != null)
+        // RFC 9580, section 5.2.3.10: "An implementation MUST ensure that a valid Direct Key signature is
+        // present before using a version 6 key. This prevents certain attacks where an adversary strips a
+        // self-signature specifying a Key Expiration Time or certain preferences."
+        // The certificate grammar says the same structurally: the Direct Key signature is mandatory in the
+        // version 6 structure of section 10.1.1 and optional in the version 4 one of section 10.1.3.
+        // A version 6 certificate carries the key expiration, the features and the algorithm preferences on
+        // the Direct Key signature rather than on a User ID self-signature, so treating a User ID binding as
+        // a substitute - which is correct for a version 4 key, where that information legitimately lives on
+        // the User ID self-signature - would let that single packet be stripped from a published certificate
+        // without the loss of what it carried being noticed.
+        if (requiresDirectKeySignature() && !hasValidDirectKeySignature(evaluationTime))
         {
-            KeyExpirationTime kexp = (KeyExpirationTime)keyExpiration.getSubpacket();
-            if (kexp.getTime() != 0)
-            {
-                OpenPGPComponentKey key = component.getKeyComponent();
-                Date expirationDate = new Date(1000 * kexp.getTime() + key.getCreationTime().getTime());
-                if (expirationDate.before(evaluationTime))
-                {
-                    // Key is expired.
-                    return false;
-                }
-            }
+            return false;
+        }
+
+        if (isExpired(component, evaluationTime))
+        {
+            return false;
+        }
+
+        // An expired primary key can no longer certify, so a longer-lived subkey it bound is not usable either.
+        OpenPGPComponentKey primaryKey = getPrimaryKey();
+        if (component != primaryKey && isExpired(primaryKey, evaluationTime))
+        {
+            return false;
         }
 
         try
@@ -884,6 +897,84 @@ public class OpenPGPCertificate
 
             // Signature is not correct
             return false;
+        }
+        catch (PGPException e)
+        {
+            // Signature verification failed (signature broken?)
+            return false;
+        }
+    }
+
+    /**
+     * Return true, if the {@link KeyExpirationTime} which - at evaluation time - applies to the key of the
+     * given component has passed.
+     * <p>
+     * RFC 9580, section 5.2.3.13 counts the validity period from the creation time of the key the carrying
+     * self-signature is made on: the primary key for a direct-key or certification self-signature, the subkey
+     * for a Subkey Binding signature. A subkey therefore never inherits the primary key's validity period -
+     * re-basing it on the subkey's own creation time would move the expiration date - and
+     * {@link OpenPGPCertificateComponent#getApplyingSubpacket(Date, int)} accordingly does not let a
+     * {@link KeyExpirationTime} shadow down onto a subkey. The primary key's expiration is instead applied to
+     * the whole certificate by {@link #isBoundBy(OpenPGPCertificateComponent, OpenPGPComponentKey, Date)},
+     * which is also what GnuPG and Sequoia do: an expired primary key can no longer certify, so the subkeys it
+     * bound cease to be usable with it.
+     *
+     * @param component      certificate component
+     * @param evaluationTime evaluation time
+     * @return true if the component's key is expired at evaluation time
+     */
+    private boolean isExpired(OpenPGPCertificateComponent component, Date evaluationTime)
+    {
+        OpenPGPSignature.OpenPGPSignatureSubpacket keyExpiration =
+            component.getApplyingSubpacket(evaluationTime, SignatureSubpacketTags.KEY_EXPIRE_TIME);
+        if (keyExpiration == null)
+        {
+            return false;
+        }
+
+        KeyExpirationTime kexp = (KeyExpirationTime)keyExpiration.getSubpacket();
+        if (kexp.getTime() == 0)
+        {
+            // Key does not expire.
+            return false;
+        }
+
+        OpenPGPComponentKey key = component.getKeyComponent();
+        return new Date(1000 * kexp.getTime() + key.getCreationTime().getTime()).before(evaluationTime);
+    }
+
+    /**
+     * Return true, if RFC 9580 requires the primary key of this certificate to carry a valid Direct Key
+     * self-signature before any of its components may be used (section 5.2.3.10). This is the case for
+     * version 6 keys.
+     *
+     * @return true if a Direct Key self-signature is mandatory for this certificate
+     */
+    private boolean requiresDirectKeySignature()
+    {
+        return getPrimaryKey().getVersion() == PublicKeyPacket.VERSION_6;
+    }
+
+    /**
+     * Return true, if the primary key carries a Direct Key self-signature which is - at evaluation time -
+     * both effective and cryptographically valid.
+     * A Direct Key revocation does not satisfy this, since it is not a certification.
+     *
+     * @param evaluationTime evaluation time
+     * @return true if a valid Direct Key self-signature is present at evaluation time
+     */
+    private boolean hasValidDirectKeySignature(Date evaluationTime)
+    {
+        OpenPGPSignatureChain directKeyChain = getSelfSignatureChainsFor(getPrimaryKey())
+            .getCertificationAt(evaluationTime);
+        if (directKeyChain == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return directKeyChain.isValid(implementation.pgpContentVerifierBuilderProvider(), policy);
         }
         catch (PGPException e)
         {
@@ -1753,6 +1844,18 @@ public class OpenPGPCertificate
             PGPSignatureSubpacketVector hashedSubpackets = keySignature.getSignature().getHashedSubPackets();
             if (hashedSubpackets == null || !hashedSubpackets.hasSubpacket(subpacketType))
             {
+                if (subpacketType == SignatureSubpacketTags.KEY_FLAGS && this instanceof OpenPGPSubkey)
+                {
+                    // Key Flags apply to the key their signature refers to (RFC9580, section 5.2.3.29) - not inherited
+                    return null;
+                }
+
+                if (subpacketType == SignatureSubpacketTags.KEY_EXPIRE_TIME && this instanceof OpenPGPSubkey)
+                {
+                    // Key Expiration Time is counted from the creation time of the key it is on (RFC9580, section 5.2.3.13) - not inherited
+                    return null;
+                }
+
                 // If the subkey binding signature doesn't carry the desired subpacket,
                 //  check direct-key or primary uid sig instead
                 OpenPGPSignatureChain preferenceBinding = getCertificate().getPreferenceSignature(evaluationTime);
@@ -1800,7 +1903,8 @@ public class OpenPGPCertificate
                     if (KeyIdentifier.matches(
                         rootLink.getSignature().getKeyIdentifiers(),
                         issuerKey.getKeyIdentifier(),
-                        true))
+                        true)
+                        && mayHaveIssued(issuerKey, rootLink.getSignature()))
                     {
                         OpenPGPSignatureChain externalChain = issuerKey.getSelfSignatureChains()
                             .getChainAt(rootLink.getSignature().getCreationTime());
@@ -1811,6 +1915,44 @@ public class OpenPGPCertificate
                 }
             }
             return chainsBy;
+        }
+
+        /**
+         * Return true if the given component key of a third-party certificate is permitted to have
+         * issued the given signature over a component of this certificate.
+         * <p>
+         * A key identifier only says which component key made a signature, not whether that
+         * component was granted the authority to make it. RFC 9580 Section 5.2.3.29 gives the
+         * certification flag ({@link KeyFlags#CERTIFY_OTHER}, "This key may be used to certify
+         * other keys") separately from the data-signing flag ({@link KeyFlags#SIGN_DATA}), which
+         * is what lets a certificate keep an offline certification primary key alongside online
+         * subkeys. Honouring a third-party certification or trust delegation from a subkey that
+         * was never granted the certification flag would hand that subkey the primary key's
+         * authority to bind identities and delegate introducer trust, so such a signature is not
+         * treated as issued by the certificate at all.
+         * <p>
+         * A primary key is accepted whatever its key flags say: it is certification-capable by
+         * construction - it binds the certificate's own user-ids and subkeys - and certificates
+         * that carry no key flags subpacket at all are common, where
+         * {@link OpenPGPComponentKey#isCertificationKey(Date)} answers false for want of a
+         * subpacket to read rather than because authority was withheld.
+         * <p>
+         * Revocations are deliberately outside this rule: declining to honour a third-party
+         * revocation keeps trust alive rather than withdrawing it, which is the more dangerous way
+         * to be wrong.
+         *
+         * @param issuerKey component key of the third-party certificate matching the signature's issuer
+         * @param signature third-party signature over a component of this certificate
+         * @return true if the signature may be attributed to the third-party certificate
+         */
+        private boolean mayHaveIssued(OpenPGPComponentKey issuerKey, OpenPGPComponentSignature signature)
+        {
+            if (issuerKey.isPrimaryKey() || signature.isRevocation())
+            {
+                return true;
+            }
+
+            return issuerKey.isCertificationKey(signature.getCreationTime());
         }
     }
 

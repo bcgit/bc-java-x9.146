@@ -1,6 +1,7 @@
 package org.bouncycastle.pqc.jcajce.provider.xmss;
 
 import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidParameterException;
 import java.security.KeyPair;
 import java.security.SecureRandom;
 import java.security.spec.AlgorithmParameterSpec;
@@ -9,14 +10,13 @@ import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
 import org.bouncycastle.crypto.CryptoServicesRegistrar;
-import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.digests.SHA512Digest;
-import org.bouncycastle.crypto.digests.SHAKEDigest;
-import org.bouncycastle.pqc.crypto.xmss.XMSSKeyGenerationParameters;
-import org.bouncycastle.pqc.crypto.xmss.XMSSKeyPairGenerator;
-import org.bouncycastle.pqc.crypto.xmss.XMSSParameters;
-import org.bouncycastle.pqc.crypto.xmss.XMSSPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.xmss.XMSSPublicKeyParameters;
+import org.bouncycastle.crypto.generators.XMSSKeyPairGenerator;
+import org.bouncycastle.crypto.params.XMSSKeyGenerationParameters;
+import org.bouncycastle.crypto.params.XMSSParameters;
+import org.bouncycastle.crypto.params.XMSSPrivateKeyParameters;
+import org.bouncycastle.crypto.params.XMSSPublicKeyParameters;
+import org.bouncycastle.jcajce.provider.util.SecurityExceptions;
 import org.bouncycastle.pqc.jcajce.spec.XMSSParameterSpec;
 
 public class XMSSKeyPairGeneratorSpi
@@ -38,7 +38,8 @@ public class XMSSKeyPairGeneratorSpi
         int strength,
         SecureRandom random)
     {
-        throw new IllegalArgumentException("use AlgorithmParameterSpec");
+        // what the JCA specifies here; it extends IllegalArgumentException, so catches still match
+        throw new InvalidParameterException("use AlgorithmParameterSpec");
     }
 
     public void initialize(
@@ -53,45 +54,33 @@ public class XMSSKeyPairGeneratorSpi
 
         XMSSParameterSpec xmssParams = (XMSSParameterSpec)params;
 
-        if (xmssParams.getTreeDigest().equals(XMSSParameterSpec.SHA256))
+        // the name to OID and n table is DigestUtil's, shared with XMSSMTKeyPairGeneratorSpi,
+        // which had a copy of these seven branches differing only in the parameter set class built
+        // below
+        DigestUtil.TreeDigest digest = DigestUtil.getTreeDigest(xmssParams.getTreeDigest());
+
+        // built before either field is written. XMSSParameters refuses a height outside
+        // [2, MAX_HEIGHT] with an unchecked IllegalArgumentException, and an assignment ahead of
+        // that left this generator naming the tree digest of the parameter set it had just failed
+        // to build while the engine went on holding the one an earlier initialize succeeded with -
+        // so the next generateKeyPair(), legal because of that earlier call, labelled its key with
+        // a digest nothing had generated it under. The refusal is reported as the
+        // InvalidAlgorithmParameterException this method declares, which is what getTreeDigest one
+        // line above already throws for a tree digest name it does not know.
+        XMSSKeyGenerationParameters generationParams;
+
+        try
         {
-            treeDigest = NISTObjectIdentifiers.id_sha256;
-            param = new XMSSKeyGenerationParameters(new XMSSParameters(xmssParams.getHeight(), new SHA256Digest()), random);
+            generationParams = new XMSSKeyGenerationParameters(
+                new XMSSParameters(xmssParams.getHeight(), digest.getOID(), digest.getN()), random);
         }
-        else if (xmssParams.getTreeDigest().equals(XMSSParameterSpec.SHA512))
+        catch (IllegalArgumentException e)
         {
-            treeDigest = NISTObjectIdentifiers.id_sha512;
-            param = new XMSSKeyGenerationParameters(new XMSSParameters(xmssParams.getHeight(), new SHA512Digest()), random);
+            throw SecurityExceptions.invalidAlgorithmParameterException(e.getMessage(), e);
         }
-        else if (xmssParams.getTreeDigest().equals(XMSSParameterSpec.SHAKE128))
-        {
-            treeDigest = NISTObjectIdentifiers.id_shake128;
-            param = new XMSSKeyGenerationParameters(new XMSSParameters(xmssParams.getHeight(), new SHAKEDigest(128)), random);
-        }
-        else if (xmssParams.getTreeDigest().equals(XMSSParameterSpec.SHAKE256))
-        {
-            treeDigest = NISTObjectIdentifiers.id_shake256;
-            param = new XMSSKeyGenerationParameters(new XMSSParameters(xmssParams.getHeight(), new SHAKEDigest(256)), random);
-        }
-        else if (xmssParams.getTreeDigest().equals(XMSSParameterSpec.SHA256_192))
-        {
-            treeDigest = NISTObjectIdentifiers.id_sha256;
-            param = new XMSSKeyGenerationParameters(new XMSSParameters(xmssParams.getHeight(), NISTObjectIdentifiers.id_sha256, 24), random);
-        }
-        else if (xmssParams.getTreeDigest().equals(XMSSParameterSpec.SHAKE256_256))
-        {
-            treeDigest = NISTObjectIdentifiers.id_shake256_len;
-            param = new XMSSKeyGenerationParameters(new XMSSParameters(xmssParams.getHeight(), NISTObjectIdentifiers.id_shake256_len, 32), random);
-        }
-        else if (xmssParams.getTreeDigest().equals(XMSSParameterSpec.SHAKE256_192))
-        {
-            treeDigest = NISTObjectIdentifiers.id_shake256_len;
-            param = new XMSSKeyGenerationParameters(new XMSSParameters(xmssParams.getHeight(), NISTObjectIdentifiers.id_shake256_len, 24), random);
-        }
-        else
-        {
-            throw new InvalidAlgorithmParameterException("unknown tree digest: " + xmssParams.getTreeDigest());
-        }
+
+        treeDigest = digest.getOID();
+        param = generationParams;
 
         engine.init(param);
         initialised = true;
@@ -101,7 +90,17 @@ public class XMSSKeyPairGeneratorSpi
     {
         if (!initialised)
         {
-            param = new XMSSKeyGenerationParameters(new XMSSParameters(10, new SHA512Digest()), random);
+            // the tree digest has to be set here as well, otherwise the key returned carries none
+            // and its equals()/hashCode()/getTreeDigest() fail on it. Built before either field is
+            // written, as initialize() builds it: the parameter set here is a constant and cannot
+            // be refused, so this changes nothing today, and that is exactly what makes the order
+            // worth having - the two initialisation paths hold the same invariant by construction
+            // rather than one of them holding it by arithmetic a later edit could change.
+            XMSSKeyGenerationParameters generationParams = new XMSSKeyGenerationParameters(
+                new XMSSParameters(10, new SHA512Digest()), random);
+
+            treeDigest = NISTObjectIdentifiers.id_sha512;
+            param = generationParams;
 
             engine.init(param);
             initialised = true;

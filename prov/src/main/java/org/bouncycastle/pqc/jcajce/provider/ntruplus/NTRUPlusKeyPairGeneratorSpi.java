@@ -1,6 +1,7 @@
 package org.bouncycastle.pqc.jcajce.provider.ntruplus;
 
 import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidParameterException;
 import java.security.KeyPair;
 import java.security.SecureRandom;
 import java.security.spec.AlgorithmParameterSpec;
@@ -54,7 +55,8 @@ public class NTRUPlusKeyPairGeneratorSpi
         int strength,
         SecureRandom random)
     {
-        throw new IllegalArgumentException("use AlgorithmParameterSpec");
+        // what the JCA specifies here; it extends IllegalArgumentException, so catches still match
+        throw new InvalidParameterException("use AlgorithmParameterSpec");
     }
 
     public void initialize(
@@ -72,7 +74,7 @@ public class NTRUPlusKeyPairGeneratorSpi
 
             if (ntruplusParameters != null && !ntruplusParams.getName().equals(ntruplusParameters.getName()))
             {
-                throw new InvalidAlgorithmParameterException("key pair generator locked to " + Strings.toUpperCase(ntruplusParameters.getName()));
+                throw new InvalidAlgorithmParameterException("key pair generator locked to " + getAlgorithm());
             }
 
             engine.init(param);
@@ -93,7 +95,10 @@ public class NTRUPlusKeyPairGeneratorSpi
         }
         else
         {
-            return Strings.toLowerCase(SpecUtil.getNameFrom(paramSpec));
+            String name = SpecUtil.getNameFrom(paramSpec);
+
+            // null where the spec has no getName(), which the caller reports as the exception it declares
+            return (name == null) ? null : Strings.toLowerCase(name);
         }
     }
 

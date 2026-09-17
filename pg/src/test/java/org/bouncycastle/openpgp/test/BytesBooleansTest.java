@@ -30,32 +30,40 @@ public class BytesBooleansTest
 
     public void testParseTooShort()
     {
-        PrimaryUserID primaryUserID = new PrimaryUserID(true, false, new byte[0]);
-        byte[] bTooShort = primaryUserID.getData();
         try
         {
-            primaryUserID.isPrimaryUserID();
+            new PrimaryUserID(true, false, new byte[0]);
             fail("Should throw.");
         }
-        catch (IllegalStateException e)
+        catch (IllegalArgumentException e)
         {
-            // expected.
+            // expected - RFC 9580 sec. 5.2.3.27 defines the body as a single octet.
         }
     }
 
     public void testParseTooLong()
     {
-        PrimaryUserID primaryUserID = new PrimaryUserID(true, false, new byte[42]);
-        byte[] bTooLong = primaryUserID.getData();
-
         try
         {
-            primaryUserID.isPrimaryUserID();
+            new PrimaryUserID(true, false, new byte[42]);
             fail("Should throw.");
         }
-        catch (IllegalStateException e)
+        catch (IllegalArgumentException e)
         {
             // expected.
+        }
+    }
+
+    public void testParseIllegalValue()
+    {
+        try
+        {
+            new PrimaryUserID(true, false, new byte[]{ 2 });
+            fail("Should throw.");
+        }
+        catch (IllegalArgumentException e)
+        {
+            // expected - the flag octet is a zero or a one.
         }
     }
 }

@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
+import javax.security.auth.Destroyable;
+
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.crypto.kems.frodo.FrodoKEMEngine;
 import org.bouncycastle.crypto.params.FrodoKEMPrivateKeyParameters;
@@ -13,9 +15,10 @@ import org.bouncycastle.crypto.util.PrivateKeyInfoFactory;
 import org.bouncycastle.jcajce.interfaces.FrodoKEMPrivateKey;
 import org.bouncycastle.jcajce.spec.FrodoKEMParameterSpec;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
 
 public class BCFrodoKEMPrivateKey
-    implements FrodoKEMPrivateKey
+    implements FrodoKEMPrivateKey, Destroyable
 {
     private static final long serialVersionUID = 1L;
 
@@ -59,6 +62,12 @@ public class BCFrodoKEMPrivateKey
         {
             BCFrodoKEMPrivateKey otherKey = (BCFrodoKEMPrivateKey)o;
 
+            // a destroyed key no longer exposes its value, so it is only equal to itself.
+            if (isDestroyed() || otherKey.isDestroyed())
+            {
+                return false;
+            }
+
             return Arrays.constantTimeAreEqual(this.getEncoded(), otherKey.getEncoded());
         }
 
@@ -74,7 +83,7 @@ public class BCFrodoKEMPrivateKey
     {
         FrodoKEMEngine engine = FrodoKEMEngine.getInstance(params.getParameters());
         int sBytes = params.getParameters().getSessionKeySize() / 8;
-        byte[] pk = Arrays.copyOfRange(params.getPrivateKey(), sBytes, sBytes + engine.getPublicKeySize());
+        byte[] pk = Arrays.copyOfRange(params.getEncoded(), sBytes, sBytes + engine.getPublicKeySize());
         return new BCFrodoKEMPublicKey(new FrodoKEMPublicKeyParameters(params.getParameters(), pk));
     }
 
@@ -88,6 +97,11 @@ public class BCFrodoKEMPrivateKey
 
     public byte[] getEncoded()
     {
+        if (params.isDestroyed())
+        {
+            throw new IllegalStateException("key destroyed");
+        }
+
         try
         {
             PrivateKeyInfo pki = PrivateKeyInfoFactory.createPrivateKeyInfo(params);
@@ -108,6 +122,22 @@ public class BCFrodoKEMPrivateKey
     public FrodoKEMParameterSpec getParameterSpec()
     {
         return FrodoKEMParameterSpec.fromName(params.getParameters().getName());
+    }
+
+    /**
+     * Destroy this key, zeroizing the secret key material it holds.
+     * <p>
+     * After destruction {@link #isDestroyed()} returns true and {@link #getEncoded()} throws
+     * {@link IllegalStateException}.
+     */
+    public synchronized void destroy()
+    {
+        params.destroy();
+    }
+
+    public boolean isDestroyed()
+    {
+        return params.isDestroyed();
     }
 
     FrodoKEMPrivateKeyParameters getKeyParams()
@@ -132,6 +162,13 @@ public class BCFrodoKEMPrivateKey
     {
         out.defaultWriteObject();
 
-        out.writeObject(this.getEncoded());
+        try
+        {
+            out.writeObject(this.getEncoded());
+        }
+        catch (IllegalStateException e)
+        {
+            throw Exceptions.ioException(e.getMessage(), e);
+        }
     }
 }

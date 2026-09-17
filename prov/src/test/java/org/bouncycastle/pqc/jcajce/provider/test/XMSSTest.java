@@ -5,7 +5,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.security.GeneralSecurityException;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
+import java.security.InvalidParameterException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -15,6 +17,7 @@ import java.security.SecureRandom;
 import java.security.Security;
 import java.security.Signature;
 import java.security.SignatureException;
+import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.HashSet;
@@ -24,22 +27,28 @@ import junit.framework.TestCase;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Sequence;
-import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
+import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
-import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
-import org.bouncycastle.internal.asn1.isara.IsaraObjectIdentifiers;
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.digests.SHA512Digest;
 import org.bouncycastle.crypto.digests.SHAKEDigest;
+import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.crypto.params.XMSSParameters;
+import org.bouncycastle.crypto.params.XMSSPrivateKeyParameters;
+import org.bouncycastle.internal.asn1.isara.IsaraObjectIdentifiers;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.pqc.jcajce.interfaces.StateAwareSignature;
 import org.bouncycastle.pqc.jcajce.interfaces.XMSSKey;
 import org.bouncycastle.pqc.jcajce.interfaces.XMSSPrivateKey;
 import org.bouncycastle.pqc.jcajce.provider.BouncyCastlePQCProvider;
+import org.bouncycastle.pqc.jcajce.provider.xmss.BCXMSSPrivateKey;
 import org.bouncycastle.pqc.jcajce.spec.XMSSParameterSpec;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Strings;
@@ -101,6 +110,65 @@ public class XMSSTest
         {
             Security.addProvider(new BouncyCastlePQCProvider());
         }
+    }
+
+    /**
+     * A private key written by a release before the XMSS implementation was promoted out of
+     * org.bouncycastle.pqc.crypto.xmss carries its BDS traversal state as a Java serialized graph
+     * naming the classes of that package. The promoted reader has to go on accepting it, which it
+     * does by mapping those four class names onto the classes in
+     * org.bouncycastle.crypto.signers.xmss - nothing writes them any more, so only a fixture like
+     * this one exercises the path.
+     */
+    public void testPromotedFactoryReadsLegacyBdsState()
+        throws Exception
+    {
+        assertTrue("fixture is not a pre-promotion key", XMSSTestUtils.hasLegacyBdsMarker(testPrivKey));
+
+        AsymmetricKeyParameter key = org.bouncycastle.crypto.util.PrivateKeyFactory.createKey(testPrivKey);
+
+        assertTrue(key instanceof org.bouncycastle.crypto.params.XMSSPrivateKeyParameters);
+    }
+
+    /**
+     * XMSS is now a BC provider algorithm as well as a BCPQC one - the BC provider has carried
+     * the key info converters for it for some time, but the KeyFactory, KeyPairGenerator and
+     * Signature services were only in BCPQC.
+     */
+    public void testBCProviderServices()
+        throws Exception
+    {
+        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null)
+        {
+            Security.addProvider(new BouncyCastleProvider());
+        }
+
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BC");
+
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256), new SecureRandom());
+
+        KeyPair kp = kpg.generateKeyPair();
+
+        Signature sig = Signature.getInstance("XMSS-SHA256", "BC");
+
+        sig.initSign(kp.getPrivate());
+        sig.update(msg, 0, msg.length);
+
+        byte[] s = sig.sign();
+
+        sig.initVerify(kp.getPublic());
+        sig.update(msg, 0, msg.length);
+
+        assertTrue(sig.verify(s));
+
+        KeyFactory kFact = KeyFactory.getInstance("XMSS", "BC");
+
+        assertEquals(kp.getPublic(), kFact.generatePublic(new X509EncodedKeySpec(kp.getPublic().getEncoded())));
+        assertEquals(kp.getPrivate(), kFact.generatePrivate(new PKCS8EncodedKeySpec(kp.getPrivate().getEncoded())));
+
+        // the same key must go back and forth between the two providers
+        assertEquals(kp.getPublic(),
+            KeyFactory.getInstance("XMSS", "BCPQC").generatePublic(new X509EncodedKeySpec(kp.getPublic().getEncoded())));
     }
 
     public void test160PrivateKeyRecovery()
@@ -212,15 +280,121 @@ public class XMSSTest
         }
     }
 
+    /**
+     * An XMSS signature is the fixed-size encoding of RFC 8391 sec. 4.1.8, so a valid signature
+     * carrying trailing data is not a signature - XMSS used to read its fields at their fixed
+     * offsets and ignore the tail, where XMSS^MT already checked the total length (github #2408).
+     */
+    public void testSignatureWithTrailingBytesRejected()
+        throws Exception
+    {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256), new SecureRandom());
+
+        KeyPair kp = kpg.generateKeyPair();
+
+        Signature signer = Signature.getInstance("XMSS-SHA256", "BCPQC");
+
+        signer.initSign(kp.getPrivate());
+        signer.update(msg, 0, msg.length);
+
+        byte[] sig = signer.sign();
+
+        signer.initVerify(kp.getPublic());
+        signer.update(msg, 0, msg.length);
+
+        assertTrue(signer.verify(sig));
+
+        signer.initVerify(kp.getPublic());
+        signer.update(msg, 0, msg.length);
+
+        assertFalse("signature with trailing data accepted", signer.verify(Arrays.append(sig, (byte)0x2a)));
+
+        signer.initVerify(kp.getPublic());
+        signer.update(msg, 0, msg.length);
+
+        assertFalse("truncated signature accepted", signer.verify(Arrays.copyOfRange(sig, 0, sig.length - 1)));
+    }
+
+    /**
+     * A key spec the factory cannot decode is reported with what went wrong attached, as the LMS
+     * key factory beside it does - the XMSS and XMSS^MT ones folded the underlying exception into
+     * their own message text and dropped it, leaving a caller walking getCause() with nothing.
+     */
+    public void testKeyFactoryReportsTheCause()
+        throws Exception
+    {
+        String[] algorithms = new String[]{"XMSS", "XMSSMT"};
+
+        for (int i = 0; i != algorithms.length; i++)
+        {
+            KeyFactory kFact = KeyFactory.getInstance(algorithms[i], "BCPQC");
+
+            try
+            {
+                kFact.generatePrivate(new PKCS8EncodedKeySpec(new byte[]{0x30, 0x01, 0x00}));
+                fail("malformed private key spec accepted");
+            }
+            catch (InvalidKeySpecException e)
+            {
+                assertNotNull(algorithms[i] + " private key spec cause dropped", e.getCause());
+            }
+
+            try
+            {
+                kFact.generatePublic(new X509EncodedKeySpec(new byte[]{0x30, 0x01, 0x00}));
+                fail("malformed public key spec accepted");
+            }
+            catch (InvalidKeySpecException e)
+            {
+                assertNotNull(algorithms[i] + " public key spec cause dropped", e.getCause());
+            }
+        }
+    }
+
+    /**
+     * generateKeyPair() without a preceding initialize() has to produce a usable key - one whose
+     * tree digest is set, so equals()/hashCode()/getTreeDigest() work on it (github #2408).
+     */
+    public void testDefaultKeyPairGeneration()
+        throws Exception
+    {
+        KeyPair kp = KeyPairGenerator.getInstance("XMSS", "BCPQC").generateKeyPair();
+
+        XMSSKey pubKey = (XMSSKey)kp.getPublic();
+
+        assertEquals(10, pubKey.getHeight());
+        assertEquals(XMSSParameterSpec.SHA512, pubKey.getTreeDigest());
+        assertEquals(kp.getPublic(), kp.getPublic());
+        assertEquals(kp.getPublic().hashCode(), kp.getPublic().hashCode());
+
+        KeyFactory kFact = KeyFactory.getInstance("XMSS", "BCPQC");
+
+        assertEquals(kp.getPublic(), kFact.generatePublic(new X509EncodedKeySpec(kp.getPublic().getEncoded())));
+
+        Signature signer = Signature.getInstance("XMSS", "BCPQC");
+
+        signer.initSign(kp.getPrivate());
+        signer.update(msg, 0, msg.length);
+
+        byte[] sig = signer.sign();
+
+        signer.initVerify(kp.getPublic());
+        signer.update(msg, 0, msg.length);
+
+        assertTrue(signer.verify(sig));
+    }
+
     public void testSignerKeyDigestFamilyEnforcement()
         throws Exception
     {
         KeyPairGenerator shaKpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
-        shaKpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA256), new SecureRandom());
+        shaKpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256), new SecureRandom());
         KeyPair shaKp = shaKpg.generateKeyPair();
 
         KeyPairGenerator shakeKpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
-        shakeKpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHAKE256), new SecureRandom());
+        shakeKpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHAKE256), new SecureRandom());
         KeyPair shakeKp = shakeKpg.generateKeyPair();
 
         // a SHA256 key handed to a SHAKE256-named signer is rejected on both init paths
@@ -275,7 +449,7 @@ public class XMSSTest
 
         // SP 800-208 SHAKE256/256 keys (tree digest id-shake256-len) are within the SHAKE256 family
         KeyPairGenerator sp800Kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
-        sp800Kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHAKE256_256), new SecureRandom());
+        sp800Kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHAKE256_256), new SecureRandom());
         KeyPair sp800Kp = sp800Kpg.generateKeyPair();
 
         Signature sp800Sig = Signature.getInstance("XMSS-SHAKE256", "BCPQC");
@@ -288,7 +462,7 @@ public class XMSSTest
 
         // and SHA-256/192 keys are within the SHA256 family
         KeyPairGenerator sha192Kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
-        sha192Kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA256_192), new SecureRandom());
+        sha192Kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256_192), new SecureRandom());
         KeyPair sha192Kp = sha192Kpg.generateKeyPair();
 
         Signature sha192Sig = Signature.getInstance("XMSS-SHA256", "BCPQC");
@@ -321,12 +495,62 @@ public class XMSSTest
         assertEquals(pubKey, pubKey2);
     }
 
+    /**
+     * initSign(PrivateKey, SecureRandom) is the two-argument JCA form, and it is the one that goes
+     * through XMSSSignatureSpi.engineInitSign(PrivateKey, SecureRandom): that wraps the key in a
+     * ParametersWithRandom before handing it to the signer. XMSS derives its randomizer from the
+     * key itself (RFC 8391 sec. 4.1.9), so the supplied SecureRandom is discarded - but the wrapper
+     * still has to be accepted, and used to raise a ClassCastException out of initSign. Every
+     * other test here uses the one-argument form, which does not wrap.
+     */
+    public void testInitSignWithSecureRandom()
+        throws Exception
+    {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+
+        kpg.initialize(new XMSSParameterSpec(5, XMSSParameterSpec.SHA256), new SecureRandom());
+
+        KeyPair kp = kpg.generateKeyPair();
+
+        Signature sig = Signature.getInstance("XMSS", "BCPQC");
+
+        sig.initSign(kp.getPrivate(), new SecureRandom());
+
+        sig.update(msg, 0, msg.length);
+
+        byte[] s = sig.sign();
+
+        sig.initVerify(kp.getPublic());
+
+        sig.update(msg, 0, msg.length);
+
+        assertTrue(sig.verify(s));
+
+        // and the one-argument form on the same object afterwards, which is now the other branch
+        // rather than the same one: the SPI used to hold the random in a field, so a second init
+        // without one wrapped the key again with what the first had left behind, and this was that
+        // sticky path. The random is a method argument now and the second init passes null, so what
+        // this asserts is that the two forms are interchangeable on one Signature object - the
+        // unwrapped key after the wrapped one, on a signer that has already signed and verified.
+        sig.initSign(kp.getPrivate());
+
+        sig.update(msg, 0, msg.length);
+
+        byte[] s2 = sig.sign();
+
+        sig.initVerify(kp.getPublic());
+
+        sig.update(msg, 0, msg.length);
+
+        assertTrue(sig.verify(s2));
+    }
+
     public void testXMSSSha256Signature()
         throws Exception
     {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
 
-        kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA256), new SecureRandom());
+        kpg.initialize(new XMSSParameterSpec(5, XMSSParameterSpec.SHA256), new SecureRandom());
 
         KeyPair kp = kpg.generateKeyPair();
 
@@ -350,7 +574,7 @@ public class XMSSTest
     {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
 
-        kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA512), new SecureRandom());
+        kpg.initialize(new XMSSParameterSpec(5, XMSSParameterSpec.SHA512), new SecureRandom());
 
         KeyPair kp = kpg.generateKeyPair();
 
@@ -422,7 +646,7 @@ public class XMSSTest
     {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
 
-        kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA256), new SecureRandom());
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256), new SecureRandom());
 
         KeyPair kp = kpg.generateKeyPair();
 
@@ -497,7 +721,7 @@ public class XMSSTest
     {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
 
-        kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA512), new SecureRandom());
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA512), new SecureRandom());
 
         KeyPair kp = kpg.generateKeyPair();
 
@@ -511,10 +735,10 @@ public class XMSSTest
 
         assertEquals(kp.getPublic(), pubKey);
 
-        assertEquals(10, privKey.getHeight());
+        assertEquals(4, privKey.getHeight());
         assertEquals(XMSSParameterSpec.SHA512, privKey.getTreeDigest());
 
-        assertEquals(10, pubKey.getHeight());
+        assertEquals(4, pubKey.getHeight());
         assertEquals(XMSSParameterSpec.SHA512, pubKey.getTreeDigest());
     }
 
@@ -523,7 +747,7 @@ public class XMSSTest
     {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
 
-        kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHAKE128), new SecureRandom());
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHAKE128), new SecureRandom());
 
         KeyPair kp = kpg.generateKeyPair();
 
@@ -537,10 +761,10 @@ public class XMSSTest
 
         assertEquals(kp.getPublic(), pubKey);
 
-        assertEquals(10, privKey.getHeight());
+        assertEquals(4, privKey.getHeight());
         assertEquals(XMSSParameterSpec.SHAKE128, privKey.getTreeDigest());
 
-        assertEquals(10, pubKey.getHeight());
+        assertEquals(4, pubKey.getHeight());
         assertEquals(XMSSParameterSpec.SHAKE128, pubKey.getTreeDigest());
     }
 
@@ -549,7 +773,7 @@ public class XMSSTest
     {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
 
-        kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHAKE256), new SecureRandom());
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHAKE256), new SecureRandom());
 
         KeyPair kp = kpg.generateKeyPair();
 
@@ -563,10 +787,10 @@ public class XMSSTest
 
         assertEquals(kp.getPublic(), pubKey);
 
-        assertEquals(10, privKey.getHeight());
+        assertEquals(4, privKey.getHeight());
         assertEquals(XMSSParameterSpec.SHAKE256, privKey.getTreeDigest());
 
-        assertEquals(10, pubKey.getHeight());
+        assertEquals(4, pubKey.getHeight());
         assertEquals(XMSSParameterSpec.SHAKE256, pubKey.getTreeDigest());
     }
 
@@ -590,12 +814,98 @@ public class XMSSTest
         assertTrue(s.verify(sig));
     }
 
+    /**
+     * equals() answers on the whole key, including the traversal state it is sitting on, and the
+     * fields it looks at before re-encoding anything are a shortcut to that answer rather than a
+     * different one. So: the same key twice is equal, a key round-tripped through its encoding is
+     * equal to what it came from, a key that has signed and moved on is not equal to the key it
+     * was, and two key pairs are not equal to each other at the same index.
+     * <p>
+     * hashCode() is asserted beside it, because the two are one contract and because both are now
+     * the key parameters' - this class delegates each in a line, the way BCLMSPrivateKey does to
+     * HSSPrivateKeyParameters. Equal keys hash the same, and a key that has signed keeps the hash
+     * it had: hashCode() is over the fields that do not move, so keys from one key pair share a
+     * bucket and equals() tells them apart inside it. A key lost from a Set by signing is what the
+     * other way round would cost.
+     * </p>
+     */
+    public void testXMSSPrivateKeyEquality()
+        throws Exception
+    {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256), new SecureRandom());
+
+        KeyPair kp = kpg.generateKeyPair();
+        KeyFactory kf = KeyFactory.getInstance("XMSS", "BCPQC");
+
+        // a key of its own, so that signing with kp's does not move this one too
+        PrivateKey atZero = kf.generatePrivate(new PKCS8EncodedKeySpec(kp.getPrivate().getEncoded()));
+
+        assertEquals(atZero, atZero);
+        assertEquals(kp.getPrivate(), atZero);
+        assertEquals(atZero, kf.generatePrivate(new PKCS8EncodedKeySpec(atZero.getEncoded())));
+        assertEquals("equal keys hash differently",
+            kp.getPrivate().hashCode(), atZero.hashCode());
+
+        StateAwareSignature sig =
+            (StateAwareSignature)Signature.getInstance("SHA256withXMSS", "BCPQC");
+
+        sig.initSign(kp.getPrivate());
+        sig.update(msg, 0, msg.length);
+        sig.sign();
+
+        PrivateKey atOne = sig.getUpdatedPrivateKey();
+
+        assertFalse("a key that has signed equals the key it was", atZero.equals(atOne));
+        assertFalse("a key that has signed equals the key it was", atOne.equals(atZero));
+        assertEquals("a key that has signed changed bucket", atZero.hashCode(), atOne.hashCode());
+
+        PrivateKey other = kf.generatePrivate(
+            new PKCS8EncodedKeySpec(kpg.generateKeyPair().getPrivate().getEncoded()));
+
+        assertFalse("two key pairs are equal at the same index", atZero.equals(other));
+        assertFalse("two key pairs are equal at the same index", other.equals(atZero));
+    }
+
+    /**
+     * Two private keys alike in everything the key's encoding holds except one of the two secrets.
+     * <p>
+     * equals() answers on the fields ahead of the traversal state and then on the state itself, so
+     * those field comparisons have to reach both seeds. secretKeyPRF is the one that shows it: it
+     * takes no part in the root or in the traversal state - it keys the randomizer r of RFC 8391
+     * sec. 4.1.9, which travels in the signature - so two keys differing only in it agree on
+     * everything else a key exposes while producing a different signature for every message.
+     * </p>
+     */
+    public void testXMSSPrivateKeysDifferingOnlyInASecretAreNotEqual()
+        throws Exception
+    {
+        XMSSParameters params = new XMSSParameters(4, new SHA256Digest());
+        PrivateKey base = keyHolding(params, 1, 2);
+
+        assertEquals("the same fields twice are not equal", base, keyHolding(params, 1, 2));
+        assertFalse("keys differing only in secretKeyPRF are equal",
+            base.equals(keyHolding(params, 1, 99)));
+        assertFalse("keys differing only in secretKeySeed are equal",
+            base.equals(keyHolding(params, 99, 2)));
+    }
+
+    private static PrivateKey keyHolding(XMSSParameters params, int secretKeySeed, int secretKeyPRF)
+    {
+        return new BCXMSSPrivateKey(NISTObjectIdentifiers.id_sha256,
+            new XMSSPrivateKeyParameters.Builder(params)
+                .withSecretKeySeed(XMSSTestUtils.filled(secretKeySeed)).withSecretKeyPRF(XMSSTestUtils.filled(secretKeyPRF))
+                .withPublicSeed(XMSSTestUtils.filled(3)).withRoot(XMSSTestUtils.filled(4)).build());
+    }
+
+
     public void testKeyExtraction()
         throws Exception
     {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
 
-        kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA256), new SecureRandom());
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256), new SecureRandom());
 
         KeyPair kp = kpg.generateKeyPair();
 
@@ -649,6 +959,127 @@ public class XMSSTest
         xmssSig.update(msg, 0, msg.length);
 
         assertTrue(xmssSig.verify(s));
+    }
+
+    /**
+     * A verification init does not strand the advanced key inside the signature object. The signer
+     * this wraps keeps the private key across an init for verification on purpose - "sign then
+     * verify then collect the advanced state is a legitimate sequence" is XMSSSigner.init's own
+     * comment on why it clears the public key there and not the private one - and
+     * getUpdatedPrivateKey() is how a caller of the JCA API collects it. isSigningCapable() still
+     * answers false in between, because this object is initialised for verification.
+     */
+    public void testKeyCanBeCollectedAfterAVerificationInit()
+        throws Exception
+    {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256), new SecureRandom());
+
+        KeyPair kp = kpg.generateKeyPair();
+
+        StateAwareSignature sig = (StateAwareSignature)Signature.getInstance("SHA256withXMSS", "BCPQC");
+
+        // taken before the signature, because the object kp.getPrivate() hands back wraps the
+        // traversal state the signature advances in place - so it reports the advanced position
+        // afterwards, and the assertEquals below is two views of one mutated key rather than a
+        // statement about which key came back. These bytes are the only record of where it started.
+        byte[] before = kp.getPrivate().getEncoded();
+
+        sig.initSign(kp.getPrivate());
+
+        sig.update(msg, 0, msg.length);
+
+        byte[] s = sig.sign();
+
+        sig.initVerify(kp.getPublic());
+
+        sig.update(msg, 0, msg.length);
+
+        assertTrue(sig.verify(s));
+        assertFalse("initialised for verification and reporting itself able to sign",
+            sig.isSigningCapable());
+
+        PrivateKey collected = sig.getUpdatedPrivateKey();
+
+        assertNotNull("the advanced key was not handed back after a verification init", collected);
+        assertFalse("the key handed back sits where it did before the signature",
+            Arrays.areEqual(before, collected.getEncoded()));
+        assertEquals("the key handed back is not the one the signature advanced",
+            kp.getPrivate(), collected);
+    }
+
+    /**
+     * Collecting the key without having signed leaves this object able to sign, and saying so.
+     * The signer hands back the key advanced past the leaf it is holding and keeps a one-usage
+     * shard of that leaf, so sign() still works afterwards - what isSigningCapable() used to
+     * answer from was the SPI's own treeDigest field, which getUpdatedPrivateKey() cleared on
+     * every call whether a signature had been made or not, so the object reported itself unable
+     * to do the thing it then did.
+     */
+    public void testCollectingWithoutSigningLeavesTheObjectAbleToSign()
+        throws Exception
+    {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256), new SecureRandom());
+
+        KeyPair kp = kpg.generateKeyPair();
+
+        StateAwareSignature sig = (StateAwareSignature)Signature.getInstance("SHA256withXMSS", "BCPQC");
+
+        sig.initSign(kp.getPrivate());
+
+        PrivateKey collected = sig.getUpdatedPrivateKey();
+
+        assertNotNull(collected);
+        assertTrue("the object kept a usable key and reported that it had not",
+            sig.isSigningCapable());
+
+        sig.update(msg, 0, msg.length);
+
+        byte[] s = sig.sign();
+
+        assertFalse("the shard is spent and the object says it is not", sig.isSigningCapable());
+
+        Signature verifier = Signature.getInstance("SHA256withXMSS", "BCPQC");
+
+        verifier.initVerify(kp.getPublic());
+        verifier.update(msg, 0, msg.length);
+
+        assertTrue("the retained shard did not produce a verifiable signature", verifier.verify(s));
+    }
+
+    /**
+     * An initialize() that cannot be satisfied leaves the generator where it was. The tree digest
+     * was written into the field before the parameter set was built, so a height the parameter set
+     * refuses left this generator naming a digest the engine it hands keys to knows nothing about,
+     * and the next generateKeyPair() - which the earlier, successful initialize had made legal -
+     * produced a key labelled with it. The refusal itself is reported as the
+     * InvalidAlgorithmParameterException the method declares rather than as the unchecked
+     * IllegalArgumentException the parameter set raises.
+     */
+    public void testAFailedInitialiseLeavesTheGeneratorAsItWas()
+        throws Exception
+    {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256), new SecureRandom());
+
+        String treeDigest = ((XMSSKey)kpg.generateKeyPair().getPublic()).getTreeDigest();
+
+        try
+        {
+            kpg.initialize(new XMSSParameterSpec(1, XMSSParameterSpec.SHAKE256), new SecureRandom());
+            fail("no exception");
+        }
+        catch (InvalidAlgorithmParameterException e)
+        {
+            assertEquals("height must be >= 2", e.getMessage());
+        }
+
+        assertEquals("the refused initialize left its tree digest behind",
+            treeDigest, ((XMSSKey)kpg.generateKeyPair().getPublic()).getTreeDigest());
     }
 
     public void testKeyRebuild()
@@ -716,10 +1147,10 @@ public class XMSSTest
 
         testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_SHA256ph, BCObjectIdentifiers.xmss_SHA256, "SHA256", new SHA256Digest());
         testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_SHAKE128ph, BCObjectIdentifiers.xmss_SHAKE128, "SHAKE128", new SHAKEDigest(128));
-        testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_SHAKE128_512ph, BCObjectIdentifiers.xmss_SHAKE128, "SHAKE128", new DoubleDigest(new SHAKEDigest(128)));
+        testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_SHAKE128_512ph, BCObjectIdentifiers.xmss_SHAKE128, "SHAKE128", new XMSSTestUtils.DoubleDigest(new SHAKEDigest(128)));
         testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_SHA512ph, BCObjectIdentifiers.xmss_SHA512, "SHA512", new SHA512Digest());
         testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_SHAKE256ph, BCObjectIdentifiers.xmss_SHAKE256, "SHAKE256", new SHAKEDigest(256));
-        testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_SHAKE256_1024ph, BCObjectIdentifiers.xmss_SHAKE256, "SHAKE256", new DoubleDigest(new SHAKEDigest(256)));
+        testPrehashAndWithoutPrehash(BCObjectIdentifiers.xmss_SHAKE256_1024ph, BCObjectIdentifiers.xmss_SHAKE256, "SHAKE256", new XMSSTestUtils.DoubleDigest(new SHAKEDigest(256)));
     }
 
     public void testExhaustion()
@@ -920,6 +1351,24 @@ public class XMSSTest
         }
     }
 
+    public void testStrengthInitialisation()
+        throws Exception
+    {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+
+        try
+        {
+            kpg.initialize(10, new SecureRandom());
+            fail("no exception");
+        }
+        catch (InvalidParameterException e)
+        {
+            // what KeyPairGenerator.initialize(int, SecureRandom) is specified to throw; it
+            // extends IllegalArgumentException, so a caller catching that still sees this one
+            assertEquals("use AlgorithmParameterSpec", e.getMessage());
+        }
+    }
+
     private void testPrehashAndWithoutPrehash(String baseAlgorithm, String digestName, Digest digest)
         throws Exception
     {
@@ -1012,50 +1461,91 @@ public class XMSSTest
         oIn.readObject();
     }
 
-    static class DoubleDigest
-        implements Digest
+
+    /**
+     * A key loaded from a PKCS#8 that carried attributes keeps them across the two operations that
+     * hand back a new key object for the same key: getUpdatedPrivateKey(), which is how
+     * StateAwareSignature says to take the advanced key after signing, and extractKeyShard().
+     * <p>
+     * Both re-wrapped the advanced key parameters through the two-argument BCXMSSPrivateKey
+     * constructor, which sets no attributes, so the attributes were dropped - silently, since
+     * everything else about the key survives and the encoding is still well formed. Taking the key
+     * back after every signature is the whole of how a stateful scheme is used, so this is the
+     * path a key with attributes travels every time it signs.
+     * </p>
+     */
+    public void testAttributesSurviveSigningAndSharding()
+        throws Exception
     {
-        private SHAKEDigest digest;
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
 
-        DoubleDigest(SHAKEDigest digest)
-        {
-             this.digest = digest;
-        }
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256), new SecureRandom());
 
-        @Override
-        public String getAlgorithmName()
-        {
-            return digest.getAlgorithmName() + "/" + (digest.getDigestSize() * 2 * 8);
-        }
+        KeyPair kp = kpg.generateKeyPair();
+        KeyFactory kf = KeyFactory.getInstance("XMSS", "BCPQC");
 
-        @Override
-        public int getDigestSize()
-        {
-            return digest.getDigestSize() * 2;
-        }
+        PrivateKey withAttributes = kf.generatePrivate(
+            new PKCS8EncodedKeySpec(XMSSTestUtils.withAttributes(kp.getPrivate().getEncoded())));
 
-        @Override
-        public void update(byte in)
-        {
-             digest.update(in);
-        }
+        assertEquals("the loaded key did not carry the attributes",
+            XMSSTestUtils.ATTRIBUTES, XMSSTestUtils.attributesOf(withAttributes.getEncoded()));
 
-        @Override
-        public void update(byte[] in, int inOff, int len)
-        {
-            digest.update(in, inOff, len);
-        }
+        StateAwareSignature sig = (StateAwareSignature)Signature.getInstance("SHA256withXMSS", "BCPQC");
 
-        @Override
-        public int doFinal(byte[] out, int outOff)
-        {
-            return digest.doFinal(out, outOff, this.getDigestSize());
-        }
+        sig.initSign(withAttributes);
+        sig.update(msg, 0, msg.length);
+        sig.sign();
 
-        @Override
-        public void reset()
-        {
-            digest.reset();
-        }
+        assertEquals("getUpdatedPrivateKey() dropped the attributes",
+            XMSSTestUtils.ATTRIBUTES,
+            XMSSTestUtils.attributesOf(sig.getUpdatedPrivateKey().getEncoded()));
+
+        assertEquals("extractKeyShard() dropped the attributes", XMSSTestUtils.ATTRIBUTES,
+            XMSSTestUtils.attributesOf(((XMSSPrivateKey)withAttributes).extractKeyShard(1).getEncoded()));
+
+        // a generated key has no origin to take attributes from, and must still encode without any
+        assertNull("a generated key invented attributes", XMSSTestUtils.attributesOf(kp.getPrivate().getEncoded()));
+    }
+
+    /**
+     * Two threads comparing the same pair of keys in opposite orders both finish. equals() reads a
+     * key's index and usages remaining under that key's own monitor - the monitor a signature holds
+     * for the whole of its length - and it takes the two keys' monitors one after the other rather
+     * than one inside the other, so an a.equals(b) and a b.equals(a) running at the same time can
+     * never each be holding the one the other is waiting on. Nested, they deadlock here in a few
+     * rounds, and the two threads are still alive when the joins time out.
+     * <p>
+     * The two keys are equal, so every round runs the whole of the method: both position reads and,
+     * behind them, both traversal state encodings, each taking a monitor of its own.
+     * </p>
+     */
+    public void testEqualsTakesTheTwoKeyMonitorsOneAtATime()
+        throws Exception
+    {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC");
+
+        kpg.initialize(new XMSSParameterSpec(4, XMSSParameterSpec.SHA256), new SecureRandom());
+
+        KeyFactory kf = KeyFactory.getInstance("XMSS", "BCPQC");
+        byte[] encoding = kpg.generateKeyPair().getPrivate().getEncoded();
+
+        PrivateKey one = kf.generatePrivate(new PKCS8EncodedKeySpec(encoding));
+        PrivateKey two = kf.generatePrivate(new PKCS8EncodedKeySpec(encoding));
+
+        assertEquals("the two keys are not equal to begin with", one, two);
+
+        boolean[] agreed = new boolean[2];
+        Thread forwards = XMSSTestUtils.comparing(one, two, agreed, 0);
+        Thread backwards = XMSSTestUtils.comparing(two, one, agreed, 1);
+
+        forwards.start();
+        backwards.start();
+
+        forwards.join(60000);
+        backwards.join(60000);
+
+        assertFalse("comparing the two keys in both orders at once did not finish",
+            forwards.isAlive() || backwards.isAlive());
+        assertTrue("equals() answered false for two keys that are equal", agreed[0] && agreed[1]);
     }
 }

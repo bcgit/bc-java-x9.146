@@ -4,6 +4,7 @@
 
 - Most tests extend `org.bouncycastle.util.test.SimpleTest` (not JUnit). They override `performTest()` and call `fail(msg)` / `isTrue(msg, cond)` / `areEqual(a, b)`. They are *not* discovered by Gradle directly — they're invoked from JUnit `AllTests` / `RegressionTest` wrappers.
 - `RegressionTest.tests` arrays (one per package) list every `SimpleTest` to be run. When you add a new `SimpleTest`, also add a call from a parent test or from `RegressionTest`.
+- **An `AllTests.suite()` must return a `TestSetup` wrapper (`return new BCTestSetup(suite);` with a nested `static class BCTestSetup extends TestSetup`, as in `tsp.test.AllTests`), never a bare `TestSuite`, and the class must `extends TestCase`.** The Gradle test tasks filter on `includeTestsMatching "AllTest*"`, and Gradle's JUnit `MethodNameFilter` applies that pattern to every leaf test; JUnit's `JUnit38ClassRunner.filter()` only knows how to filter a bare `TestSuite`, so a bare suite has every child (`FooTest.testBar`) rejected and Gradle silently reports "no tests found" for it — the suite compiles, is listed nowhere as skipped, and never runs. A `TestDecorator` root is not filterable and so runs whole. Six suites (`cms.test`, `cades.test`, `cert.c509.test`, `est.jcajce`, `pkix.jcajce` in pkix, `crypto.signers.lms` in core — 484 tests, pkix instruction coverage 52% → 67%) sat in that hole until 2026-08. Check a new suite actually appears under `<module>/build/test-results/` after `./gradlew :<module>:test`.
 - Tests pass `-Dbc.test.data.home=<core/src/test/data>` for fixture lookups.
 - The `:test` task runs each test class in its own JVM (`forkEvery = 1`).
 
@@ -47,11 +48,50 @@ Lenient-on-read covers legal-but-non-DER *formatting*, not malformed *content*. 
 
 The worked example is `Properties.ASN1_ALLOW_NON_DER_TIME` for time fields (`ASN1UTCTime` / `ASN1GeneralizedTime`, github #1973 / #1986 / #2040). Reuse the same shape — `toDERObject` gate + `DEREncodingException` + default-on `Properties.*` flag — for any future DER-strictness opt-in on a primitive type, so the lenient-on-read convention is preserved and a single property name conveys the same semantic regardless of which primitive flips. This complements "Non-standard format interop" below: that section covers *read-side* concessions that default off; this one covers *write-side* DER restrictions that default off.
 
+## Comparing `AlgorithmIdentifier`s on the receive side: use `areEquivalent`, not `equals`
+
+`AlgorithmIdentifier.equals()` compares the encodings, so it separates the two spellings of "this
+algorithm takes no parameters" — an absent `parameters` field and an explicit `NULL`. Both are in
+wide use for the SHA-2 digests and
+[RFC 5754 sec. 2](https://www.rfc-editor.org/rfc/rfc5754#section-2) requires a receiver to take
+either ("Implementations MUST accept SHA2 AlgorithmIdentifiers with absent parameters.
+Implementations MUST accept SHA2 AlgorithmIdentifiers with NULL parameters."), while requiring that
+they be *generated* with the parameters absent — which BC already does.
+
+So when deciding whether a peer named the algorithm you expected, use
+`AlgorithmIdentifier.areEquivalent(a, b)` (core, `asn1.x509`): same algorithm OID, and parameters
+either equal or each absent-or-`NULL`. It equates absent only with `NULL` — an identifier carrying a
+real parameter structure is never equivalent to one carrying none, so RSASSA-PSS and the GOST
+parameterised algorithms stay strict. `asn1.ocsp.CertID` implements the same rule inline in its own
+`equals`/`hashCode` (with `hashCode` normalising so the contract holds) and predates the helper.
+
+Keep `equals()` where the comparison is not receiver-side identity:
+
+- a map/cache key, where `equals` must stay consistent with `hashCode` (`ERSCachingData`);
+- deciding whether a DER `DEFAULT` field may be omitted when *encoding* — changing that changes
+  emitted bytes (`RSAESOAEPparams`, `RSASSAPSSparams`);
+- a gate that admits exactly one algorithm (`RespID` requires SHA-1).
+
+The worked example is the RFC 4998 evidence-record path (github #2379): a TSA naming SHA-256 with
+`NULL` where BC's own `DigestCalculator` leaves it absent was rejected as "time stamp imprint for
+wrong algorithm".
+
+## Adding an entry to `DefaultAlgorithmNameFinder` means editing its test too
+
+`pkix/src/test/java/org/bouncycastle/operator/test/AllTests.java` asserts
+`values.length == nameFinder.getOIDSet().size()`, so the finder and the test's expected-name array
+are locked together: add an `addAlgorithm(...)` without a matching `new Object[]{oid, "NAME"}` row
+and `testAgainstKnownList` fails with `expected:<N> but was:<N-k>`. That is deliberate — it is what
+stops entries being added without an asserted name. The same test then tries to resolve every name
+through the BC provider as a `MessageDigest` / `Cipher` / `Signature`; an unresolvable name only
+prints a "Could not resolve" line (the `fail` is commented out), but a name that resolves to nothing
+is usually a sign the mapping is wrong.
+
 ## Exception messages are part of the test contract
 
 Many tests assert on exact exception message text (e.g. `isTrue(e.getMessage().equals("..."))` or `getCause().getMessage()` checks). Changing the wording of a thrown exception — even something as small as adding a colon, rewording for clarity, or wrapping with `Exceptions.illegalArgumentException(...)` — will silently break tests in another module. Before modifying any exception message, grep the whole tree for the existing string and update every matching assertion in lockstep.
 
-## Cause-chaining via `SecurityExceptions` for cause-less JDK exceptions
+## Cause-chaining via `SecurityExceptions`
 
 A handful of `java.security` / `javax.crypto` exceptions ship only a `(String)` constructor — no `(String, Throwable)` form — including `UnrecoverableKeyException`, `IllegalBlockSizeException`, `BadPaddingException`, `NoSuchPaddingException`, `NoSuchProviderException`, `CertificateExpiredException`, `CertificateNotYetValidException`, `InvalidParameterSpecException`, `ShortBufferException`, and `AEADBadTagException`. When wrapping a caught exception with one of these inside a `catch (… e)` block, do not fold the underlying text into the new exception's string and discard the cause:
 
@@ -71,9 +111,160 @@ catch (Exception e)
 }
 ```
 
-Factories exist today for `unrecoverableKeyException`, `illegalBlockSizeException` and `badPaddingException`. Add a new factory there (same one-line shape — `return (X) new X(message).initCause(cause);`) when migrating throws of any other cause-less class above; do **not** roll `new X(msg).initCause(e)` ad-hoc at the throw site. The migration is purely additive: keep the existing message text verbatim (it is almost certainly under test assertions per the previous section) and add `e` as the second argument — callers that do not care still see the same exception type and message, while callers that do can walk `getCause()`.
+**The class covers more than the cause-less exceptions**, and that second group is the one people miss. `SignatureException`, `InvalidKeySpecException`, `InvalidAlgorithmParameterException`, `CertPathValidatorException` and friends *do* have a `(String, Throwable)` constructor — but only from **Java 5**, so using it directly breaks the Java-4 source floor (see `build-jdk14.md`). The factories exist for those too, and several carry a comment saying exactly that ("only exists from Java 5; initCause keeps the legacy (Java 4) builds compiling, so do not 'simplify' this to the two-arg constructor"). So the rule is simply: **in `prov`, never write `new X(msg, cause)` for a `java.security` / `javax.crypto` exception — call the factory.** A file that today sits behind an `ant/jdk14.xml` exclude is not an argument for the two-arg form; the excludes move.
+
+Factories exist today for `invalidKeySpecException`, `generalSecurityException`, `invalidKeyException`, `invalidAlgorithmParameterException`, `noSuchAlgorithmException`, `signatureException`, `unrecoverableKeyException`, `illegalBlockSizeException`, `badPaddingException`, `certPathValidatorException`, `certPathBuilderException` and `certificateEncodingException`. Add a new factory there (same one-line shape — `return (X) new X(message).initCause(cause);`) when you need one; do **not** roll `new X(msg).initCause(e)` ad-hoc at the throw site. The migration is purely additive: keep the existing message text verbatim (it is almost certainly under test assertions per the previous section) and add `e` as the second argument — callers that do not care still see the same exception type and message, while callers that do can walk `getCause()`.
+
+**There is a `prov/src/main/jdk1.3` overlay of this class**, and it rots like every other overlay: a new factory has to be added there too, or a 1.3-reachable caller fails to compile in that build. It is one factory behind today (`invalidAlgorithmParameterException` is missing) — latent only because nothing calls that one yet.
 
 Throw sites *outside* a `catch` block — value-check branches like `if (x.size() == 0) throw new UnrecoverableKeyException("…")` — have nothing to chain and stay as plain `new X(msg)`. The audit grep when adding a factory is `grep -rnE "new $Cls\(" prov/src/main/java` filtered by which lines contain `e.getMessage()` / `e.toString()` (the cause-folding pattern); pure-literal throws are not candidates.
+
+## `Signature.verify()` reports; it never throws unchecked
+
+A provider `Signature` / `SignatureSpi` has exactly three answers at the JCA boundary, and an
+unchecked exception is none of them:
+
+- **Well-formed but does not verify** — return `false`.
+- **Will not decode at all** (empty, truncated, trailing data, garbage) — also return `false`. That
+  is an invalid signature, not an error.
+- **Decodes, but this engine cannot process it** — it names a different algorithm, parameter set or
+  OTS type than the key — throw `SignatureException` (via `SecurityExceptions.signatureException`,
+  per the section above).
+
+The lightweight `org.bouncycastle.crypto.*` signers and their `*Signature` / `*Context` parse
+helpers throw unchecked for malformed input *by design*; translating that is the SPI's job. The
+whole provider was measured against one malformed-signature battery (empty / 3 bytes / zeroed /
+signature+1 / signature-1) for github #2408: ML-DSA, SLH-DSA, Falcon, XMSS, XMSS^MT, Ed25519 and
+RSA all answer `false`, and ECDSA throws `SignatureException` on the DER decode failure, which is
+the JCA's own documented behaviour and equally fine. LMS was the sole outlier, letting
+`IllegalStateException("cannot parse signature")` straight out through `Signature.verify()`. Run
+that battery against any signer you touch — it is a dozen lines and it is the only thing that
+surfaces this class of gap.
+
+Two details that are easy to get wrong when adding the translation:
+
+- **Scope the catch to the decode call, not the whole method.** Past the parse, BC's verifiers are
+  written to report an inconsistent signature by returning `false` rather than by throwing — see
+  the "these two can get out of sync with an invalid signature, we'll try and fail gracefully"
+  branch in `LMSEngine.verifySignature`. A `catch (RuntimeException)` around the entire body
+  therefore catches nothing extra today, while silently converting any *future* internal error into
+  a quiet `false`. Read the engine before widening.
+- **Reset the accumulated message in a `finally`.** However `engineVerify` leaves, the object must
+  go back to the state `engineInitVerify` left it in, or the next `update()` appends to stale data
+  and the *following* verify fails for no visible reason. `slhdsa/SignatureSpi` is the model
+  (`try { … } finally { bOut.reset(); }`) and `lms/LMSSignatureSpi` now follows it. On the success
+  path the digest's `doFinal` has usually reset it already, so the `finally` is a no-op there —
+  which is fine, and far safer than one `reset()` per exit that the next branch will forget.
+
+## Stateful hash-based private keys: the position is stored twice, so cross-check it
+
+An LMS/HSS or XMSS/XMSS^MT private key records where it has got to in **two** independent places,
+and until github #2414 nothing compared them:
+
+- HSS: the top-level `index`, and each component key's one-time index `q`.
+- XMSS^MT: the global `index`, and the per-layer BDS traversal states.
+- XMSS: the `index` field and the BDS state's own index (this one was already checked, which is
+  what made the omission in the other two visible).
+
+Two records of one value that are never compared is the shape to look for, and it recurs: the same
+key also stores the tree `root` twice (its own field and the BDS state's root node), also
+uncompared. The consequence is the worst one a stateful scheme has: a stored key whose index was
+rolled back while its state stayed advanced signs a second message under a one-time key it has
+already used, **and that signature verifies**, so nothing surfaces it. RFC 8554 sec. 1 and RFC 8391
+sec. 1.1 both exist to prevent exactly that. Bit rot, a partial write and a restore-from-backup are
+all ordinary non-adversarial ways to get there, so "an attacker who can rewrite the key already has
+the seed" is not a reason to skip the check.
+
+**Derive the invariant by enumeration, not by reading the code.** These relationships have
+boundary cases that reasoning misses and that a wrong check turns into false rejections of
+legitimate keys - worse than the bug. Walk a small key across its whole index space and print both
+records at every step:
+
+- HSS came out exact, no exception: `index == sum over levels i<d-1 of (q_i - 1) * 2^(heights below i) + q_last`
+  (a level above the last has already advanced past the subtree it signed, hence the `- 1`).
+- XMSS^MT needed one allowance: when a layer's expected leaf index is 0 its state legitimately
+  still holds the previous subtree's final index (`2^h - 1`), because `updateState` skips the
+  advance on a subtree's last leaf and the signer rebuilds the state when it next signs there.
+  Absent layers are skipped - they are built lazily.
+
+So **every such test needs a compatibility half, and it matters more than the rejection half**:
+walk every index a key can reach, encode/decode at each, and assert the decoded key still signs
+verifiably. 912 XMSS^MT indices across five parameter sets and 2124 HSS indices, plus a shard,
+is what made the allowances above trustworthy.
+
+### What "validated" can mean differs by scheme - say which you have
+
+The LMS tree cache and the XMSS BDS state look like the same problem and are not:
+
+- **LMS**: every cached node's children are also cached, so the interior nodes can be *recomputed*
+  from them - 31 hashes, ~20us, independent of `h`. That is a **semantic** check: it establishes
+  the nodes are the *right* nodes.
+- **XMSS**: a BDS authentication path, stack, retain or keep node does **not** have its children
+  stored beside it, so recomputing one means rebuilding a subtree - the work the state exists to
+  avoid. The state therefore carries a **checksum** instead (SHA-256 over the owning key's
+  `publicSeed` followed by the state). That is only an **error-detecting code**: unchanged since
+  written, never right when written. Anyone able to rewrite the key recomputes it, so it
+  authenticates nothing and the allocation bounds on the encoding still carry the DoS load.
+
+Bind the *public* seed, not the secret one: the state's own root and index are inside the encoding
+and so already covered, hashing secret material would make the stored checksum a commitment to it
+for no gain in detection, and `secretKeyPRF` does not influence the state at all (corrupting it
+yields a different but still valid signature, since `r` travels in the signature).
+
+Two traps that came with it:
+
+- **A checksum verified before parsing changes which error a crafted encoding hits.** Verify-first
+  is right - it rejects before any allocation - but it makes the specific bound messages
+  unreachable for hand-crafted input, so a test asserting `"BDS authentication path size out of
+  bounds"` has to recompute the checksum after patching. That is also the honest threat shape.
+- **`docs/formats/{lms,xmss}-private-key.md` document these encodings byte by byte, with worked
+  hex examples generated from fixed seeds.** A format change means regenerating them - reproduce
+  the example, confirm a known value (the root) still matches so you know the reproduction is
+  exact, then update the hex and every byte count. The XMSS checksum moved four sizes and the
+  whole dump.
+
+## A compatibility retry must not report its own exception
+
+`HSSPrivateKeyParameters.getInstance(byte[])` retries a failed parse as a pre-HSS single LMS key,
+and reported *that* retry's failure. So every new field check on the HSS path surfaced as
+`"expected version 0 lms private key"` - the checks looked absent through the byte-array entry
+point, which is the one the JCA uses. Keep the original exception and throw it when the retry
+fails too; the fallback is for encodings that predate the format, not a reason to lose the reason.
+Whenever a decoder has a `catch` that tries a second interpretation, check which exception escapes.
+
+## `Signature.setParameter()` takes the context on either side of init
+
+`engineSetParameter` is declared `throws InvalidAlgorithmParameterException`, so it must not let an
+unchecked exception out — and the way it does is always the same: applying a context means
+re-initialising the signer with the key the object holds, and before `initSign` / `initVerify`
+there is no key. The base engines were fixed for github #2396
+(`BaseDeterministicOrRandomSignature.setContext`: record the context, clear `engineParams`,
+re-initialise **only** `if (keyParams != null)`), and the composite ML-DSA SPI — a separate class
+that never extended them — repeated the defect verbatim for github #2412. So when an SPI carries
+its **own** `engineSetParameter` rather than inheriting one, check it against that shape; a whole
+family can fail identically because they share one parent (37 composite services here).
+
+Three things travel with that guard, and the first two are easy to miss because nothing fails
+loudly:
+
+- **Clear the cached `AlgorithmParameters`.** `engineGetParameters()` builds it lazily and keeps
+  it, so a context set after it has been asked for once goes on being reported as the old one.
+  Assert the `set` / `get` / `set` / `get` sequence — a test that only asks *after* the second set
+  never populates the cache and cannot see this.
+- **Don't mutate and then throw in the same branch.** The composite's fall-through
+  `SpecUtil.getContextFrom` branch applied the context it extracted and then fell into an
+  unconditional `throw new InvalidAlgorithmParameterException("unknown parameterSpec…")`, so a
+  caller that took the exception at its word went on signing with a context it believed unset. The
+  base shape — `if (context != null) { setContext(…); } else { throw …; }` — is what makes the two
+  outcomes exclusive.
+- **Anything else the spec sets before the algorithm is known has to be recorded too.** For the
+  generic `COMPOSITE` service the algorithm arrives with the key, so a `CompositeSignatureSpec` set
+  first dereferenced the absent digest; the pre-hash choice is now held in a field and applied at
+  init alongside the context.
+
+The measurement that finds all of this is one loop over every registered service in the family:
+`getInstance(name)` then `setParameter(new ContextParameterSpec(…))` with no init, counting
+unchecked throws. It is a dozen lines and it is what turned "one code path" into "36 of 36".
 
 ## System / security property constants
 
@@ -102,6 +293,28 @@ The streaming classes under `pkix/src/main/java/org/bouncycastle/cms/CMS*{Parser
 
 When updating CMS class-level javadoc, verify by tracing rather than paraphrasing aspirational behaviour: between Aug–Dec 2025 the `CMSAuthEnvelopedDataParser` doc claimed the constructor "fully drains and closes" the InputStream and that "plaintext content is buffered in memory" — both were wrong (the constructor reads ~84% of the input, no buffering happens), and the doc was corrected as part of github #2133. The model `<b>Stream handling note:</b>` blocks added across the package under that issue are the template to follow.
 
+## Every CMS recipient extends `AbstractRecipient` and checks before it unwraps
+
+All recipient implementations in `org.bouncycastle.cms` (Jce and Bc, every family — key transport,
+key agreement, KEK, password, KEM, KTS) extend `org.bouncycastle.cms.AbstractRecipient` and enforce
+its two caller-configurable constraints at the **top** of `extractSecretKey`, before any unwrapping:
+`isContentAlgorithmAllowed(algOid)` (throw `CMSAlgorithmNotAllowedException` when it returns false)
+and `checkTagSize(algId)` (throws `CMSTagLengthException`). Both act on the content-encryption
+`AlgorithmIdentifier` the not-yet-authenticated message names — the point is to refuse before the
+sender's algorithm choice does any work. A new recipient class must follow the same shape and expose
+the fluent `setAllowedContentAlgorithms` / `setMinimumTagSize` setters with javadoc mirrored from
+`JceKeyTransRecipient`. `JceKTSKeyTransRecipient` was the one that slipped through (fixed
+`915e7f3ffb`), which shows how the gap presents: nothing fails, the caller's hardening just silently
+doesn't cover that recipient type.
+
+Related invariant: `CMSUtils.getAEADMacLength` returns `-1` only for a non-AEAD algorithm ("check
+does not apply") and `0` for an AEAD algorithm with absent/unusable parameters (fail-closed — the
+`catch (RuntimeException) { return 0; }` branch). Regressing that branch to a negative value would
+make `checkTagSize` skip the floor for a message that simply omits its parameters. Constraint tests
+mirror `testKeyTransAllowedContentAlgorithms` (pkix `NewEnvelopedDataTest`) and
+`testKeyTransMinimumTagSize` (pkix `AuthEnvelopedDataTest`); note the KTS recipient has no
+AuthEnveloped variant, so its tag test drives GCM through `EnvelopedData`, which BC accepts.
+
 ## Operator OutputStream close discipline
 
 When writing data to a `ContentSigner.getOutputStream()` (or the symmetric `ContentVerifier.getOutputStream()`), **always call `close()` on the returned stream before calling `getSignature()` / `verify(...)`**. Many implementations finalise digest / signature state inside `close()` — feeding bytes without closing can produce truncated input, missing trailing-block computations, or a downstream JCA `Signature.SignatureException`. The canonical pattern (see `X509v3CertificateBuilder.generateSig`):
@@ -126,9 +339,65 @@ Affected arcs include `kisa` (SEED), `nsri` (ARIA), `ntt` (Camellia), `oiw`, `gn
 
 The `iana` arc is *not* dual-located: `org.bouncycastle.asn1.iana.IANAObjectIdentifiers` lives only in `core` (public package, bundled into `bcprov` via the core-into-prov trick and exported by `prov`'s `module-info`), so `core` / `prov` and everything above import the same `org.bouncycastle.asn1.iana` form. It was consolidated out of the `util` copy + `internal.asn1.iana` copy in the 1.85 cycle (github #2176) — don't reintroduce an `internal.asn1.iana` copy.
 
+## Check whether the type already solves it before fixing a call site
+
+Twice in one session a call site that looked broken turned out not to be, because the *type* being
+compared already handled the case: `CertificateID.matchesIssuer` compares whole `CertID` objects
+with `equals()`, and `asn1.ocsp.CertID` overrides `equals`/`hashCode` with exactly the absent-vs-NULL
+tolerance the call site appeared to be missing. Read the class's own `equals` (and any
+`getInstance` normalisation) before concluding a comparison is too strict, and prove the defect with
+a probe rather than by reading — a two-minute check saved shipping a redundant fix.
+
 ## Release notes
 
-Defects fixed and additional features go into `docs/releasenotes.html` under the **current** unreleased version block (e.g. section 2.1 with header "Release: 1.85"). Each entry is a single `<li>...</li>` referencing the GitHub issue number where applicable. The file is hand-edited HTML; preserve the existing prose style and `<ul>` structure.
+Defects fixed and additional features go into `docs/releasenotes.md` under the **current** unreleased version block (e.g. section 2.1 with header "Release: 1.85"). Each entry is a single `-` bullet on one line, referencing the GitHub issue number where applicable. The file is hand-edited GitHub-flavoured markdown; preserve the existing prose style and list structure, and keep one entry per line — the entries are long, and one-line-per-entry is what keeps release-branch merges of this file tractable. The per-version `<a id="r1rvNN"></a>` anchors above the version headings are deep-link targets, carried over from the HTML so an old `releasenotes.html#r1rv86` link needs only its extension changed, and are deliberately raw HTML rather than relying on GFM's generated heading slugs: the section numbers renumber every cycle (the newest release is always 2.1.x, so 1.86's `#211-version` becomes 1.87's when that cycle opens), whereas `#r1rv86` keeps naming 1.86. Opening a new version block means adding the next `<a id="r1rv<NN>"></a>`.
+
+A CVE-bearing fix appears **twice** in its release's block: once as the "Defects Fixed" entry describing what was wrong, and once in the "Security Advisories" `<ul>` (`Release <ver> deals with the following CVEs:`) as `<li>CVE-YYYY-NNNNN - <one-line summary>.</li>`, kept in ascending CVE-number order. **Cross-reference the two**: close the Defects Fixed entry with a trailing `(CVE-YYYY-NNNNN)` before the `</li>` so a reader of the defect list can find the advisory, and vice versa. Historically the two lists were left unlinked; the 1.78 block was brought into line retroactively in `b1e21a374d` and is the worked example of the finished shape — all five of its advisory CVEs now carry a cross-reference in both directions. Do the same for new entries from now on. If an advisory has no matching Defects Fixed entry at all, that is a gap to fill rather than a case for skipping the cross-reference: 1.78 was missing entries for both CVE-2024-14041 (KyberSlash) and CVE-2024-29857 (crafted F2m EC parameters), and the fix is to write the defect entry from what the commits actually changed — for CVE-2024-29857, the `m` bound added to `ECCurve.F2m.buildField` in `efc498ca4c` / `fee80dd230` — not to paraphrase the advisory line.
+
+## Version bumps touch more than the build props — the OpenPGP armor stamp is easy to miss
+
+Changing the BC version (opening a dev cycle, cutting a release) is a fixed, multi-file edit, and the version string is stamped in several places besides the build properties. Update **all** of these together:
+
+- `gradle.properties` — `version=` and `maxVersion=`.
+- `bc-build.properties` — `release.suffix` / `release.version` (numeric, e.g. `1.85.99`) and `release.name` (label, e.g. `1.86-SNAPSHOT`).
+- The JCE providers — the `info` string (`"...Security Provider v<ver>[-SNAPSHOT]"`) and the `super(PROVIDER_NAME, 1.<yy>99, info)` version double, in **every** copy: `prov/src/main/java/.../jce/provider/BouncyCastleProvider.java`, `prov/src/main/jdk1.1/.../BouncyCastleProvider.java`, `prov/src/main/jdk1.4/.../BouncyCastleProvider.java`, and `prov/src/main/java/.../pqc/jcajce/provider/BouncyCastlePQCProvider.java`. The dev-cycle double is `1.<prev>99` (e.g. `1.8599` while developing 1.86) and the `info`/label use `<next>-SNAPSHOT`; historically `v<ver>b` was standardised to `v<ver>-SNAPSHOT` mid-cycle (see git of `b7eaf8f5ad` / `c93b376083`).
+- **The OpenPGP ASCII-armor version stamp** — `ArmoredOutputStream.DEFAULT_VERSION` (`public static final String DEFAULT_VERSION = "BCPG v<ver>"`, written as the `Version:` header of every armored PGP output), in both `pg/src/main/java/org/bouncycastle/bcpg/ArmoredOutputStream.java` **and** its legacy overlay `pg/src/main/jdk1.4/org/bouncycastle/bcpg/ArmoredOutputStream.java`. This lives in `pg`, away from the provider/build files, so it is the one most often forgotten. The pg tests that assert on the emitted armor `Version:` header (`BCPGOutputStreamTest`, `ArmoredInputStreamTest`, `PGPArmoredTest`, `ECDSAKeyPairTest`, `PGPv6SignatureTest`) then need updating in lockstep.
+
+## `CONTRIBUTORS.md` is for contributed code, not for reporting a bug
+
+An entry is normally added when someone **opened a PR or otherwise supplied code** — including when
+their patch was reworked or discarded, in which case the entry says "initial implementation of ...".
+Simply reporting a defect, however well, does not usually earn one; the issue number in the release
+note and the `relates to github #NNNN` in the commit message are the credit for a report. A handful
+of older entries do read "Reported ..." for findings that came with substantial analysis, so it is
+not an absolute rule — but the default is no entry, and adding one for a bare report is a change
+dgh should make rather than something to assume. Ask if unsure.
+
+**Sustained auditing is the standing exception**, and dgh initiates it. Someone who works through a
+subsystem and turns up several confirmed defects gets an entry describing the audit rather than a
+patch — `Arpan Sharma`'s reads "initial audit of BCPQC provider consistency starting with HQC ..."
+and was extended in the same house style when a later sweep produced github #2408. Note the shape:
+it names the area swept and what the sweep led to, not the individual bugs, and it was **appended to
+the existing entry**. Still don't add one unprompted — wait for dgh to ask.
+
+When an entry is warranted it goes at the end of the list in the house form
+`- name-or-handle \<email-or-github-url\> - what they contributed (PR #NNNN).`; a bare
+GitHub handle with `https://github.com/<handle>` in place of an email is well established. When a
+contributor appears more than once, **append to their existing entry** rather than adding a second
+bullet (see `rootvector2`). Cite the source the work came from — everything historic says
+`(PR #NNNN)`, so a contribution that arrived on an issue rather than a pull request is `(issue #NNNN)`.
+
+Two things about the markdown form, both of which the file's 340-odd existing entries follow:
+
+- **The `@` of an email address is written `&#064;`, never literally.** That is anti-harvesting
+  obfuscation inherited from the HTML — GFM passes the entity through to the renderer, so the page
+  shows `@` while the raw file contains none. A handful of entries had been added with a plain `@`
+  before the conversion and were folded into the same form; keep it that way, and grep for a stray
+  literal `@` before committing an addition.
+- **The angle brackets around the address are escaped**, `\<...\>`. Unescaped, GFM would read
+  `<name@example.com>` as an autolink and emit a `mailto:` — which both defeats the obfuscation and
+  differs from every other entry. A bare URL inside the brackets does get auto-linked, which is
+  fine and matches what GitHub does with any bare URL.
 
 ## Commit messages
 
@@ -136,7 +405,7 @@ Existing convention: a short imperative sentence ending with `relates to github 
 
 ## URLs in source, docs, and Javadoc must be checked before they ship
 
-Any URL you add to a source file, Javadoc, `releasenotes.html`, `README.md`, or any other tracked document has to actually resolve to the page you're citing — and the page has to still say what you're citing it for. Hallucinated paths, rotted spec URLs, and "I made up an OID page on iana.org" all read identically when reviewed by eye; the only way to catch them is to fetch the URL and confirm. The model fetches I have available are good enough to do this — use them, before committing.
+Any URL you add to a source file, Javadoc, `releasenotes.md`, `README.md`, or any other tracked document has to actually resolve to the page you're citing — and the page has to still say what you're citing it for. Hallucinated paths, rotted spec URLs, and "I made up an OID page on iana.org" all read identically when reviewed by eye; the only way to catch them is to fetch the URL and confirm. The model fetches I have available are good enough to do this — use them, before committing.
 
 Two non-obvious failure modes worth pre-empting:
 - **The URL works but the cited section number is wrong.** When citing "RFC 5280 sec. 4.2.1.12" or "RFC 9162 sec. 7.1", confirm the linked section actually contains the wording you're paraphrasing. RFC errata, RFC obsoletions, and section-number drift in IETF drafts all surface here.

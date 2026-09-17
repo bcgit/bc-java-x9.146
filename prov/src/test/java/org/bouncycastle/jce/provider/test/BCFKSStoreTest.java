@@ -31,6 +31,7 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
+import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.bc.EncryptedObjectStoreData;
 import org.bouncycastle.asn1.bc.ObjectStore;
 import org.bouncycastle.asn1.bc.ObjectStoreIntegrityCheck;
@@ -41,6 +42,7 @@ import org.bouncycastle.asn1.pkcs.PBKDF2Params;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.pkcs.KeyDerivationFunc;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.ExtensionsGenerator;
@@ -1549,6 +1551,60 @@ public class BCFKSStoreTest
     // keystore, so an attacker-supplied cost must be bounded before the derivation runs. Stored
     // here with modest costs, then loaded with the bound lowered below them to confirm the guard
     // fires before the (expensive) derivation.
+    // The MAC key size is taken from the same not-yet-verified KDF parameters as the cost, and
+    // sizes the derivation output, so an attacker-supplied keyLength has to be bounded too. It is
+    // also multiplied by 8 at the derivation call, which overflows for a large enough value and
+    // threw an unchecked NegativeArraySizeException out of KeyStore.load. The store writer only
+    // ever emits 32, so the oversized value is spliced into the encoding here.
+    private void shouldRejectExcessiveMacKeyLength()
+        throws Exception
+    {
+        byte[] pbkdf2Enc = doStoreUsingStoreParameter(new PBKDF2Config.Builder()
+            .withPRF(PBKDF2Config.PRF_SHA512)
+            .withIterationCount(1024)
+            .withSaltLength(20).build());
+
+        // 268435456 makes keyLength * 8 overflow to a negative bit count
+        BigInteger[] hostile = {BigInteger.valueOf(1025), BigInteger.valueOf(268435456)};
+
+        for (int i = 0; i != hostile.length; i++)
+        {
+            try
+            {
+                KeyStore ks = KeyStore.getInstance("BCFKS", "BC");
+                ks.load(new ByteArrayInputStream(withMacKeyLength(pbkdf2Enc, hostile[i])), testPassword);
+                fail("excessive BCFKS MAC keyLength accepted: " + hostile[i]);
+            }
+            catch (IOException e)
+            {
+                isTrue("unexpected message: " + e.getMessage(),
+                    e.getMessage().indexOf("keyLength") >= 0);
+            }
+        }
+    }
+
+    // Rewrite the keyLength in the integrity-check PBKDF2 parameters of a BCFKS encoding.
+    private byte[] withMacKeyLength(byte[] store, BigInteger keyLength)
+        throws IOException
+    {
+        ObjectStore objStore = ObjectStore.getInstance(store);
+        ObjectStoreIntegrityCheck integrityCheck = objStore.getIntegrityCheck();
+        PbkdMacIntegrityCheck macCheck = PbkdMacIntegrityCheck.getInstance(integrityCheck.getIntegrityCheck());
+
+        PBKDF2Params params = PBKDF2Params.getInstance(macCheck.getPbkdAlgorithm().getParameters());
+        PBKDF2Params rewritten = new PBKDF2Params(params.getSalt(),
+            params.getIterationCount().intValue(), keyLength.intValue(), params.getPrf());
+
+        PbkdMacIntegrityCheck rebuilt = new PbkdMacIntegrityCheck(
+            macCheck.getMacAlgorithm(),
+            new KeyDerivationFunc(PKCSObjectIdentifiers.id_PBKDF2, rewritten),
+            macCheck.getMac());
+
+        // these fixtures are password-protected, so the store data is the encrypted form
+        return new ObjectStore(EncryptedObjectStoreData.getInstance(objStore.getStoreData()),
+            new ObjectStoreIntegrityCheck(rebuilt)).getEncoded(ASN1Encoding.DER);
+    }
+
     private void shouldRejectExcessiveMacKdfCost()
         throws Exception
     {
@@ -1647,6 +1703,102 @@ public class BCFKSStoreTest
         isTrue(pParams.getPrf().equals(prf));
         isEquals(20, pParams.getSalt().length);
         isEquals(1024, pParams.getIterationCount().intValue());
+    }
+
+    private void shouldHonourStoreIterationCountProperty()
+        throws Exception
+    {
+        // the test harness sets BCFKS_STORE_IT_COUNT low so the suite does not spend its time on
+        // the KDF, so put back whatever was there on the way out rather than assuming the
+        // property was unset.
+        String ambient = System.getProperty(Properties.BCFKS_STORE_IT_COUNT);
+
+        try
+        {
+            //
+            // BCFKS_STORE_IT_COUNT is the write-side counterpart of BCFKS_MAX_IT_COUNT, applied to
+            // the MAC key and the store encryption when no BCFKSLoadStoreParameter names a KDF.
+            //
+            System.setProperty(Properties.BCFKS_STORE_IT_COUNT, "2048");
+
+            checkDefaultPathIterationCount(storeFreshBCFKS(), 2048);
+
+            //
+            // a value outside 1..5,000,000 is ignored - a mistyped property must not be able to
+            // write a file with no PBE work in it. These pay for full strength stores.
+            //
+            System.setProperty(Properties.BCFKS_STORE_IT_COUNT, "0");
+
+            checkDefaultPathIterationCount(storeFreshBCFKS(), 51200);
+
+            System.setProperty(Properties.BCFKS_STORE_IT_COUNT, "5000001");
+
+            checkDefaultPathIterationCount(storeFreshBCFKS(), 51200);
+
+            //
+            // a BCFKSLoadStoreParameter with its own KDF is not overridden by the property.
+            //
+            System.setProperty(Properties.BCFKS_STORE_IT_COUNT, "2048");
+
+            byte[] enc = doStoreUsingStoreParameter(new PBKDF2Config.Builder()
+                .withPRF(PBKDF2Config.PRF_SHA512)
+                .withIterationCount(1024)
+                .withSaltLength(20).build());
+
+            checkDefaultPathIterationCount(enc, 1024);
+        }
+        finally
+        {
+            if (ambient == null)
+            {
+                System.clearProperty(Properties.BCFKS_STORE_IT_COUNT);
+            }
+            else
+            {
+                System.setProperty(Properties.BCFKS_STORE_IT_COUNT, ambient);
+            }
+        }
+    }
+
+    private byte[] storeFreshBCFKS()
+        throws Exception
+    {
+        X509Certificate cert = (X509Certificate)CertificateFactory.getInstance("X.509", "BC").generateCertificate(new ByteArrayInputStream(trustedCertData));
+
+        KeyStore store1 = KeyStore.getInstance("BCFKS", "BC");
+
+        store1.load(null, null);
+
+        store1.setCertificateEntry("cert", cert);
+        store1.setKeyEntry("secret", new SecretKeySpec(Hex.decode("000102030405060708090a0b0c0d0e0f"), "AES"), testPassword, null);
+
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+
+        store1.store(bOut, testPassword);
+
+        KeyStore store2 = KeyStore.getInstance("BCFKS", "BC");
+
+        store2.load(new ByteArrayInputStream(bOut.toByteArray()), testPassword);
+
+        isTrue("store did not round trip", store2.getKey("secret", testPassword) != null);
+
+        return bOut.toByteArray();
+    }
+
+    private void checkDefaultPathIterationCount(byte[] enc, int expected)
+    {
+        ObjectStore store = ObjectStore.getInstance(enc);
+
+        PbkdMacIntegrityCheck check = PbkdMacIntegrityCheck.getInstance(store.getIntegrityCheck().getIntegrityCheck());
+
+        isEquals("MAC iteration count", expected,
+            PBKDF2Params.getInstance(check.getPbkdAlgorithm().getParameters()).getIterationCount().intValue());
+
+        EncryptedObjectStoreData objStore = EncryptedObjectStoreData.getInstance(store.getStoreData());
+        PBES2Parameters pbeParams = PBES2Parameters.getInstance(objStore.getEncryptionAlgorithm().getParameters());
+
+        isEquals("store encryption iteration count", expected,
+            PBKDF2Params.getInstance(pbeParams.getKeyDerivationFunc().getParameters()).getIterationCount().intValue());
     }
 
     private byte[] doStoreUsingStoreParameter(PBKDFConfig config)
@@ -1752,7 +1904,9 @@ public class BCFKSStoreTest
         shouldStoreSecretKeys();
         shouldStoreUsingSCRYPT();
         shouldStoreUsingPBKDF2();
+        shouldHonourStoreIterationCountProperty();
         shouldRejectExcessiveMacKdfCost();
+        shouldRejectExcessiveMacKeyLength();
         shouldFailOnWrongPassword();
         shouldParseKWPKeyStore();
         shouldFailOnRemovesOrOverwrite();

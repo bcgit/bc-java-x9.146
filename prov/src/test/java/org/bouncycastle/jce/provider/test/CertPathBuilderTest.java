@@ -9,6 +9,9 @@ import java.security.Security;
 import java.security.Signature;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathBuilder;
+import java.security.cert.CertPathBuilderException;
+import java.security.cert.CertPathBuilderSpi;
+import java.security.cert.CertPathParameters;
 import java.security.cert.CertStore;
 import java.security.cert.CertificateFactory;
 import java.security.cert.CollectionCertStoreParameters;
@@ -57,7 +60,10 @@ import org.bouncycastle.asn1.x509.Time;
 import org.bouncycastle.asn1.x509.V2TBSCertListGenerator;
 import org.bouncycastle.asn1.x509.V3TBSCertificateGenerator;
 import org.bouncycastle.crypto.digests.SHA1Digest;
+import org.bouncycastle.jcajce.PKIXExtendedBuilderParameters;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.jce.provider.PKIXCertPathBuilderSpi;
+import org.bouncycastle.util.Properties;
 import org.bouncycastle.util.test.SimpleTest;
 
 public class CertPathBuilderTest
@@ -196,7 +202,7 @@ public class CertPathBuilderTest
 
         if (path.getCertificates().size() != 2)
         {
-            fail("wrong number of certs in v0Test path");
+            fail("wrong number of certs in noSigV0Test path");
         }
     }
 
@@ -238,7 +244,7 @@ public class CertPathBuilderTest
 
         if (path.getCertificates().size() != 2)
         {
-            fail("wrong number of certs in v0Test path");
+            fail("wrong number of certs in eeInSelectorTest path");
         }
     }
 
@@ -282,7 +288,7 @@ public class CertPathBuilderTest
 
         if (path.getCertificates().size() != 2)
         {
-            fail("wrong number of certs in v0Test path");
+            fail("wrong number of certs in eeOnlyInSelectorTest path");
         }
     }
 
@@ -347,6 +353,146 @@ public class CertPathBuilderTest
         }
     }
 
+    /**
+     * A CertPathBuilder may be used for more than one build, and the outcome of one must not
+     * colour the next. The failure recorded while a build was searching used to be kept in an
+     * instance field that was never cleared, so a following build that found no path while
+     * recording no failure of its own - here with the target certificate excluded, so the
+     * search steps out before any validation happens - reported the earlier build's message
+     * in place of "Unable to find certificate chain.".
+     * <p>
+     * PKIXCertPathBuilderSpi is exercised directly as well as through the provider:
+     * CertPathBuilder.getInstance("PKIX", "BC") resolves to PKIXCertPathBuilderSpi_8 wherever
+     * java.security.cert.PKIXRevocationChecker is present, so the plain SPI - which carries
+     * the same search - is only reached through getInstance on older VMs.
+     */
+    private void builderReuseTest()
+        throws Exception
+    {
+        KeyPair rootPair = TestUtils.generateRSAKeyPair();
+        KeyPair interPair = TestUtils.generateRSAKeyPair();
+        KeyPair endPair = TestUtils.generateRSAKeyPair();
+
+        X509Certificate rootCert = TestUtils.generateRootCert(rootPair);
+        X509Certificate interCert = TestUtils.generateIntermediateCert(
+            interPair.getPublic(), rootPair.getPrivate(), rootCert);
+        X509Certificate endCert = TestUtils.generateEndEntityCert(
+            endPair.getPublic(), interPair.getPrivate(), interCert);
+
+        List list = new ArrayList();
+        list.add(interCert);
+        list.add(endCert);
+        CertStore store = CertStore.getInstance("Collection", new CollectionCertStoreParameters(list), "BC");
+
+        Set anchors = Collections.singleton(new TrustAnchor(rootCert, null));
+
+        // TestUtils certificates are valid for thirty minutes from creation
+        Date validDate = new Date();
+        Date expiredDate = new Date(validDate.getTime() + 24 * 60 * 60 * 1000L);
+
+        // a build that records a failure of its own: the validator rejects the expired path
+        CertPathParameters recordsFailure = reuseParams(anchors, store, endCert, expiredDate, null);
+        // a build that records nothing: the target is excluded, so no path is ever validated
+        CertPathParameters recordsNothing = reuseParams(anchors, store, endCert, validDate, endCert);
+
+        // baseline - on a builder used once, each case reports its own outcome
+        checkBuildFails("fresh builder, excluded target", CertPathBuilder.getInstance("PKIX", "BC"),
+            recordsNothing, "Unable to find certificate chain.");
+        checkBuildFails("fresh builder, expired target", CertPathBuilder.getInstance("PKIX", "BC"),
+            recordsFailure, "Certification path could not be validated.");
+
+        // the reuse the baseline cannot see: the second build must not inherit the first's failure
+        CertPathBuilder builder = CertPathBuilder.getInstance("PKIX", "BC");
+        checkBuildFails("reused builder, expired target", builder, recordsFailure,
+            "Certification path could not be validated.");
+        checkBuildFails("reused builder, excluded target", builder, recordsNothing,
+            "Unable to find certificate chain.");
+        checkBuildFails("reused builder, expired target again", builder, recordsFailure,
+            "Certification path could not be validated.");
+
+        // a successful build in between must leave nothing behind either
+        CertPathParameters succeeds = reuseParams(anchors, store, endCert, validDate, null);
+        builder = CertPathBuilder.getInstance("PKIX", "BC");
+        if (((PKIXCertPathBuilderResult)builder.build(succeeds)).getCertPath().getCertificates().size() != 2)
+        {
+            fail("wrong number of certs in builderReuseTest path");
+        }
+        checkBuildFails("reused builder after success", builder, recordsNothing,
+            "Unable to find certificate chain.");
+
+        // and the same sequence against the SPI the provider does not hand out on this VM
+        CertPathBuilderSpi spi = new PKIXCertPathBuilderSpi();
+        checkBuildFails("reused SPI, expired target", spi, recordsFailure,
+            "Certification path could not be validated.");
+        checkBuildFails("reused SPI, excluded target", spi, recordsNothing,
+            "Unable to find certificate chain.");
+    }
+
+    private static CertPathParameters reuseParams(Set anchors, CertStore store, X509Certificate target,
+        Date date, X509Certificate excluded)
+        throws Exception
+    {
+        X509CertSelector pathConstraints = new X509CertSelector();
+        pathConstraints.setCertificate(target);
+
+        PKIXBuilderParameters baseParams = new PKIXBuilderParameters(anchors, pathConstraints);
+        baseParams.addCertStore(store);
+        baseParams.setDate(date);
+        baseParams.setRevocationEnabled(false);
+
+        PKIXExtendedBuilderParameters.Builder bldr = new PKIXExtendedBuilderParameters.Builder(baseParams);
+        if (excluded != null)
+        {
+            bldr.addExcludedCerts(Collections.singleton(excluded));
+        }
+        return bldr.build();
+    }
+
+    private void checkBuildFails(String label, CertPathBuilder builder, CertPathParameters params,
+        String expectedMessage)
+        throws Exception
+    {
+        try
+        {
+            builder.build(params);
+            fail("no exception in " + label);
+        }
+        catch (CertPathBuilderException e)
+        {
+            checkBuildFailure(label, e, expectedMessage);
+        }
+    }
+
+    private void checkBuildFails(String label, CertPathBuilderSpi builder, CertPathParameters params,
+        String expectedMessage)
+        throws Exception
+    {
+        try
+        {
+            builder.engineBuild(params);
+            fail("no exception in " + label);
+        }
+        catch (CertPathBuilderException e)
+        {
+            checkBuildFailure(label, e, expectedMessage);
+        }
+    }
+
+    private void checkBuildFailure(String label, CertPathBuilderException e, String expectedMessage)
+    {
+        if (!expectedMessage.equals(e.getMessage()))
+        {
+            fail("wrong message in " + label + ": " + e.getMessage());
+        }
+        // "Unable to find certificate chain." reports the absence of a recorded failure, so it
+        // must not arrive carrying one
+        boolean expectCause = !"Unable to find certificate chain.".equals(expectedMessage);
+        if (expectCause != (e.getCause() != null))
+        {
+            fail("wrong cause in " + label + ": " + e.getCause());
+        }
+    }
+
     public void performTest()
         throws Exception
     {
@@ -357,6 +503,8 @@ public class CertPathBuilderTest
         eeOnlyInSelectorTest();
         multipleTrustAnchorsWithCRLTest();
         manyTrustAnchorsAkiNarrowingPerfTest();
+        builderNodeBudgetTest();
+        builderReuseTest();
     }
 
     private static final String SHA256_RSA = "SHA256withRSA";
@@ -502,6 +650,121 @@ public class CertPathBuilderTest
         finally
         {
             exec.shutdownNow();
+        }
+    }
+
+    /**
+     * Hardening (companion to the github #2291 perf work): the builder's
+     * depth-first search matches candidate issuers by subject name only, so a
+     * certificate store full of self-issued certificates that all share one
+     * subject DN and never chain to the trust anchor is explored as a large
+     * number of partial paths before the build concludes no chain exists.
+     * Properties.X509_MAX_CERT_PATH_BUILD_NODES bounds that work. Here
+     * maxPathLength is left unbounded so only the node budget can stop the
+     * search, and the budget is forced low so the guard trips promptly; the
+     * build must fail with a CertPathBuilderException naming the property.
+     * (Without the guard this build explores millions of nodes before failing
+     * with the generic "Unable to find certificate chain".)
+     */
+    private void builderNodeBudgetTest()
+        throws Exception
+    {
+        final int decoyCount = 10;
+        final X500Name loopDN = new X500Name("CN=Loop");
+
+        List decoys = new ArrayList();
+        for (int i = 0; i < decoyCount; i++)
+        {
+            KeyPair pair = TestUtils.generateRSAKeyPair();
+            decoys.add(selfSignedV3CaCert(pair, loopDN, computeSki(pair.getPublic())));
+        }
+
+        // Trust anchor with an unrelated DN, so no path ever chains to it.
+        KeyPair rootPair = TestUtils.generateRSAKeyPair();
+        X509Certificate rootCert = selfSignedV3CaCert(
+            rootPair, new X500Name("CN=Unrelated Root"), computeSki(rootPair.getPublic()));
+
+        CertStore store = CertStore.getInstance("Collection",
+            new CollectionCertStoreParameters(decoys), "BC");
+
+        Set anchors = new HashSet();
+        anchors.add(new TrustAnchor(rootCert, null));
+
+        // Target selector matches every decoy by their shared subject DN.
+        X509CertSelector pathConstraints = new X509CertSelector();
+        pathConstraints.setSubject(loopDN.getEncoded());
+
+        final PKIXBuilderParameters buildParams = new PKIXBuilderParameters(anchors, pathConstraints);
+        buildParams.addCertStore(store);
+        buildParams.setDate(new Date());
+        buildParams.setRevocationEnabled(false);
+        buildParams.setMaxPathLength(-1);
+
+        String previous = System.getProperty(Properties.X509_MAX_CERT_PATH_BUILD_NODES);
+        System.setProperty(Properties.X509_MAX_CERT_PATH_BUILD_NODES, "2000");
+
+        // Wall-time bound: without the fix this search runs for many seconds
+        // before failing, so run it on a daemon thread we can abandon.
+        ExecutorService exec = Executors.newSingleThreadExecutor(new ThreadFactory()
+        {
+            public Thread newThread(Runnable r)
+            {
+                Thread t = new Thread(r, "CertPathBuilderTest-budget");
+                t.setDaemon(true);
+                return t;
+            }
+        });
+        try
+        {
+            Future fut = exec.submit(new Callable()
+            {
+                public Object call()
+                    throws Exception
+                {
+                    CertPathBuilder builder = CertPathBuilder.getInstance("PKIX", "BC");
+                    return builder.build(buildParams);
+                }
+            });
+
+            try
+            {
+                fut.get(20, TimeUnit.SECONDS);
+                fail("expected CertPathBuilderException: build should not have found a chain");
+            }
+            catch (TimeoutException e)
+            {
+                fut.cancel(true);
+                fail("CertPath build was not bounded by the node budget within 20s");
+            }
+            catch (ExecutionException e)
+            {
+                Throwable cause = e.getCause();
+                if (!(cause instanceof CertPathBuilderException))
+                {
+                    if (cause instanceof Exception)
+                    {
+                        throw (Exception)cause;
+                    }
+                    throw e;
+                }
+                String msg = cause.getMessage();
+                if (msg == null || msg.indexOf(Properties.X509_MAX_CERT_PATH_BUILD_NODES) < 0)
+                {
+                    fail("build aborted but not via the node-budget guard: " + msg);
+                }
+            }
+        }
+        finally
+        {
+            exec.shutdownNow();
+            if (previous == null)
+            {
+                System.getProperties().remove(Properties.X509_MAX_CERT_PATH_BUILD_NODES);
+            }
+            else
+            {
+                System.setProperty(Properties.X509_MAX_CERT_PATH_BUILD_NODES, previous);
+            }
         }
     }
 

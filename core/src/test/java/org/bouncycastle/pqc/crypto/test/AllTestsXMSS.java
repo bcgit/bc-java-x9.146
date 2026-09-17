@@ -17,10 +17,7 @@ public class AllTestsXMSS
     {
         TestSuite suite = new TestSuite("Lightweight XMSS Tests");
 
-        suite.addTestSuite(XMSSMTPrivateKeyTest.class);
-        suite.addTestSuite(XMSSMTPublicKeyTest.class);
-        suite.addTestSuite(XMSSMTSignatureTest.class);
-        suite.addTestSuite(XMSSMTTest.class);
+        // XMSS^MT tests split out into AllTestsXMSSMT so they can run as a separate (parallel) fork.
         suite.addTestSuite(XMSSOidTest.class);
         suite.addTestSuite(XMSSPrivateKeyTest.class);
         suite.addTestSuite(XMSSPublicKeyTest.class);
@@ -30,6 +27,8 @@ public class AllTestsXMSS
         suite.addTestSuite(XMSSUtilTest.class);
         suite.addTestSuite(XMSSPublicKeyParseTest.class);
         suite.addTestSuite(XMSSPrivateKeyEncodingTest.class);
+        suite.addTestSuite(XMSSStateEncodingTest.class);
+        suite.addTestSuite(XMSSPromotionCompatibilityTest.class);
 
         return new AllTests.BCTestSetup(suite);
     }

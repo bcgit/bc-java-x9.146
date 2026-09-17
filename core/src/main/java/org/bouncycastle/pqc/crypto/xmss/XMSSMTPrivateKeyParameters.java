@@ -2,15 +2,21 @@ package org.bouncycastle.pqc.crypto.xmss;
 
 import java.io.IOException;
 
+import javax.security.auth.Destroyable;
+
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Encodable;
+import org.bouncycastle.util.Exceptions;
 
 /**
  * XMSS^MT Private Key.
+ *
+ * @deprecated use {@link org.bouncycastle.crypto.params.XMSSMTPrivateKeyParameters} instead.
  */
+@Deprecated
 public final class XMSSMTPrivateKeyParameters
     extends XMSSMTKeyParameters
-    implements XMSSStoreableObjectInterface, Encodable
+    implements XMSSStoreableObjectInterface, Encodable, Destroyable
 {
     private final XMSSMTParameters params;
     private final byte[] secretKeySeed;
@@ -21,6 +27,7 @@ public final class XMSSMTPrivateKeyParameters
     private volatile long index;
     private volatile BDSStateMap bdsState;
     private volatile boolean used;
+    private volatile boolean destroyed;
 
     private XMSSMTPrivateKeyParameters(Builder builder)
     {
@@ -72,17 +79,23 @@ public final class XMSSMTPrivateKeyParameters
 
             try
             {
-                BDSStateMap bdsImport = (BDSStateMap)XMSSUtil.deserialize(bdsStateBinary, BDSStateMap.class);
+                BDSStateMap bdsImport = (BDSStateMap)XMSSUtil.deserialize(bdsStateBinary, BDSStateMap.class, publicSeed);
 
                 bdsState = bdsImport.withWOTSDigest(builder.xmss.getTreeDigestOID(), builder.xmss.getTreeDigestSize());
+                bdsState.validate(params, index);
+                bdsState.validateRoot(params, root);
             }
             catch (IOException e)
             {
-                throw new IllegalArgumentException(e.getMessage(), e);
+                throw Exceptions.illegalArgumentException(e.getMessage(), e);
             }
             catch (ClassNotFoundException e)
             {
-                throw new IllegalArgumentException(e.getMessage(), e);
+                throw Exceptions.illegalArgumentException(e.getMessage(), e);
+            }
+            catch (IllegalStateException e)
+            {
+                throw Exceptions.illegalArgumentException(e.getMessage(), e);
             }
         }
         else
@@ -163,6 +176,20 @@ public final class XMSSMTPrivateKeyParameters
             if (builder.maxIndex >= 0 && builder.maxIndex != bdsState.getMaxIndex())
             {
                 throw new IllegalArgumentException("maxIndex set but not reflected in state");
+            }
+            try
+            {
+                bdsState.validate(params, builder.index);
+                if (builder.bdsState != null)
+                {
+                    // only a restored state carries a root worth comparing: one built here is
+                    // computed from the seeds, and a key built without a root carries zeros
+                    bdsState.validateRoot(params, builder.root);
+                }
+            }
+            catch (IllegalStateException e)
+            {
+                throw Exceptions.illegalArgumentException(e.getMessage(), e);
             }
         }
     }
@@ -267,6 +294,8 @@ public final class XMSSMTPrivateKeyParameters
     {
         synchronized (this)
         {
+            checkDestroyed();
+
             /* index || secretKeySeed || secretKeyPRF || publicSeed || root */
             int n = params.getTreeDigestSize();
             int indexSize = (params.getHeight() + 7) / 8;
@@ -295,11 +324,11 @@ public final class XMSSMTPrivateKeyParameters
             /* concatenate bdsState */
             try
             {
-                return Arrays.concatenate(out, XMSSUtil.serialize(bdsState));
+                return Arrays.concatenate(out, XMSSUtil.serialize(bdsState, publicSeed));
             }
             catch (IOException e)
             {
-                throw new IllegalStateException("error serializing bds state: " + e.getMessage(), e);
+                throw Exceptions.illegalStateException("error encoding BDS state map", e);
             }
         }
     }
@@ -319,12 +348,12 @@ public final class XMSSMTPrivateKeyParameters
 
     public byte[] getSecretKeySeed()
     {
-        return XMSSUtil.cloneArray(secretKeySeed);
+        return cloneWithCheck(secretKeySeed);
     }
 
     public byte[] getSecretKeyPRF()
     {
-        return XMSSUtil.cloneArray(secretKeyPRF);
+        return cloneWithCheck(secretKeyPRF);
     }
 
     public byte[] getPublicSeed()
@@ -359,6 +388,8 @@ public final class XMSSMTPrivateKeyParameters
     {
         synchronized (this)
         {
+            checkDestroyed();
+
             if (this.getIndex() < bdsState.getMaxIndex())
             {
                 bdsState.updateState(params, index, publicSeed, secretKeySeed);
@@ -392,6 +423,8 @@ public final class XMSSMTPrivateKeyParameters
         }
         synchronized (this)
         {
+            checkDestroyed();
+
             /* prepare authentication path for next leaf */
             if (usageCount <= this.getUsagesRemaining())
             {
@@ -412,6 +445,53 @@ public final class XMSSMTPrivateKeyParameters
             {
                 throw new IllegalArgumentException("usageCount exceeds usages remaining");
             }
+        }
+    }
+
+    /**
+     * Destroy this key, zeroizing the secret key material it holds: the seed the WOTS+ secret
+     * keys are derived from, the PRF key that randomizes message digests, and the WOTS+ secret
+     * keys the per-layer BDS traversal states retain for the leaves they last processed.
+     * <p>
+     * The public seed, the root, the index and the traversal states' tree nodes are retained -
+     * none of them is secret. After destruction {@link #isDestroyed()} returns true and
+     * {@link #getSecretKeySeed()}, {@link #getSecretKeyPRF()}, {@link #getEncoded()},
+     * {@link #getNextKey()} and {@link #extractKeyShard(int)} throw
+     * {@link IllegalStateException}; a signature attempt fails before the index is advanced.
+     * Keys previously split off this one hold their own copies of the seeds and are unaffected.
+     */
+    public synchronized void destroy()
+    {
+        if (!destroyed)
+        {
+            destroyed = true;
+            Arrays.clear(secretKeySeed);
+            Arrays.clear(secretKeyPRF);
+            bdsState.clearSecrets();
+        }
+    }
+
+    public boolean isDestroyed()
+    {
+        return destroyed;
+    }
+
+    private byte[] cloneWithCheck(byte[] fieldValue)
+    {
+        byte[] rv = XMSSUtil.cloneArray(fieldValue);
+
+        // clone first, check second: a destroy() that lands in between has set the flag before
+        // it clears the array, so a stale copy is never handed out.
+        checkDestroyed();
+
+        return rv;
+    }
+
+    private void checkDestroyed()
+    {
+        if (destroyed)
+        {
+            throw new IllegalStateException("key destroyed");
         }
     }
 }

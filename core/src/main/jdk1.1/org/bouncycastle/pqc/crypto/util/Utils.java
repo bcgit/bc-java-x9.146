@@ -16,16 +16,10 @@ import org.bouncycastle.internal.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.pqc.asn1.SPHINCS256KeyParams;
 import org.bouncycastle.pqc.legacy.bike.BIKEParameters;
-import org.bouncycastle.pqc.crypto.cmce.CMCEParameters;
-import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumParameters;
+import org.bouncycastle.pqc.legacy.crystals.dilithium.DilithiumParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconParameters;
-import org.bouncycastle.pqc.crypto.frodo.FrodoParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters;
-import org.bouncycastle.pqc.crypto.mlkem.MLKEMParameters;
-import org.bouncycastle.pqc.legacy.picnic.PicnicParameters;
 import org.bouncycastle.pqc.crypto.saber.SABERParameters;
-import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAParameters;
 import org.bouncycastle.pqc.crypto.sphincs.SPHINCSKeyParameters;
 import org.bouncycastle.util.Integers;
 
@@ -40,17 +34,10 @@ class Utils
 
     static final Map categories = new HashMap();
 
-    static final Map picnicOids = new HashMap();
-    static final Map picnicParams = new HashMap();
-
-    static final Map frodoOids = new HashMap();
-    static final Map frodoParams = new HashMap();
 
     static final Map saberOids = new HashMap();
     static final Map saberParams = new HashMap();
 
-    static final Map mcElieceOids = new HashMap();
-    static final Map mcElieceParams = new HashMap();
 
     static final Map sikeOids = new HashMap();
     static final Map sikeParams = new HashMap();
@@ -76,55 +63,11 @@ class Utils
     static final Map hqcOids = new HashMap();
     static final Map hqcParams = new HashMap();
 
-    static final Map rainbowOids = new HashMap();
-    static final Map rainbowParams = new HashMap();
 
-    static final Map mlkemOids = new HashMap<ASN1ObjectIdentifier, MLKEMParameters>();
-    static final Map mlkemParams = new HashMap<MLKEMParameters, ASN1ObjectIdentifier>();
-
-    static final Map mldsaOids = new HashMap<ASN1ObjectIdentifier, MLDSAParameters>();
-    static final Map mldsaParams = new HashMap<MLDSAParameters, ASN1ObjectIdentifier>();
-
-    static final Map shldsaOids = new HashMap<ASN1ObjectIdentifier, SLHDSAParameters>();
-    static final Map shldsaParams = new HashMap<SLHDSAParameters, ASN1ObjectIdentifier>();
-    
     static
     {
-        mcElieceOids.put(CMCEParameters.mceliece348864r3, BCObjectIdentifiers.mceliece348864_r3);
-        mcElieceOids.put(CMCEParameters.mceliece348864fr3, BCObjectIdentifiers.mceliece348864f_r3);
-        mcElieceOids.put(CMCEParameters.mceliece460896r3, BCObjectIdentifiers.mceliece460896_r3);
-        mcElieceOids.put(CMCEParameters.mceliece460896fr3, BCObjectIdentifiers.mceliece460896f_r3);
-        mcElieceOids.put(CMCEParameters.mceliece6688128r3, BCObjectIdentifiers.mceliece6688128_r3);
-        mcElieceOids.put(CMCEParameters.mceliece6688128fr3, BCObjectIdentifiers.mceliece6688128f_r3);
-        mcElieceOids.put(CMCEParameters.mceliece6960119r3, BCObjectIdentifiers.mceliece6960119_r3);
-        mcElieceOids.put(CMCEParameters.mceliece6960119fr3, BCObjectIdentifiers.mceliece6960119f_r3);
-        mcElieceOids.put(CMCEParameters.mceliece8192128r3, BCObjectIdentifiers.mceliece8192128_r3);
-        mcElieceOids.put(CMCEParameters.mceliece8192128fr3, BCObjectIdentifiers.mceliece8192128f_r3);
 
-        mcElieceParams.put(BCObjectIdentifiers.mceliece348864_r3, CMCEParameters.mceliece348864r3);
-        mcElieceParams.put(BCObjectIdentifiers.mceliece348864f_r3, CMCEParameters.mceliece348864fr3);
-        mcElieceParams.put(BCObjectIdentifiers.mceliece460896_r3, CMCEParameters.mceliece460896r3);
-        mcElieceParams.put(BCObjectIdentifiers.mceliece460896f_r3, CMCEParameters.mceliece460896fr3);
-        mcElieceParams.put(BCObjectIdentifiers.mceliece6688128_r3, CMCEParameters.mceliece6688128r3);
-        mcElieceParams.put(BCObjectIdentifiers.mceliece6688128f_r3, CMCEParameters.mceliece6688128fr3);
-        mcElieceParams.put(BCObjectIdentifiers.mceliece6960119_r3, CMCEParameters.mceliece6960119r3);
-        mcElieceParams.put(BCObjectIdentifiers.mceliece6960119f_r3, CMCEParameters.mceliece6960119fr3);
-        mcElieceParams.put(BCObjectIdentifiers.mceliece8192128_r3, CMCEParameters.mceliece8192128r3);
-        mcElieceParams.put(BCObjectIdentifiers.mceliece8192128f_r3, CMCEParameters.mceliece8192128fr3);
 
-        frodoOids.put(FrodoParameters.frodokem640aes, BCObjectIdentifiers.frodokem640aes);
-        frodoOids.put(FrodoParameters.frodokem640shake, BCObjectIdentifiers.frodokem640shake);
-        frodoOids.put(FrodoParameters.frodokem976aes, BCObjectIdentifiers.frodokem976aes);
-        frodoOids.put(FrodoParameters.frodokem976shake, BCObjectIdentifiers.frodokem976shake);
-        frodoOids.put(FrodoParameters.frodokem1344aes, BCObjectIdentifiers.frodokem1344aes);
-        frodoOids.put(FrodoParameters.frodokem1344shake, BCObjectIdentifiers.frodokem1344shake);
-
-        frodoParams.put(BCObjectIdentifiers.frodokem640aes, FrodoParameters.frodokem640aes);
-        frodoParams.put(BCObjectIdentifiers.frodokem640shake, FrodoParameters.frodokem640shake);
-        frodoParams.put(BCObjectIdentifiers.frodokem976aes, FrodoParameters.frodokem976aes);
-        frodoParams.put(BCObjectIdentifiers.frodokem976shake, FrodoParameters.frodokem976shake);
-        frodoParams.put(BCObjectIdentifiers.frodokem1344aes, FrodoParameters.frodokem1344aes);
-        frodoParams.put(BCObjectIdentifiers.frodokem1344shake, FrodoParameters.frodokem1344shake);
 
         saberOids.put(SABERParameters.lightsaberkem128r3, BCObjectIdentifiers.lightsaberkem128r3);
         saberOids.put(SABERParameters.saberkem128r3, BCObjectIdentifiers.saberkem128r3);
@@ -164,59 +107,12 @@ class Utils
         saberParams.put(BCObjectIdentifiers.usaberkem90sr3, SABERParameters.usaberkem90sr3);
         saberParams.put(BCObjectIdentifiers.ufiresaberkem90sr3, SABERParameters.ufiresaberkem90sr3);
 
-        picnicOids.put(PicnicParameters.picnicl1fs, BCObjectIdentifiers.picnicl1fs);
-        picnicOids.put(PicnicParameters.picnicl1ur, BCObjectIdentifiers.picnicl1ur);
-        picnicOids.put(PicnicParameters.picnicl3fs, BCObjectIdentifiers.picnicl3fs);
-        picnicOids.put(PicnicParameters.picnicl3ur, BCObjectIdentifiers.picnicl3ur);
-        picnicOids.put(PicnicParameters.picnicl5fs, BCObjectIdentifiers.picnicl5fs);
-        picnicOids.put(PicnicParameters.picnicl5ur, BCObjectIdentifiers.picnicl5ur);
-        picnicOids.put(PicnicParameters.picnic3l1, BCObjectIdentifiers.picnic3l1);
-        picnicOids.put(PicnicParameters.picnic3l3, BCObjectIdentifiers.picnic3l3);
-        picnicOids.put(PicnicParameters.picnic3l5, BCObjectIdentifiers.picnic3l5);
-        picnicOids.put(PicnicParameters.picnicl1full, BCObjectIdentifiers.picnicl1full);
-        picnicOids.put(PicnicParameters.picnicl3full, BCObjectIdentifiers.picnicl3full);
-        picnicOids.put(PicnicParameters.picnicl5full, BCObjectIdentifiers.picnicl5full);
-
-        picnicParams.put(BCObjectIdentifiers.picnicl1fs, PicnicParameters.picnicl1fs);
-        picnicParams.put(BCObjectIdentifiers.picnicl1ur, PicnicParameters.picnicl1ur);
-        picnicParams.put(BCObjectIdentifiers.picnicl3fs, PicnicParameters.picnicl3fs);
-        picnicParams.put(BCObjectIdentifiers.picnicl3ur, PicnicParameters.picnicl3ur);
-        picnicParams.put(BCObjectIdentifiers.picnicl5fs, PicnicParameters.picnicl5fs);
-        picnicParams.put(BCObjectIdentifiers.picnicl5ur, PicnicParameters.picnicl5ur);
-        picnicParams.put(BCObjectIdentifiers.picnic3l1, PicnicParameters.picnic3l1);
-        picnicParams.put(BCObjectIdentifiers.picnic3l3, PicnicParameters.picnic3l3);
-        picnicParams.put(BCObjectIdentifiers.picnic3l5, PicnicParameters.picnic3l5);
-        picnicParams.put(BCObjectIdentifiers.picnicl1full, PicnicParameters.picnicl1full);
-        picnicParams.put(BCObjectIdentifiers.picnicl3full, PicnicParameters.picnicl3full);
-        picnicParams.put(BCObjectIdentifiers.picnicl5full, PicnicParameters.picnicl5full);
 
         falconOids.put(FalconParameters.falcon_512, BCObjectIdentifiers.falcon_512);
         falconOids.put(FalconParameters.falcon_1024, BCObjectIdentifiers.falcon_1024);
 
         falconParams.put(BCObjectIdentifiers.falcon_512, FalconParameters.falcon_512);
         falconParams.put(BCObjectIdentifiers.falcon_1024, FalconParameters.falcon_1024);
-
-        mlkemOids.put(MLKEMParameters.ml_kem_512, NISTObjectIdentifiers.id_alg_ml_kem_512);
-        mlkemOids.put(MLKEMParameters.ml_kem_768, NISTObjectIdentifiers.id_alg_ml_kem_768);
-        mlkemOids.put(MLKEMParameters.ml_kem_1024,NISTObjectIdentifiers.id_alg_ml_kem_1024);
-
-        mlkemParams.put(NISTObjectIdentifiers.id_alg_ml_kem_512, MLKEMParameters.ml_kem_512);
-        mlkemParams.put(NISTObjectIdentifiers.id_alg_ml_kem_768, MLKEMParameters.ml_kem_768);
-        mlkemParams.put(NISTObjectIdentifiers.id_alg_ml_kem_1024, MLKEMParameters.ml_kem_1024);
-
-        mldsaOids.put(MLDSAParameters.ml_dsa_44, NISTObjectIdentifiers.id_ml_dsa_44);
-        mldsaOids.put(MLDSAParameters.ml_dsa_65, NISTObjectIdentifiers.id_ml_dsa_65);
-        mldsaOids.put(MLDSAParameters.ml_dsa_87, NISTObjectIdentifiers.id_ml_dsa_87);
-        mldsaOids.put(MLDSAParameters.ml_dsa_44_with_sha512, NISTObjectIdentifiers.id_hash_ml_dsa_44_with_sha512);
-        mldsaOids.put(MLDSAParameters.ml_dsa_65_with_sha512, NISTObjectIdentifiers.id_hash_ml_dsa_65_with_sha512);
-        mldsaOids.put(MLDSAParameters.ml_dsa_87_with_sha512, NISTObjectIdentifiers.id_hash_ml_dsa_87_with_sha512);
-
-        mldsaParams.put(NISTObjectIdentifiers.id_ml_dsa_44, MLDSAParameters.ml_dsa_44);
-        mldsaParams.put(NISTObjectIdentifiers.id_ml_dsa_65, MLDSAParameters.ml_dsa_65);
-        mldsaParams.put(NISTObjectIdentifiers.id_ml_dsa_87, MLDSAParameters.ml_dsa_87);
-        mldsaParams.put(NISTObjectIdentifiers.id_hash_ml_dsa_44_with_sha512, MLDSAParameters.ml_dsa_44_with_sha512);
-        mldsaParams.put(NISTObjectIdentifiers.id_hash_ml_dsa_65_with_sha512, MLDSAParameters.ml_dsa_65_with_sha512);
-        mldsaParams.put(NISTObjectIdentifiers.id_hash_ml_dsa_87_with_sha512, MLDSAParameters.ml_dsa_87_with_sha512);
 
         dilithiumOids.put(DilithiumParameters.dilithium2, BCObjectIdentifiers.dilithium2);
         dilithiumOids.put(DilithiumParameters.dilithium3, BCObjectIdentifiers.dilithium3);
@@ -242,69 +138,8 @@ class Utils
         hqcOids.put(HQCParameters.hqc192, BCObjectIdentifiers.hqc192);
         hqcOids.put(HQCParameters.hqc256, BCObjectIdentifiers.hqc256);
 
-        shldsaOids.put(SLHDSAParameters.sha2_128s, NISTObjectIdentifiers.id_slh_dsa_sha2_128s);
-        shldsaOids.put(SLHDSAParameters.sha2_128f, NISTObjectIdentifiers.id_slh_dsa_sha2_128f);
-        shldsaOids.put(SLHDSAParameters.sha2_192s, NISTObjectIdentifiers.id_slh_dsa_sha2_192s);
-        shldsaOids.put(SLHDSAParameters.sha2_192f, NISTObjectIdentifiers.id_slh_dsa_sha2_192f);
-        shldsaOids.put(SLHDSAParameters.sha2_256s, NISTObjectIdentifiers.id_slh_dsa_sha2_256s);
-        shldsaOids.put(SLHDSAParameters.sha2_256f, NISTObjectIdentifiers.id_slh_dsa_sha2_256f);
-        shldsaOids.put(SLHDSAParameters.shake_128s, NISTObjectIdentifiers.id_slh_dsa_shake_128s);
-        shldsaOids.put(SLHDSAParameters.shake_128f, NISTObjectIdentifiers.id_slh_dsa_shake_128f);
-        shldsaOids.put(SLHDSAParameters.shake_192s, NISTObjectIdentifiers.id_slh_dsa_shake_192s);
-        shldsaOids.put(SLHDSAParameters.shake_192f, NISTObjectIdentifiers.id_slh_dsa_shake_192f);
-        shldsaOids.put(SLHDSAParameters.shake_256s, NISTObjectIdentifiers.id_slh_dsa_shake_256s);
-        shldsaOids.put(SLHDSAParameters.shake_256f, NISTObjectIdentifiers.id_slh_dsa_shake_256f);
-
-        shldsaOids.put(SLHDSAParameters.sha2_128s_with_sha256, NISTObjectIdentifiers.id_hash_slh_dsa_sha2_128s_with_sha256);
-        shldsaOids.put(SLHDSAParameters.sha2_128f_with_sha256, NISTObjectIdentifiers.id_hash_slh_dsa_sha2_128f_with_sha256);
-        shldsaOids.put(SLHDSAParameters.sha2_192s_with_sha512, NISTObjectIdentifiers.id_hash_slh_dsa_sha2_192s_with_sha512);
-        shldsaOids.put(SLHDSAParameters.sha2_192f_with_sha512, NISTObjectIdentifiers.id_hash_slh_dsa_sha2_192f_with_sha512);
-        shldsaOids.put(SLHDSAParameters.sha2_256s_with_sha512, NISTObjectIdentifiers.id_hash_slh_dsa_sha2_256s_with_sha512);
-        shldsaOids.put(SLHDSAParameters.sha2_256f_with_sha512, NISTObjectIdentifiers.id_hash_slh_dsa_sha2_256f_with_sha512);
-        shldsaOids.put(SLHDSAParameters.shake_128s_with_shake128, NISTObjectIdentifiers.id_hash_slh_dsa_shake_128s_with_shake128);
-        shldsaOids.put(SLHDSAParameters.shake_128f_with_shake128, NISTObjectIdentifiers.id_hash_slh_dsa_shake_128f_with_shake128);
-        shldsaOids.put(SLHDSAParameters.shake_192s_with_shake256, NISTObjectIdentifiers.id_hash_slh_dsa_shake_192s_with_shake256);
-        shldsaOids.put(SLHDSAParameters.shake_192f_with_shake256, NISTObjectIdentifiers.id_hash_slh_dsa_shake_192f_with_shake256);
-        shldsaOids.put(SLHDSAParameters.shake_256s_with_shake256, NISTObjectIdentifiers.id_hash_slh_dsa_shake_256s_with_shake256);
-        shldsaOids.put(SLHDSAParameters.shake_256f_with_shake256, NISTObjectIdentifiers.id_hash_slh_dsa_shake_256f_with_shake256);
-
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_sha2_128s, SLHDSAParameters.sha2_128s);
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_sha2_128f, SLHDSAParameters.sha2_128f);
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_sha2_192s, SLHDSAParameters.sha2_192s);
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_sha2_192f, SLHDSAParameters.sha2_192f);
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_sha2_256s, SLHDSAParameters.sha2_256s);
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_sha2_256f, SLHDSAParameters.sha2_256f);
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_shake_128s, SLHDSAParameters.shake_128s);
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_shake_128f, SLHDSAParameters.shake_128f);
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_shake_192s, SLHDSAParameters.shake_192s);
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_shake_192f, SLHDSAParameters.shake_192f);
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_shake_256s, SLHDSAParameters.shake_256s);
-        shldsaParams.put(NISTObjectIdentifiers.id_slh_dsa_shake_256f, SLHDSAParameters.shake_256f);
-
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_128s_with_sha256, SLHDSAParameters.sha2_128s_with_sha256);
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_128f_with_sha256, SLHDSAParameters.sha2_128f_with_sha256);
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_192s_with_sha512, SLHDSAParameters.sha2_192s_with_sha512);
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_192f_with_sha512, SLHDSAParameters.sha2_192f_with_sha512);
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_256s_with_sha512, SLHDSAParameters.sha2_256s_with_sha512);
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_256f_with_sha512, SLHDSAParameters.sha2_256f_with_sha512);
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_128s_with_shake128, SLHDSAParameters.shake_128s_with_shake128);
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_128f_with_shake128, SLHDSAParameters.shake_128f_with_shake128);
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_192s_with_shake256, SLHDSAParameters.shake_192s_with_shake256);
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_192f_with_shake256, SLHDSAParameters.shake_192f_with_shake256);
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_256s_with_shake256, SLHDSAParameters.shake_256s_with_shake256);
-        shldsaParams.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_256f_with_shake256, SLHDSAParameters.shake_256f_with_shake256);
     }
 
-    static ASN1ObjectIdentifier slhdsaOidLookup(SLHDSAParameters params)
-    {
-        return (ASN1ObjectIdentifier)shldsaOids.get(params);
-    }
-
-    static SLHDSAParameters slhdsaParamsLookup(ASN1ObjectIdentifier oid)
-    {
-        return (SLHDSAParameters)shldsaParams.get(oid);
-    }
-    
     static AlgorithmIdentifier sphincs256LookupTreeAlgID(String treeDigest)
     {
         if (treeDigest.equals(SPHINCSKeyParameters.SHA3_256))
@@ -413,26 +248,6 @@ class Utils
         throw new IllegalArgumentException("unrecognised digest algorithm: " + digestOid);
     }
 
-    static ASN1ObjectIdentifier mcElieceOidLookup(CMCEParameters params)
-    {
-        return (ASN1ObjectIdentifier)mcElieceOids.get(params);
-    }
-
-    static CMCEParameters mcElieceParamsLookup(ASN1ObjectIdentifier oid)
-    {
-        return (CMCEParameters)mcElieceParams.get(oid);
-    }
-
-    static ASN1ObjectIdentifier frodoOidLookup(FrodoParameters params)
-    {
-        return (ASN1ObjectIdentifier)frodoOids.get(params);
-    }
-
-    static FrodoParameters frodoParamsLookup(ASN1ObjectIdentifier oid)
-    {
-        return (FrodoParameters)frodoParams.get(oid);
-    }
-
     static ASN1ObjectIdentifier saberOidLookup(SABERParameters params)
     {
         return (ASN1ObjectIdentifier)saberOids.get(params);
@@ -441,16 +256,6 @@ class Utils
     static SABERParameters saberParamsLookup(ASN1ObjectIdentifier oid)
     {
         return (SABERParameters)saberParams.get(oid);
-    }
-
-    static ASN1ObjectIdentifier picnicOidLookup(PicnicParameters params)
-    {
-        return (ASN1ObjectIdentifier)picnicOids.get(params);
-    }
-
-    static PicnicParameters picnicParamsLookup(ASN1ObjectIdentifier oid)
-    {
-        return (PicnicParameters)picnicParams.get(oid);
     }
 
     static ASN1ObjectIdentifier falconOidLookup(FalconParameters params)
@@ -463,26 +268,6 @@ class Utils
         return (FalconParameters)falconParams.get(oid);
     }
 
-
-    static ASN1ObjectIdentifier mlkemOidLookup(MLKEMParameters params)
-    {
-        return (ASN1ObjectIdentifier)mlkemOids.get(params);
-    }
-
-    static MLKEMParameters mlkemParamsLookup(ASN1ObjectIdentifier oid)
-    {
-        return (MLKEMParameters)mlkemParams.get(oid);
-    }
-
-    static ASN1ObjectIdentifier mldsaOidLookup(MLDSAParameters params)
-    {
-        return (ASN1ObjectIdentifier)mldsaOids.get(params);
-    }
-
-    static MLDSAParameters mldsaParamsLookup(ASN1ObjectIdentifier oid)
-    {
-        return (MLDSAParameters)mldsaParams.get(oid);
-    }
 
     static ASN1ObjectIdentifier dilithiumOidLookup(DilithiumParameters params)
     {

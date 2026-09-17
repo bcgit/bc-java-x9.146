@@ -1,7 +1,10 @@
 package org.bouncycastle.cms.test;
 
+import java.security.Security;
+
 import javax.crypto.Cipher;
 
+import junit.extensions.TestSetup;
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
@@ -24,6 +27,12 @@ public class AllTests
         suite.addTest(NewCompressedDataTest.suite());
         suite.addTest(NewSignedDataTest.suite());
         suite.addTest(NewEnvelopedDataTest.suite());
+        suite.addTestSuite(ContentEncryptorRandomTest.class);
+        suite.addTestSuite(FrodoKEMEnvelopedDataTest.class);
+        suite.addTestSuite(CMCEEnvelopedDataTest.class);
+        suite.addTestSuite(KEMUkmEnvelopedDataTest.class);
+        suite.addTestSuite(CompositeKEMEnvelopedDataTest.class);
+        suite.addTestSuite(KEMAuthEnvelopedDataTest.class);
         suite.addTest(NewAuthenticatedDataTest.suite());
         suite.addTest(NewAuthenticatedDataStreamTest.suite());
         suite.addTest(NewCompressedDataStreamTest.suite());
@@ -55,6 +64,25 @@ public class AllTests
             // ignore
         }
 
-        return suite;
+        return new BCTestSetup(suite);
+    }
+
+    static class BCTestSetup
+        extends TestSetup
+    {
+        public BCTestSetup(Test test)
+        {
+            super(test);
+        }
+
+        protected void setUp()
+        {
+            Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
+        }
+
+        protected void tearDown()
+        {
+            Security.removeProvider("BC");
+        }
     }
 }

@@ -6,7 +6,10 @@ import org.bouncycastle.crypto.KeyGenerationParameters;
 
 /**
  * XMSS key-pair generation parameters.
+ *
+ * @deprecated use {@link org.bouncycastle.crypto.params.XMSSKeyGenerationParameters} instead.
  */
+@Deprecated
 public final class XMSSKeyGenerationParameters
     extends KeyGenerationParameters
 {

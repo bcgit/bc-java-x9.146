@@ -266,8 +266,22 @@ public class OERInputStream
                     throw new IOException("did not fully read presence list.");
                 }
 
+                // the first octet is the count of unused bits in the last one, so it must be there and
+                // must be 0..7: absent, it indexed an empty array; sign-extended from 0x80..0xFF it
+                // made stop overshoot and the bitmap reads below run off the end
+                if (rawPresenceList.length < 1)
+                {
+                    throw new IOException("presence list is empty");
+                }
+
+                int unusedBits = rawPresenceList[0] & 0xFF;
+                if (unusedBits > 7)
+                {
+                    throw new IOException("presence list declares " + unusedBits + " unused bits");
+                }
+
                 int presenceIndex = 8;
-                int stop = rawPresenceList.length * 8 - rawPresenceList[0];
+                int stop = rawPresenceList.length * 8 - unusedBits;
 
 
                 for (; t < children.size() || presenceIndex < stop; t++)
@@ -280,14 +294,7 @@ public class OERInputStream
                         // have a definition for need to be consumed and discarded.
                         if ((rawPresenceList[presenceIndex / 8] & bitsR[presenceIndex % 8]) != 0)
                         {
-                            // skip.
-                            int len = readLength().intLength();
-                            while (--len >= 0)
-                            {
-                                in.read();
-                            }
-
-
+                            skipUnknownExtension(readLength().intLength());
                         }
                     }
                     else
@@ -322,6 +329,14 @@ public class OERInputStream
             debugPrint(choice.toString() + " " + choice.tag);
             if (choice.isContextSpecific())
             {
+                // the tag comes from the wire and indexes the schema's alternatives; X.696 sec. 8.7
+                // makes an unknown alternative a decode error, not an IndexOutOfBoundsException
+                if (choice.getTag() >= element.getChildren().size())
+                {
+                    throw new IOException("CHOICE tag " + choice.getTag() + " is not one of the "
+                        + element.getChildren().size() + " alternatives");
+                }
+
                 Element choiceDef = Element.expandDeferredDefinition(element.getChildren().get(choice.getTag()), element);
 
                 if (choiceDef.getBlock() > 0)
@@ -335,27 +350,26 @@ public class OERInputStream
                     return new DERTaggedObject(choice.tag, parse(choiceDef));
                 }
             }
-            else if (choice.isApplicationTagClass())
-            {
-                throw new IllegalStateException("Unimplemented tag type");
-            }
-            else if (choice.isPrivateTagClass())
-            {
-                throw new IllegalStateException("Unimplemented tag type");
-            }
-            else if (choice.isUniversalTagClass())
-            {
-                throw new IllegalStateException("Unimplemented tag type");
-            }
             else
             {
-                throw new IllegalStateException("Unimplemented tag type");
+                // the tag class is two bits off the wire, so an unimplemented one is malformed input
+                // rather than an inconsistent decoder state
+                throw new IOException("Unimplemented tag type");
             }
         }
         case ENUM:
         {
             BigInteger bi = enumeration();
-            debugPrint(element + ("ENUM(" + bi + ") = " + element.getChildren().get(bi.intValue()).getLabel()));
+            if (debugOutput != null)
+            {
+                // the label lookup treats the wire value as a child index, so it can be out of range;
+                // the other five debugPrint sites are already guarded, this one was building its
+                // argument - and throwing IndexOutOfBoundsException - on the production path
+                String label = bi.bitLength() < 32 && bi.intValue() < element.getChildren().size()
+                    ? element.getChildren().get(bi.intValue()).getLabel()
+                    : "<no such enumerand>";
+                debugPrint(element + ("ENUM(" + bi + ") = " + label));
+            }
             return new ASN1Enumerated(bi);
         }
         case INT:
@@ -582,6 +596,41 @@ public class OERInputStream
     {
         debugPrint(child + ("Absent"));
         return OEROptional.ABSENT;
+    }
+
+    /**
+     * Discard the body of an extension this decoder has no definition for.
+     * <p>
+     * The length is taken from the encoding and bounded only by 2^31-1. Consuming it one
+     * {@code in.read()} at a time discarded the -1 that signals end of stream, so a declared
+     * length with nothing behind it spun for as long as the length said - and with a single
+     * presence bit set the parse then <em>returned normally</em>, so nothing recorded that it had
+     * happened. Each known extension is parsed from its own bounded stream, so the slots are
+     * independently exhaustible and the cost scales with the number of them.
+     * <p>
+     * Consume in bounded chunks and fail at the real end of input instead. The length itself is
+     * not capped at {@code maxByteAllocation}: nothing is allocated from it, and an unknown
+     * extension may legitimately be larger than the decoder's allocation ceiling - it just has to
+     * actually be present in the stream.
+     */
+    private void skipUnknownExtension(int len)
+        throws IOException
+    {
+        if (len < 0)
+        {
+            throw new IOException("unknown extension length is negative: " + len);
+        }
+
+        byte[] buf = new byte[Math.min(len, 4096)];
+        while (len > 0)
+        {
+            int read = in.read(buf, 0, Math.min(len, buf.length));
+            if (read < 0)
+            {
+                throw new EOFException("unknown extension truncated, " + len + " bytes not delivered");
+            }
+            len -= read;
+        }
     }
 
     private byte[] allocateArray(int requiredSize)
@@ -838,6 +887,12 @@ public class OERInputStream
                     {
                         throw new EOFException("expecting further tag bytes");
                     }
+                    // the continuation is only terminated by a clear bit 7, so without this the shift
+                    // silently overflows and yields a negative tag
+                    if (tag > (Integer.MAX_VALUE >> 7))
+                    {
+                        throw new IOException("CHOICE tag out of range");
+                    }
                     tag <<= 7;
                     tag |= part & 0x7f;
                 }
@@ -1040,8 +1095,17 @@ public class OERInputStream
         }
 
         private int intLength()
+            throws IOException
         {
-            return BigIntegers.intValueExact(length);
+            // the determinant is read as an unsigned big-endian value of up to 127 octets, so it can
+            // exceed an int; intValueExact would leave an ArithmeticException to escape a decode API
+            // that declares only IOException
+            if (length.bitLength() > 31)
+            {
+                throw new IOException("length determinant out of range: " + length.bitLength() + " bits");
+            }
+
+            return length.intValue();
         }
     }
 

@@ -20,6 +20,8 @@ import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.est.CsrAttrs;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
+import org.bouncycastle.cbor.c509.C509CertificationRequestTemplate;
+import org.bouncycastle.cbor.c509.C509MediaTypes;
 import org.bouncycastle.cert.X509CRLHolder;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cmc.CMCException;
@@ -52,6 +54,12 @@ public class ESTService
     protected static final String FULLCMC = "/fullcmc";
     protected static final String SERVERGEN = "/serverkeygen";
     protected static final String CSRATTRS = "/csrattrs";
+
+    /**
+     * Upper bound on the size of a C509 certification request template response -
+     * generous for a structure that lists attribute types and short prescribed values.
+     */
+    private static final int MAX_C509_TEMPLATE_SIZE = 1024 * 1024;
 
     protected static final Set<String> illegalParts = new HashSet<String>();
 
@@ -757,6 +765,10 @@ public class ESTService
         ESTResponse resp = null;
         CSRAttributesResponse response = null;
         Exception finalThrowable = null;
+        // Set once the HTTP status alone determines the result and the body is irrelevant
+        // (RFC 7030 sec. 4.5: 204 / 404). A failure while tidying up the connection must not
+        // then be promoted into the caller's result and mask the real status (github #781).
+        boolean outcomeFinal = false;
         URL url = null;
         try
         {
@@ -784,15 +796,18 @@ public class ESTService
                 break;
             case 204:
             case 404:
-                // RFC 7030 sec. 4.5: a 204 has no body and a 404 SHOULD be empty.
-                // Some servers nevertheless attach an error body (e.g. a JSON
-                // message) to a 404. Drain whatever is there so the subsequent
-                // resp.close() in the finally block doesn't trip the
-                // LimitedInputStream's "Stream closed before limit fully read"
-                // guard and obscure the actual 404 status with a useless wrapper
-                // exception (github #781).
-                Streams.drain(resp.getInputStream());
+                // RFC 7030 sec. 4.5: a 204 has no body and a 404 SHOULD be empty. Some servers
+                // nevertheless attach an error body (e.g. a JSON message) to a 404. Drain it so the
+                // resp.close() in the finally block does not trip one of the counter stream's guards
+                // and obscure the actual status with a useless wrapper exception (github #781).
+                //
+                // The drain is never EOF-seeking: the counter stream has no Content-Length stop of
+                // its own, so on a kept-alive HTTP/1.1 connection whose socket never signals EOF
+                // (and no SO_TIMEOUT by default) reading until EOF would hang the calling thread.
+                drainErrorBody(resp);
                 response = null;
+                // The status alone is the answer now - see outcomeFinal above.
+                outcomeFinal = true;
                 break;
             default:
                 throw new ESTException(
@@ -822,7 +837,13 @@ public class ESTService
                 }
                 catch (Exception ex)
                 {
-                    finalThrowable = ex;
+                    // Only a close() failure that could still change the answer is promoted; for a
+                    // 204/404 the result is already settled, so swallowing it here is what stops a
+                    // tidy-up problem masking the real status.
+                    if (!outcomeFinal)
+                    {
+                        finalThrowable = ex;
+                    }
                 }
             }
         }
@@ -837,6 +858,160 @@ public class ESTService
         }
 
         return new CSRRequestResponse(response, resp.getSource());
+    }
+
+    /**
+     * Request the C509 certification request template for this client (Section 4.4 of
+     * draft-ietf-cose-cbor-encoded-cert-20): a GET of /csrattrs asking for the
+     * application/cose-c509-crtemplate+cbor media type. A server with a template for
+     * this client returns it with that content type; as with the RFC 7030 form, a 204
+     * or 404 means no template is available. A 200 carrying any other content type
+     * (for example a legacy RFC 7030 csrattrs answer from a server that does not
+     * support C509) is reported as an ESTException - use {@link #getCSRAttributes()}
+     * against such a server.
+     *
+     * @return an object carrying the template, or the absence of one.
+     */
+    public C509CSRTemplateResponse getC509CertificationRequestTemplate()
+        throws ESTException
+    {
+        if (!clientProvider.isTrusted())
+        {
+            throw new IllegalStateException("No trust anchors.");
+        }
+
+        ESTResponse resp = null;
+        C509CertificationRequestTemplate template = null;
+        Exception finalThrowable = null;
+        // Set once the HTTP status alone determines the result and the body is irrelevant
+        // (RFC 7030 sec. 4.5: 204 / 404) - see getCSRAttributes().
+        boolean outcomeFinal = false;
+        URL url = null;
+        try
+        {
+            url = new URL(server + CSRATTRS);
+
+            ESTClient client = clientProvider.makeClient();
+            ESTRequest req = new ESTRequestBuilder("GET", url).withClient(client)
+                .setHeader("Accept", C509MediaTypes.CERTIFICATION_REQUEST_TEMPLATE).build();
+            resp = client.doRequest(req);
+
+            switch (resp.getStatusCode())
+            {
+            case 200:
+                try
+                {
+                    String contentType = resp.getHeaderOrEmpty("Content-Type");
+                    if (!contentType.equals(C509MediaTypes.CERTIFICATION_REQUEST_TEMPLATE)
+                        && !contentType.startsWith(C509MediaTypes.CERTIFICATION_REQUEST_TEMPLATE + ";"))
+                    {
+                        throw new ESTException("Response did not carry "
+                            + C509MediaTypes.CERTIFICATION_REQUEST_TEMPLATE + ": " + contentType, null,
+                            resp.getStatusCode(), resp.getInputStream());
+                    }
+                    // a template is a small structure; the read is bounded regardless of
+                    // what content length the server declares
+                    byte[] encoding = Streams.readAllLimited(resp.getInputStream(), MAX_C509_TEMPLATE_SIZE);
+                    template = C509CertificationRequestTemplate.getInstance(encoding);
+                }
+                catch (Throwable ex)
+                {
+                    throw new ESTException("Decoding C509 CSR template: " + url.toString() + " " + ex.getMessage(),
+                        ex, resp.getStatusCode(), resp.getInputStream());
+                }
+
+                break;
+            case 204:
+            case 404:
+                // as in getCSRAttributes(): drain any error body a server wrongly attached,
+                // and make the status the final answer (github #781)
+                drainErrorBody(resp);
+                template = null;
+                outcomeFinal = true;
+                break;
+            default:
+                throw new ESTException(
+                    "CSR Template request: " + req.getURL().toString(), null,
+                    resp.getStatusCode(), resp.getInputStream());
+            }
+        }
+        catch (Throwable t)
+        {
+            if (t instanceof ESTException)
+            {
+                throw (ESTException)t;
+            }
+            else
+            {
+                throw new ESTException(t.getMessage(), t);
+            }
+        }
+        finally
+        {
+            if (resp != null)
+            {
+                try
+                {
+                    resp.close();
+                }
+                catch (Exception ex)
+                {
+                    if (!outcomeFinal)
+                    {
+                        finalThrowable = ex;
+                    }
+                }
+            }
+        }
+
+        if (finalThrowable != null)
+        {
+            if (finalThrowable instanceof ESTException)
+            {
+                throw (ESTException)finalThrowable;
+            }
+            throw new ESTException(finalThrowable.getMessage(), finalThrowable, resp.getStatusCode(), null);
+        }
+
+        return new C509CSRTemplateResponse(template, resp.getSource());
+    }
+
+    /**
+     * Drain a 204/404 error body so the following close() does not trip the counter stream's
+     * "Stream closed before limit fully read" check. Reads exactly the declared Content-Length and
+     * never seeks EOF: the counter stream has no Content-Length stop of its own, so on a kept-alive
+     * HTTP/1.1 connection whose socket never signals EOF (and no SO_TIMEOUT by default) reading
+     * until EOF would hang the calling thread.
+     * <p>
+     * A response with no Content-Length is deliberately left alone. The only way to reach here
+     * without one is a chunked body - anything else is rejected earlier by ESTResponse - and for
+     * chunked ESTResponse has already normalised its content length to zero, which makes that check
+     * inert ({@code 0 - 1 > read} is false for any read). Its other check, on bytes still in the
+     * pipe, cannot be satisfied from here: the counter stream does not override available(), so a
+     * drain sees zero while close() consults the underlying stream. That mismatch is why the
+     * caller marks the outcome final instead of trying to drain its way to a quiet close.
+     */
+    private static void drainErrorBody(ESTResponse resp)
+        throws IOException
+    {
+        Long bodyLength = resp.getContentLength();
+        if (bodyLength == null)
+        {
+            return;
+        }
+
+        InputStream in = resp.getInputStream();
+        byte[] buf = new byte[1024];
+        long remaining = bodyLength.longValue();
+        while (remaining > 0)
+        {
+            int rd = in.read(buf, 0, (int)Math.min(buf.length, remaining));
+            if (rd < 0)
+            {
+                break;
+            }
+            remaining -= rd;
+        }
     }
 
     private String annotateRequest(byte[] data)

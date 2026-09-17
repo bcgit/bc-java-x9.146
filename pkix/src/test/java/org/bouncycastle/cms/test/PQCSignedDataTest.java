@@ -63,14 +63,14 @@ import org.bouncycastle.operator.bc.BcHssLmsContentSignerBuilder;
 import org.bouncycastle.operator.bc.BcHssLmsContentVerifierProviderBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
-import org.bouncycastle.pqc.crypto.lms.HSSKeyGenerationParameters;
-import org.bouncycastle.pqc.crypto.lms.HSSKeyPairGenerator;
-import org.bouncycastle.pqc.crypto.lms.HSSPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.lms.LMOtsParameters;
-import org.bouncycastle.pqc.crypto.lms.LMSKeyGenerationParameters;
-import org.bouncycastle.pqc.crypto.lms.LMSKeyPairGenerator;
-import org.bouncycastle.pqc.crypto.lms.LMSParameters;
-import org.bouncycastle.pqc.crypto.lms.LMSigParameters;
+import org.bouncycastle.crypto.params.HSSKeyGenerationParameters;
+import org.bouncycastle.crypto.generators.HSSKeyPairGenerator;
+import org.bouncycastle.crypto.params.HSSPublicKeyParameters;
+import org.bouncycastle.crypto.params.LMOtsParameters;
+import org.bouncycastle.crypto.params.LMSKeyGenerationParameters;
+import org.bouncycastle.crypto.generators.LMSKeyPairGenerator;
+import org.bouncycastle.crypto.params.LMSParameters;
+import org.bouncycastle.crypto.params.LMSigParameters;
 import org.bouncycastle.pqc.jcajce.provider.BouncyCastlePQCProvider;
 import org.bouncycastle.util.Store;
 
@@ -90,8 +90,6 @@ public class PQCSignedDataTest
     private static X509Certificate _origLmsCert;
     private static KeyPair _origFalconKP;
     private static X509Certificate _origFalconCert;
-    private static KeyPair _origPicnicKP;
-    private static X509Certificate _origPicnicCert;
     private static KeyPair _origMlDsaKP;
     private static X509Certificate _origMlDsaCert;
     private static KeyPair _origSlhDsaKP;
@@ -104,8 +102,6 @@ public class PQCSignedDataTest
     private static X509Certificate _signLmsCert;
     private static KeyPair _signFalconKP;
     private static X509Certificate _signFalconCert;
-    private static KeyPair _signPicnicKP;
-    private static X509Certificate _signPicnicCert;
     private static KeyPair _signMlDsaKP;
     private static X509Certificate _signMlDsaCert;
     private static KeyPair _signSlhDsaKP;
@@ -184,11 +180,7 @@ public class PQCSignedDataTest
             _signFalconKP = PQCTestUtil.makeFalconKeyPair();
             _signFalconCert = PQCTestUtil.makeCertificate(_signFalconKP, _signDN, _origFalconKP, _origDN);
 
-            _origPicnicKP = PQCTestUtil.makePicnicKeyPair();
-            _origPicnicCert = PQCTestUtil.makeCertificate(_origPicnicKP, _origDN, _origPicnicKP, _origDN);
 
-            _signPicnicKP = PQCTestUtil.makePicnicKeyPair();
-            _signPicnicCert = PQCTestUtil.makeCertificate(_signPicnicKP, _signDN, _origPicnicKP, _origDN);
 
             _origMlDsaKP = PQCTestUtil.makeMlDsaKeyPair();
             _origMlDsaCert = PQCTestUtil.makeCertificate(_origMlDsaKP, _origDN, _origMlDsaKP, _origDN);
@@ -439,7 +431,7 @@ public class PQCSignedDataTest
 
         assertTrue(cert.isSignatureValid(new BcHssLmsContentVerifierProviderBuilder().build(pubKey)));
 
-        AsymmetricKeyParameter certPubKey = org.bouncycastle.pqc.crypto.util.PublicKeyFactory.createKey(cert.getSubjectPublicKeyInfo());
+        AsymmetricKeyParameter certPubKey = org.bouncycastle.crypto.util.PublicKeyFactory.createKey(cert.getSubjectPublicKeyInfo());
 
         assertTrue(cert.isSignatureValid(new BcHssLmsContentVerifierProviderBuilder().build(certPubKey)));
 
@@ -512,7 +504,7 @@ public class PQCSignedDataTest
 
         assertTrue(cert.isSignatureValid(new BcHssLmsContentVerifierProviderBuilder().build(pubKey)));
 
-        AsymmetricKeyParameter certPubKey = ((HSSPublicKeyParameters)org.bouncycastle.pqc.crypto.util.PublicKeyFactory.createKey(cert.getSubjectPublicKeyInfo())).getLMSPublicKey();
+        AsymmetricKeyParameter certPubKey = ((HSSPublicKeyParameters)org.bouncycastle.crypto.util.PublicKeyFactory.createKey(cert.getSubjectPublicKeyInfo())).getLMSPublicKey();
 
         assertTrue(cert.isSignatureValid(new BcHssLmsContentVerifierProviderBuilder().build(certPubKey)));
 
@@ -541,30 +533,6 @@ public class PQCSignedDataTest
         SignerInfo sigInfo = new JcaSignerInfoGeneratorBuilder(digCalcProv).build(new JcaContentSignerBuilder("LMS", new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256)).setProvider(BC).build(_origLmsKP.getPrivate()), _origLmsCert).generate(PKCSObjectIdentifiers.data);
 
         assertEquals(sigInfo.getDigestAlgorithm(), new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256));
-    }
-
-    public void testPicnicEncapsulated()
-        throws Exception
-    {
-        List certList = new ArrayList();
-        CMSTypedData msg = new CMSProcessableByteArray("Hello World!".getBytes());
-
-        certList.add(_origPicnicCert);
-        certList.add(_signPicnicCert);
-
-        Store certs = new JcaCertStore(certList);
-
-        CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
-
-        DigestCalculatorProvider digCalcProv = new JcaDigestCalculatorProviderBuilder().setProvider(BC).build();
-
-        gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(digCalcProv).build(new JcaContentSignerBuilder("PICNIC").setProvider(BCPQC).build(_origPicnicKP.getPrivate()), _origPicnicCert));
-
-        gen.addCertificates(certs);
-
-        CMSSignedData s = gen.generate(msg, true);
-
-        checkSignature(s, gen);
     }
 
     public void testMLDSAEncapsulated()

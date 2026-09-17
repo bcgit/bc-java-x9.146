@@ -1,6 +1,7 @@
 package org.bouncycastle.pqc.jcajce.provider.saber;
 
 import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidParameterException;
 import java.security.KeyPair;
 import java.security.SecureRandom;
 import java.security.spec.AlgorithmParameterSpec;
@@ -51,7 +52,8 @@ public class SABERKeyPairGeneratorSpi
             int strength,
             SecureRandom random)
     {
-        throw new IllegalArgumentException("use AlgorithmParameterSpec");
+        // what the JCA specifies here; it extends IllegalArgumentException, so catches still match
+        throw new InvalidParameterException("use AlgorithmParameterSpec");
     }
 
     public void initialize(
@@ -83,7 +85,10 @@ public class SABERKeyPairGeneratorSpi
         }
         else
         {
-            return Strings.toLowerCase(SpecUtil.getNameFrom(paramSpec));
+            String name = SpecUtil.getNameFrom(paramSpec);
+
+            // null where the spec has no getName(), which the caller reports as the exception it declares
+            return (name == null) ? null : Strings.toLowerCase(name);
         }
     }
 

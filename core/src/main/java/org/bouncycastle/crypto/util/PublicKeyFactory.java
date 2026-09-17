@@ -18,6 +18,7 @@ import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
 import org.bouncycastle.asn1.cryptopro.ECGOST3410NamedCurves;
 import org.bouncycastle.asn1.cryptopro.GOST3410PublicKeyAlgParameters;
+import org.bouncycastle.asn1.iana.IANAObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.DHParameter;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
@@ -41,6 +42,8 @@ import org.bouncycastle.asn1.x9.X9ECPoint;
 import org.bouncycastle.asn1.x9.X9IntegerConverter;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.crypto.params.CMCEParameters;
+import org.bouncycastle.crypto.params.CMCEPublicKeyParameters;
 import org.bouncycastle.crypto.params.DHParameters;
 import org.bouncycastle.crypto.params.DHPublicKeyParameters;
 import org.bouncycastle.crypto.params.DHValidationParameters;
@@ -54,27 +57,26 @@ import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters;
 import org.bouncycastle.crypto.params.Ed448PublicKeyParameters;
 import org.bouncycastle.crypto.params.ElGamalParameters;
 import org.bouncycastle.crypto.params.ElGamalPublicKeyParameters;
-import org.bouncycastle.crypto.params.CMCEParameters;
-import org.bouncycastle.crypto.params.CMCEPublicKeyParameters;
-import org.bouncycastle.crypto.params.MLDSAParameters;
-import org.bouncycastle.crypto.params.MLDSAPublicKeyParameters;
 import org.bouncycastle.crypto.params.FrodoKEMParameters;
 import org.bouncycastle.crypto.params.FrodoKEMPublicKeyParameters;
+import org.bouncycastle.crypto.params.MLDSAParameters;
+import org.bouncycastle.crypto.params.MLDSAPublicKeyParameters;
 import org.bouncycastle.crypto.params.MLKEMParameters;
 import org.bouncycastle.crypto.params.MLKEMPublicKeyParameters;
-import org.bouncycastle.internal.asn1.iso.ISOIECObjectIdentifiers;
 import org.bouncycastle.crypto.params.RSAKeyParameters;
 import org.bouncycastle.crypto.params.SLHDSAParameters;
 import org.bouncycastle.crypto.params.SLHDSAPublicKeyParameters;
 import org.bouncycastle.crypto.params.X25519PublicKeyParameters;
 import org.bouncycastle.crypto.params.X448PublicKeyParameters;
 import org.bouncycastle.internal.asn1.edec.EdECObjectIdentifiers;
+import org.bouncycastle.internal.asn1.isara.IsaraObjectIdentifiers;
 import org.bouncycastle.internal.asn1.iso.ISOIECObjectIdentifiers;
 import org.bouncycastle.internal.asn1.oiw.ElGamalParameter;
 import org.bouncycastle.internal.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.internal.asn1.rosstandart.RosstandartObjectIdentifiers;
 import org.bouncycastle.math.ec.ECCurve;
 import org.bouncycastle.math.ec.ECPoint;
+import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.util.Arrays;
 
 /**
@@ -129,6 +131,15 @@ public class PublicKeyFactory
         converters.put(ISOIECObjectIdentifiers.frodokem1344_aes, new FrodoKEMConverter());
         converters.put(ISOIECObjectIdentifiers.efrodokem976_aes, new FrodoKEMConverter());
         converters.put(ISOIECObjectIdentifiers.efrodokem1344_aes, new FrodoKEMConverter());
+
+        converters.put(PKCSObjectIdentifiers.id_alg_hss_lms_hashsig, new LMSConverter());
+
+        converters.put(PQCObjectIdentifiers.xmss, new XMSSConverter());
+        converters.put(PQCObjectIdentifiers.xmss_mt, new XMSSConverter());
+        converters.put(IsaraObjectIdentifiers.id_alg_xmss, new XMSSConverter());
+        converters.put(IsaraObjectIdentifiers.id_alg_xmssmt, new XMSSConverter());
+        converters.put(IANAObjectIdentifiers.id_alg_xmss_hashsig, new XMSSConverter());
+        converters.put(IANAObjectIdentifiers.id_alg_xmssmt_hashsig, new XMSSConverter());
 
         converters.put(NISTObjectIdentifiers.id_slh_dsa_sha2_128s, new SLHDSAConverter());
         converters.put(NISTObjectIdentifiers.id_slh_dsa_sha2_128f, new SLHDSAConverter());
@@ -255,6 +266,39 @@ public class PublicKeyFactory
     {
         abstract AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
             throws IOException;
+    }
+
+    private static class XMSSConverter
+        extends SubjectPublicKeyInfoConverter
+    {
+        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
+            throws IOException
+        {
+            AsymmetricKeyParameter key = XmssKeyUtil.createPublicKey(keyInfo);
+
+            // the helper answers null for a key it does not handle, and in the legacy Ant
+            // distributions that excludes XMSS it is a stub that answers null for every key. Say so
+            // here rather than handing the null back through createKey(), where it would surface as
+            // an unrelated NullPointerException somewhere in the caller: before these six OIDs were
+            // routed here they fell through to the same message below.
+            if (key == null)
+            {
+                throw new IOException("algorithm identifier in public key not recognised: "
+                    + keyInfo.getAlgorithm().getAlgorithm());
+            }
+
+            return key;
+        }
+    }
+
+    private static class LMSConverter
+        extends SubjectPublicKeyInfoConverter
+    {
+        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
+            throws IOException
+        {
+            return LmsKeyUtil.createPublicKey(keyInfo);
+        }
     }
 
     private static class RSAConverter

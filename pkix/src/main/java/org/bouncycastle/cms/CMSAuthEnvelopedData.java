@@ -32,18 +32,38 @@ public class CMSAuthEnvelopedData
     private byte[] mac;
     private ASN1Set unauthAttrs;
 
+    /**
+     * Create a CMSAuthEnvelopedData object from its encoding.
+     *
+     * @param authEnvData the complete encoding of the AuthEnvelopedData structure (a CMS ContentInfo).
+     *                    The array must hold the entire encoding and nothing extra - trailing bytes
+     *                    beyond the AuthEnvelopedData are not permitted.
+     * @throws CMSException if the encoding cannot be parsed as an AuthEnvelopedData.
+     */
     public CMSAuthEnvelopedData(byte[] authEnvData)
         throws CMSException
     {
         this(CMSUtils.readContentInfo(authEnvData));
     }
 
+    /**
+     * Create a CMSAuthEnvelopedData object from a stream.
+     *
+     * @param authEnvData a stream positioned at the start of the AuthEnvelopedData encoding (a CMS ContentInfo).
+     * @throws CMSException if the encoding cannot be parsed as an AuthEnvelopedData.
+     */
     public CMSAuthEnvelopedData(InputStream authEnvData)
         throws CMSException
     {
         this(CMSUtils.readContentInfo(authEnvData));
     }
 
+    /**
+     * Create a CMSAuthEnvelopedData object from an already-parsed ContentInfo.
+     *
+     * @param contentInfo the ContentInfo carrying the AuthEnvelopedData.
+     * @throws CMSException if the ContentInfo does not hold a well-formed AuthEnvelopedData.
+     */
     public CMSAuthEnvelopedData(ContentInfo contentInfo)
         throws CMSException
     {
@@ -55,10 +75,92 @@ public class CMSAuthEnvelopedData
             throw new CMSException("Missing content.");
         }
 
-        AuthEnvelopedData authEnvData;
         try
         {
-            authEnvData = AuthEnvelopedData.getInstance(content);
+            AuthEnvelopedData authEnvData = AuthEnvelopedData.getInstance(content);
+
+            if (authEnvData.getOriginatorInfo() != null)
+            {
+                this.originatorInfo = new OriginatorInformation(authEnvData.getOriginatorInfo());
+            }
+
+            //
+            // read the recipients
+            //
+            ASN1Set recipientInfos = authEnvData.getRecipientInfos();
+
+            //
+            // read the auth-encrypted content info
+            //
+            final EncryptedContentInfo authEncInfo = authEnvData.getAuthEncryptedContentInfo();
+            this.authEncAlg = authEncInfo.getContentEncryptionAlgorithm();
+
+            this.mac = authEnvData.getMac().getOctets();
+
+            CMSSecureReadable secureReadable = new CMSSecureReadableWithAAD()
+            {
+                private OutputStream aadStream;
+
+                @Override
+                public ASN1Set getAuthAttrSet()
+                {
+                    return authAttrs;
+                }
+
+                @Override
+                public void setAuthAttrSet(ASN1Set set)
+                {
+
+                }
+
+                @Override
+                public boolean hasAdditionalData()
+                {
+                    return (aadStream != null && authAttrs != null);
+                }
+
+                public ASN1ObjectIdentifier getContentType()
+                {
+                    return authEncInfo.getContentType();
+                }
+
+                public InputStream getInputStream()
+                    throws IOException
+                {
+                    if (aadStream != null && authAttrs != null)
+                    {
+                        aadStream.write(authAttrs.getEncoded(ASN1Encoding.DER));
+                    }
+                    return new InputStreamWithMAC(new ByteArrayInputStream(authEncInfo.getEncryptedContent().getOctets()), mac);
+                }
+
+                @Override
+                public void setAADStream(OutputStream stream)
+                {
+                    aadStream = stream;
+                }
+
+                public OutputStream getAADStream()
+                {
+                    return aadStream;
+                }
+
+                @Override
+                public byte[] getMAC()
+                {
+                    return Arrays.clone(mac);
+                }
+            };
+
+            this.authAttrs = authEnvData.getAuthAttrs();
+
+            this.unauthAttrs = authEnvData.getUnauthAttrs();
+
+            //
+            // build the RecipientInformationStore
+            //
+            this.recipientInfoStore = CMSEnvelopedHelper.buildRecipientInformationStore(
+                recipientInfos, this.authEncAlg, secureReadable);
         }
         catch (ClassCastException e)
         {
@@ -68,89 +170,6 @@ public class CMSAuthEnvelopedData
         {
             throw new CMSException("Malformed content.", e);
         }
-
-        if (authEnvData.getOriginatorInfo() != null)
-        {
-            this.originatorInfo = new OriginatorInformation(authEnvData.getOriginatorInfo());
-        }
-
-        //
-        // read the recipients
-        //
-        ASN1Set recipientInfos = authEnvData.getRecipientInfos();
-
-        //
-        // read the auth-encrypted content info
-        //
-        final EncryptedContentInfo authEncInfo = authEnvData.getAuthEncryptedContentInfo();
-        this.authEncAlg = authEncInfo.getContentEncryptionAlgorithm();
-
-        this.mac = authEnvData.getMac().getOctets();
-
-        CMSSecureReadable secureReadable = new CMSSecureReadableWithAAD()
-        {
-            private OutputStream aadStream;
-
-            @Override
-            public ASN1Set getAuthAttrSet()
-            {
-                return authAttrs;
-            }
-
-            @Override
-            public void setAuthAttrSet(ASN1Set set)
-            {
-
-            }
-
-            @Override
-            public boolean hasAdditionalData()
-            {
-                return (aadStream != null && authAttrs != null);
-            }
-
-            public ASN1ObjectIdentifier getContentType()
-            {
-                return authEncInfo.getContentType();
-            }
-
-            public InputStream getInputStream()
-                throws IOException
-            {
-                if (aadStream != null && authAttrs != null)
-                {
-                    aadStream.write(authAttrs.getEncoded(ASN1Encoding.DER));
-                }
-                return new InputStreamWithMAC(new ByteArrayInputStream(authEncInfo.getEncryptedContent().getOctets()), mac);
-            }
-
-            @Override
-            public void setAADStream(OutputStream stream)
-            {
-                aadStream = stream;
-            }
-
-            public OutputStream getAADStream()
-            {
-                return aadStream;
-            }
-
-            @Override
-            public byte[] getMAC()
-            {
-                return Arrays.clone(mac);
-            }
-        };
-
-        this.authAttrs = authEnvData.getAuthAttrs();
-
-        this.unauthAttrs = authEnvData.getUnauthAttrs();
-
-        //
-        // build the RecipientInformationStore
-        //
-        this.recipientInfoStore = CMSEnvelopedHelper.buildRecipientInformationStore(
-            recipientInfos, this.authEncAlg, secureReadable);
     }
 
 

@@ -294,11 +294,11 @@ class SABERCipherSpi
         }
         catch (IllegalArgumentException e)
         {
-            throw new NoSuchAlgorithmException("unable to extract KTS secret: " + e.getMessage());
+            throw SecurityExceptions.noSuchAlgorithmException("unable to extract KTS secret: " + e.getMessage(), e);
         }
         catch (InvalidCipherTextException e)
         {
-            throw new InvalidKeyException("unable to extract KTS secret: " + e.getMessage());
+            throw SecurityExceptions.invalidKeyException("unable to extract KTS secret: " + e.getMessage(), e);
         }
     }
 

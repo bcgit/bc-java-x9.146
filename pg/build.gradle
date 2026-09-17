@@ -48,6 +48,7 @@ task stampVersion {
         def filesToStamp = [
             file('src/main/java/org/bouncycastle/bcpg/ArmoredOutputStream.java'),
             file('src/main/jdk1.4/org/bouncycastle/bcpg/ArmoredOutputStream.java'),
+            file('src/main/jdk1.3/org/bouncycastle/bcpg/ArmoredOutputStream.java'),
             file('src/test/java/org/bouncycastle/openpgp/test/ECDSAKeyPairTest.java'),
             file('src/test/java/org/bouncycastle/openpgp/test/PGPv6SignatureTest.java'),
             file('src/test/java/org/bouncycastle/bcpg/test/BCPGOutputStreamTest.java')
@@ -85,6 +86,7 @@ compileJava9Java {
     ]
 
     options.sourcepath = files(['src/main/java', 'src/main/jdk1.9'])
+    options.compilerArgs << '-implicit:none'  // avoid recompiling every baseline class implicitly loaded via sourcepath
 }
 
 

@@ -2,9 +2,9 @@ package org.bouncycastle.tls.crypto.impl.bc;
 
 import org.bouncycastle.crypto.Signer;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.crypto.signers.MLDSASigner;
 import org.bouncycastle.pqc.crypto.MessageSigner;
 import org.bouncycastle.pqc.crypto.falcon.FalconSigner;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSASigner;
 import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
 import org.bouncycastle.tls.SignatureScheme;

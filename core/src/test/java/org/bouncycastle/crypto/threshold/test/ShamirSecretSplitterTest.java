@@ -32,9 +32,343 @@ public class ShamirSecretSplitterTest
     {
         testShamirSecretResplit();
         testShamirSecretMultipleDivide();
+        testMultipleDivideRejectFieldZero();
         testShamirSecretSplitterSplitAround();
         testPolynomial();
+        testPolynomialModeEquivalence();
         testShamirSecretSplitter();
+        testShareCountIndependentOfSecretLength();
+        testLargeShareSetRecovery();
+        testSplitAroundThresholdOfOne();
+        testSplitAroundRejectsWrongLengthShare();
+        testResplitRejectsWrongLengthSecret();
+        testRecoveryRejectsEmptyShareSet();
+    }
+
+    /**
+     * resplit sizes its coefficient rows by l but took the replacement secret at whatever length it
+     * came in at, so a short secret silently produced shares shorter than l and a long one threw an
+     * ArrayIndexOutOfBoundsException. Both are now rejected, as splitAround already rejected a
+     * wrong-length share.
+     */
+    public void testResplitRejectsWrongLengthSecret()
+        throws IOException
+    {
+        int l = 16, m = 3, n = 5;
+
+        int[] wrongLengths = new int[]{l - 1, l + 1};
+
+        for (int w = 0; w != wrongLengths.length; w++)
+        {
+            ShamirSecretSplitter splitter = ShamirSecretSplitter.getInstance(
+                ShamirSecretSplitter.Algorithm.AES, l, new SecureRandom());
+
+            try
+            {
+                splitter.resplit(new byte[wrongLengths[w]], m, n);
+                fail("resplit accepted a secret of length " + wrongLengths[w] + " for l = " + l);
+            }
+            catch (IllegalArgumentException e)
+            {
+                assertEquals("Invalid input: the secret must be l bytes long.", e.getMessage());
+            }
+        }
+
+        // an l-byte secret still resplits, and the shares recombine to it
+        ShamirSecretSplitter splitter = ShamirSecretSplitter.getInstance(
+            ShamirSecretSplitter.Algorithm.AES, l, new SecureRandom());
+        byte[] secret = new byte[l];
+        for (int i = 0; i != l; i++)
+        {
+            secret[i] = (byte)i;
+        }
+
+        ShamirSplitSecretShare[] shares = (ShamirSplitSecretShare[])splitter.resplit(secret, m, n).getSecretShares();
+
+        assertEquals("wrong number of shares", n, shares.length);
+
+        ShamirSplitSecretShare[] quorum = new ShamirSplitSecretShare[m];
+        System.arraycopy(shares, 0, quorum, 0, m);
+
+        assertTrue("resplit shares do not recombine to the supplied secret",
+            Arrays.areEqual(secret,
+                ShamirSplitSecret.getInstance(ShamirSecretSplitter.Algorithm.AES, quorum).getSecret()));
+    }
+
+    /**
+     * Nothing can be recovered from no shares at all. getSecret used to size its Lagrange product
+     * array at one less than the share count, so an empty set threw a NegativeArraySizeException.
+     */
+    public void testRecoveryRejectsEmptyShareSet()
+        throws IOException
+    {
+        try
+        {
+            ShamirSplitSecret.getInstance(
+                ShamirSecretSplitter.Algorithm.AES, new ShamirSplitSecretShare[0]).getSecret();
+            fail("empty share set accepted");
+        }
+        catch (IllegalArgumentException e)
+        {
+            assertEquals("Invalid input: at least one secret share is required.", e.getMessage());
+        }
+    }
+
+    /**
+     * Recovery has to work for any share count the splitter will produce. getSecret counted the
+     * Lagrange products into a byte, so from 130 shares up the index wrapped negative and threw an
+     * ArrayIndexOutOfBoundsException.
+     */
+    public void testLargeShareSetRecovery()
+        throws IOException
+    {
+        int l = 16, m = 3;
+        int[] shareCounts = new int[]{129, 130, 255};
+
+        for (int c = 0; c != shareCounts.length; c++)
+        {
+            int n = shareCounts[c];
+            ShamirSecretSplitter splitter = ShamirSecretSplitter.getInstance(
+                ShamirSecretSplitter.Algorithm.AES, l, new SecureRandom());
+            ShamirSplitSecretShare[] shares = (ShamirSplitSecretShare[])splitter.split(m, n).getSecretShares();
+
+            assertEquals("n=" + n + ": wrong number of shares", n, shares.length);
+
+            ShamirSplitSecretShare[] quorum = new ShamirSplitSecretShare[m];
+            System.arraycopy(shares, 0, quorum, 0, m);
+
+            assertTrue("n=" + n + ": recovery over all shares disagrees with an m-share quorum",
+                Arrays.areEqual(
+                    ShamirSplitSecret.getInstance(ShamirSecretSplitter.Algorithm.AES, shares).getSecret(),
+                    ShamirSplitSecret.getInstance(ShamirSecretSplitter.Algorithm.AES, quorum).getSecret()));
+        }
+    }
+
+    /**
+     * A threshold of one is a degenerate but legal split - every share is the secret. splitAround
+     * read the second coefficient row unconditionally, so it threw an ArrayIndexOutOfBoundsException
+     * before producing any share.
+     */
+    public void testSplitAroundThresholdOfOne()
+        throws IOException
+    {
+        int l = 9, n = 4;
+        byte[] seed = Hex.decode("010203040506070809");
+
+        ShamirSecretSplitter splitter = ShamirSecretSplitter.getInstance(
+            ShamirSecretSplitter.Algorithm.AES, l, new SecureRandom());
+        ShamirSplitSecretShare[] shares = (ShamirSplitSecretShare[])
+            splitter.splitAround(new ShamirSplitSecretShare(seed), 1, n).getSecretShares();
+
+        assertEquals("wrong number of shares", n, shares.length);
+        for (int i = 0; i != shares.length; i++)
+        {
+            assertTrue("share " + i + " of a 1-of-n split is not the secret",
+                Arrays.areEqual(seed, shares[i].getEncoded()));
+        }
+    }
+
+    /**
+     * splitAround folds the supplied share over the secret length l, so a share of any other length
+     * used to fail with an ArrayIndexOutOfBoundsException (short), or be carried into the result at
+     * its own length while every other share was l bytes (long).
+     */
+    public void testSplitAroundRejectsWrongLengthShare()
+        throws IOException
+    {
+        int l = 9;
+        int[] lengths = new int[]{0, 8, 10};
+
+        for (int c = 0; c != lengths.length; c++)
+        {
+            ShamirSecretSplitter splitter = ShamirSecretSplitter.getInstance(
+                ShamirSecretSplitter.Algorithm.AES, l, new SecureRandom());
+            try
+            {
+                splitter.splitAround(new ShamirSplitSecretShare(new byte[lengths[c]]), 3, 5);
+                fail("share of length " + lengths[c] + " accepted for l = " + l);
+            }
+            catch (IllegalArgumentException e)
+            {
+                assertEquals("Invalid input: the secret share must be l bytes long.", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * The generated share array is sized by the requested number of shares n, not by the length l
+     * of the secret. Prior to this being fixed n &lt; l left trailing nulls in the array (so recovery
+     * threw a NullPointerException) and n &gt; l overflowed it, which meant only n == l worked.
+     */
+    public void testShareCountIndependentOfSecretLength()
+        throws IOException
+    {
+        ShamirSecretSplitter.Algorithm[] algorithms = new ShamirSecretSplitter.Algorithm[]
+            {
+                ShamirSecretSplitter.Algorithm.AES,
+                ShamirSecretSplitter.Algorithm.RSA
+            };
+        ShamirSecretSplitter.Mode[] modes = new ShamirSecretSplitter.Mode[]
+            {
+                ShamirSecretSplitter.Mode.Table,
+                ShamirSecretSplitter.Mode.Native
+            };
+        int l = 9, m = 3;
+        int[] shareCounts = new int[]{5, 9, 12};    // n < l, n == l, n > l
+
+        for (int a = 0; a != algorithms.length; a++)
+        {
+            for (int md = 0; md != modes.length; md++)
+            {
+                for (int c = 0; c != shareCounts.length; c++)
+                {
+                    checkShareCount(algorithms[a], modes[md], l, m, shareCounts[c]);
+                }
+            }
+        }
+    }
+
+    private void checkShareCount(ShamirSecretSplitter.Algorithm algorithm, ShamirSecretSplitter.Mode mode, int l, int m, int n)
+        throws IOException
+    {
+        String label = algorithm + "/" + mode + " l=" + l + ", m=" + m + ", n=" + n;
+        SecureRandom random = new SecureRandom();
+        ShamirSecretSplitter splitter = new ShamirSecretSplitter(algorithm, mode, l, random);
+
+        byte[] secret = checkShares(label + " split", algorithm, mode,
+            (ShamirSplitSecret)splitter.split(m, n), l, m, n);
+
+        byte[] resplitSecret = checkShares(label + " resplit", algorithm, mode,
+            (ShamirSplitSecret)splitter.resplit(secret, m, n), l, m, n);
+        assertTrue(label + " resplit: recovered a different secret", Arrays.areEqual(secret, resplitSecret));
+
+        byte[] seed = new byte[l];
+        random.nextBytes(seed);
+        ShamirSplitSecret around = (ShamirSplitSecret)splitter.splitAround(new ShamirSplitSecretShare(seed), m, n);
+        assertTrue(label + " splitAround: first share is not the supplied one",
+            Arrays.areEqual(seed, around.getSecretShares()[0].getEncoded()));
+        checkShares(label + " splitAround", algorithm, mode, around, l, m, n);
+    }
+
+    private byte[] checkShares(String label, ShamirSecretSplitter.Algorithm algorithm, ShamirSecretSplitter.Mode mode,
+                               ShamirSplitSecret splitSecret, int l, int m, int n)
+        throws IOException
+    {
+        ShamirSplitSecretShare[] shares = (ShamirSplitSecretShare[])splitSecret.getSecretShares();
+
+        assertEquals(label + ": wrong number of shares", n, shares.length);
+        for (int i = 0; i != shares.length; i++)
+        {
+            assertNotNull(label + ": share " + i + " is null", shares[i]);
+            assertEquals(label + ": share " + i + " has the wrong length", l, shares[i].getEncoded().length);
+        }
+
+        // recovery over the whole share set, and over the first and the last m shares, must agree -
+        // the last m exercise the entries past index l - 1 when n > l.
+        byte[] secret = splitSecret.getSecret();
+        assertTrue(label + ": first " + m + " shares recover a different secret",
+            Arrays.areEqual(secret, recover(algorithm, mode, shares, 0, m)));
+        assertTrue(label + ": last " + m + " shares recover a different secret",
+            Arrays.areEqual(secret, recover(algorithm, mode, shares, n - m, m)));
+
+        // multiple() and divide() walk every entry of the share array
+        splitSecret.multiple(0x53);
+        splitSecret.divide(0x53);
+        assertTrue(label + ": multiple/divide round trip changed the secret",
+            Arrays.areEqual(secret, splitSecret.getSecret()));
+
+        return secret;
+    }
+
+    private byte[] recover(ShamirSecretSplitter.Algorithm algorithm, ShamirSecretSplitter.Mode mode,
+                           ShamirSplitSecretShare[] shares, int off, int len)
+        throws IOException
+    {
+        ShamirSplitSecretShare[] subset = new ShamirSplitSecretShare[len];
+        System.arraycopy(shares, off, subset, 0, len);
+        return new ShamirSplitSecret(algorithm, mode, subset).getSecret();
+    }
+
+    /**
+     * The mode-free getInstance and both deprecated Mode values have to be interchangeable, since all
+     * three now run the same GF(256) arithmetic. Recombining through each of them must give the same
+     * secret, and all three must reject a zero divisor rather than wiping the share set.
+     */
+    public void testPolynomialModeEquivalence()
+        throws IOException
+    {
+        int l = 9, m = 3, n = 9;
+
+        ShamirSecretSplitter.Algorithm[] algorithms = new ShamirSecretSplitter.Algorithm[]
+            {ShamirSecretSplitter.Algorithm.AES, ShamirSecretSplitter.Algorithm.RSA};
+        ShamirSecretSplitter.Mode[] modes = new ShamirSecretSplitter.Mode[]
+            {ShamirSecretSplitter.Mode.Table, ShamirSecretSplitter.Mode.Native};
+
+        for (int a = 0; a != algorithms.length; a++)
+        {
+            ShamirSecretSplitter.Algorithm algorithm = algorithms[a];
+
+            ShamirSecretSplitter splitter = ShamirSecretSplitter.getInstance(algorithm, l, new SecureRandom());
+            ShamirSplitSecretShare[] shares = (ShamirSplitSecretShare[])splitter.split(m, n).getSecretShares();
+
+            ShamirSplitSecretShare[] quorum = new ShamirSplitSecretShare[m];
+            System.arraycopy(shares, 0, quorum, 0, m);
+
+            // slot 0 is the mode-free API, slots 1 and 2 the two deprecated modes
+            byte[][] recovered = new byte[modes.length + 1][];
+
+            recovered[0] = ShamirSplitSecret.getInstance(algorithm, copyOf(quorum)).getSecret();
+            assertRejectsZeroDivisor(ShamirSplitSecret.getInstance(algorithm, copyOf(shares)), algorithm);
+
+            for (int i = 0; i != modes.length; i++)
+            {
+                recovered[i + 1] = new ShamirSplitSecret(algorithm, modes[i], copyOf(quorum)).getSecret();
+                assertRejectsZeroDivisor(new ShamirSplitSecret(algorithm, modes[i], copyOf(shares)), algorithm);
+            }
+
+            for (int i = 1; i != recovered.length; i++)
+            {
+                assertTrue("reconstruction differs from the mode-free API for " + algorithm,
+                    Arrays.areEqual(recovered[0], recovered[i]));
+            }
+        }
+    }
+
+    private void assertRejectsZeroDivisor(ShamirSplitSecret splitSecret, ShamirSecretSplitter.Algorithm algorithm)
+        throws IOException
+    {
+        byte[] before = flatten(splitSecret.getSecretShares());
+
+        try
+        {
+            splitSecret.divide(0);
+            fail("zero divisor accepted for " + algorithm);
+        }
+        catch (IllegalArgumentException e)
+        {
+            assertEquals("Invalid input: the divisor cannot be zero.", e.getMessage());
+        }
+
+        assertTrue("shares were modified by a rejected divide for " + algorithm,
+            Arrays.areEqual(before, flatten(splitSecret.getSecretShares())));
+    }
+
+    private static ShamirSplitSecretShare[] copyOf(ShamirSplitSecretShare[] shares)
+    {
+        ShamirSplitSecretShare[] copy = new ShamirSplitSecretShare[shares.length];
+        System.arraycopy(shares, 0, copy, 0, shares.length);
+        return copy;
+    }
+
+    private static byte[] flatten(SecretShare[] shares)
+        throws IOException
+    {
+        byte[] out = new byte[0];
+        for (int i = 0; i != shares.length; i++)
+        {
+            out = Arrays.concatenate(out, shares[i].getEncoded());
+        }
+        return out;
     }
 
     public void testShamirSecretResplit()
@@ -102,6 +436,70 @@ public class ShamirSecretSplitterTest
         ShamirSplitSecret splitSecret3 = new ShamirSplitSecret(algorithm, mode, secretShares3);
         byte[] secret3 = splitSecret3.getSecret();
         assertFalse(Arrays.areEqual(secret1, secret3));
+    }
+
+    /**
+     * divide() and multiple() rewrite every share in place, so a zero divisor or multiplier would
+     * silently overwrite the whole set with zeroes and irreversibly destroy the secret. gfMul reduces
+     * its operand modulo 256, so the field's zero element is any value with (v &amp; 0xFF) == 0 - not just
+     * an exact 0 - and both methods reject it up front. An in-range re-scale must still be accepted.
+     */
+    public void testMultipleDivideRejectFieldZero()
+        throws IOException
+    {
+        int l = 9, m = 3, n = 9;
+        SecureRandom random = new SecureRandom();
+        ShamirSecretSplitter.Algorithm algorithm = ShamirSecretSplitter.Algorithm.AES;
+
+        int[] fieldZeros = new int[]{0, 256, 512};
+
+        for (int z = 0; z != fieldZeros.length; z++)
+        {
+            ShamirSecretSplitter splitter = ShamirSecretSplitter.getInstance(algorithm, l, random);
+
+            try
+            {
+                ((ShamirSplitSecret)splitter.split(m, n)).divide(fieldZeros[z]);
+                fail("divide accepted the field-zero divisor " + fieldZeros[z]);
+            }
+            catch (IllegalArgumentException e)
+            {
+                assertEquals("Invalid input: the divisor cannot be zero.", e.getMessage());
+            }
+
+            try
+            {
+                ((ShamirSplitSecret)splitter.split(m, n)).multiple(fieldZeros[z]);
+                fail("multiple accepted the field-zero multiplier " + fieldZeros[z]);
+            }
+            catch (IllegalArgumentException e)
+            {
+                assertEquals("Invalid input: the multiplier cannot be zero.", e.getMessage());
+            }
+        }
+
+        // an in-range multiplier is still accepted, and multiple(k) followed by divide(k) leaves every
+        // share byte unchanged - the guard must not reject a legitimate re-scale.
+        ShamirSecretSplitter splitter = ShamirSecretSplitter.getInstance(algorithm, l, random);
+        ShamirSplitSecret splitSecret = (ShamirSplitSecret)splitter.split(m, n);
+
+        ShamirSplitSecretShare[] originalShares = (ShamirSplitSecretShare[])splitSecret.getSecretShares();
+        byte[][] before = new byte[originalShares.length][];
+        for (int i = 0; i != originalShares.length; i++)
+        {
+            before[i] = Arrays.clone(originalShares[i].getEncoded());
+        }
+
+        int k = random.nextInt(255) + 1;    // 1..255, a non-zero field element
+        splitSecret.multiple(k).divide(k);
+
+        ShamirSplitSecretShare[] after = (ShamirSplitSecretShare[])splitSecret.getSecretShares();
+        assertEquals("share count changed", before.length, after.length);
+        for (int i = 0; i != before.length; i++)
+        {
+            assertTrue("multiple(" + k + ").divide(" + k + ") altered share " + i,
+                Arrays.areEqual(before[i], after[i].getEncoded()));
+        }
     }
 
     public void testShamirSecretSplitterSplitAround()
@@ -939,12 +1337,6 @@ public class ShamirSecretSplitterTest
         ShamirSecretSplitter newInstance(int l, int m, int n, SecureRandom random);
 
         ShamirSplitSecret newInstance(ShamirSplitSecretShare[] secretShares);
-    }
-
-    @Override
-    public String getName()
-    {
-        return "Polynomial Test";
     }
 
     public void testPolynomial()

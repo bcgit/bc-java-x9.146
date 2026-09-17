@@ -1,8 +1,8 @@
 package org.bouncycastle.pqc.crypto.test;
 
-import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumParameters;
-import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumSigner;
+import org.bouncycastle.pqc.legacy.crystals.dilithium.DilithiumParameters;
+import org.bouncycastle.pqc.legacy.crystals.dilithium.DilithiumPublicKeyParameters;
+import org.bouncycastle.pqc.legacy.crystals.dilithium.DilithiumSigner;
 import org.bouncycastle.util.encoders.Hex;
 
 public class myTest

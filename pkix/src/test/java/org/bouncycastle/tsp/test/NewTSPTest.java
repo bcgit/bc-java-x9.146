@@ -63,7 +63,6 @@ import org.bouncycastle.cms.DefaultSignedAttributeTableGenerator;
 import org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder;
 import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoGeneratorBuilder;
 import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder;
-import org.bouncycastle.cms.test.CMSTestUtil;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.jce.spec.ECNamedCurveGenParameterSpec;
 import org.bouncycastle.operator.ContentSigner;
@@ -148,15 +147,15 @@ public class NewTSPTest
         List            certList = new ArrayList();
 
         String _origDN   = "O=Bouncy Castle, C=AU";
-        KeyPair _origKP   = CMSTestUtil.makeKeyPair();
-        X509Certificate _origCert = CMSTestUtil.makeCertificate(_origKP, _origDN, _origKP, _origDN);
+        KeyPair _origKP   = TSPTestUtil.makeKeyPair();
+        X509Certificate _origCert = TSPTestUtil.makeCertificate(_origKP, _origDN, _origKP, _origDN);
 
         String _signDN   = "CN=Bob, OU=Sales, O=Bouncy Castle, C=AU";
-        KeyPair _signKP   = CMSTestUtil.makeKeyPair();
+        KeyPair _signKP   = TSPTestUtil.makeKeyPair();
         X509Certificate _signCert = TSPTestUtil.makeCertificate(_signKP, _signDN, _origKP, _origDN);
 
-        KeyPair _signDsaKP   = CMSTestUtil.makeDsaKeyPair();
-        X509Certificate _signDsaCert = CMSTestUtil.makeCertificate(_signDsaKP, _signDN, _origKP, _origDN);
+        KeyPair _signDsaKP   = TSPTestUtil.makeDsaKeyPair();
+        X509Certificate _signDsaCert = TSPTestUtil.makeCertificate(_signDsaKP, _signDN, _origKP, _origDN);
 
         certList.add(_origCert);
         certList.add(_signDsaCert);
@@ -1284,6 +1283,74 @@ public class NewTSPTest
         catch (TSPException e)
         {
             assertEquals("signing certificate attribute MUST contain at least one AttributeValue", e.getMessage());
+        }
+    }
+
+    public void testNoSignedAttributes()
+        throws Exception
+    {
+        String signDN = "O=Bouncy Castle, C=AU";
+        KeyPair signKP = TSPTestUtil.makeKeyPair();
+        X509Certificate signCert = TSPTestUtil.makeCACertificate(signKP, signDN, signKP, signDN);
+
+        String origDN = "CN=Eric H. Echidna, E=eric@bouncycastle.org, O=Bouncy Castle, C=AU";
+        KeyPair origKP = TSPTestUtil.makeKeyPair();
+        X509Certificate origCert = TSPTestUtil.makeCertificate(origKP, origDN, signKP, signDN);
+
+        List certList = new ArrayList();
+        certList.add(origCert);
+        certList.add(signCert);
+
+        Store certs = new JcaCertStore(certList);
+
+        TimeStampTokenGenerator tsTokenGen = new TimeStampTokenGenerator(
+            new JcaSimpleSignerInfoGeneratorBuilder().build("SHA1withRSA", origKP.getPrivate(), origCert), new SHA1DigestCalculator(), new ASN1ObjectIdentifier("1.2"));
+
+        tsTokenGen.addCertificates(certs);
+
+        TimeStampRequestGenerator reqGen = new TimeStampRequestGenerator();
+        TimeStampRequest request = reqGen.generate(TSPAlgorithms.SHA1, new byte[20], BigInteger.valueOf(100));
+
+        TimeStampResponseGenerator tsRespGen = new TimeStampResponseGenerator(tsTokenGen, TSPAlgorithms.ALLOWED);
+        TimeStampResponse tsResp = tsRespGen.generate(request, new BigInteger("23"), new Date());
+
+        TimeStampToken validToken = tsResp.getTimeStampToken();
+
+        // surgically rewrite the single SignerInfo so it carries NO signed (authenticated) attributes at
+        // all -> SignerInformation.getSignedAttributes() returns null. The token must be rejected with a
+        // typed TSPValidationException, NOT a raw NullPointerException from dereferencing the null table.
+        SignedData signedData = SignedData.getInstance(validToken.toCMSSignedData().toASN1Structure().getContent());
+
+        ASN1Set signerInfos = signedData.getSignerInfos();
+        assertEquals(1, signerInfos.size());
+
+        SignerInfo signerInfo = SignerInfo.getInstance(signerInfos.getObjectAt(0));
+
+        SignerInfo corruptedSignerInfo = new SignerInfo(
+            signerInfo.getSID(),
+            signerInfo.getDigestAlgorithm(),
+            (Attributes)null,
+            signerInfo.getDigestEncryptionAlgorithm(),
+            signerInfo.getEncryptedDigest(),
+            signerInfo.getUnauthenticatedAttributes() == null ? null : Attributes.getInstance(signerInfo.getUnauthenticatedAttributes()));
+
+        SignedData corruptedSignedData = new SignedData(
+            signedData.getDigestAlgorithms(),
+            signedData.getEncapContentInfo(),
+            signedData.getCertificates(),
+            signedData.getCRLs(),
+            new DERSet(corruptedSignerInfo));
+
+        ContentInfo corruptedContentInfo = new ContentInfo(CMSObjectIdentifiers.signedData, corruptedSignedData);
+
+        try
+        {
+            new TimeStampToken(corruptedContentInfo);
+            fail("no exception on time-stamp token without signed attributes");
+        }
+        catch (TSPException e)
+        {
+            assertEquals("no signing certificate attribute found, time stamp invalid.", e.getMessage());
         }
     }
 

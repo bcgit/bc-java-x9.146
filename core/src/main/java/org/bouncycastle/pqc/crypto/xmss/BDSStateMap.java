@@ -11,6 +11,10 @@ import java.util.TreeMap;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.util.Integers;
 
+/**
+ * @deprecated use {@link org.bouncycastle.crypto.signers.xmss.BDSStateMap} instead.
+ */
+@Deprecated
 public class BDSStateMap
     implements Serializable
 {
@@ -48,6 +52,17 @@ public class BDSStateMap
     public long getMaxIndex()
     {
         return maxIndex;
+    }
+
+    /**
+     * Zeroize the secret material retained by every layer's state; see {@link BDS#clearSecrets()}.
+     */
+    void clearSecrets()
+    {
+        for (Iterator<BDS> it = bdsState.values().iterator(); it.hasNext();)
+        {
+            it.next().clearSecrets();
+        }
     }
 
     void updateState(XMSSMTParameters params, long globalIndex, byte[] publicSeed, byte[] secretKeySeed)
@@ -102,6 +117,111 @@ public class BDSStateMap
     public boolean isEmpty()
     {
         return bdsState.isEmpty();
+    }
+
+    Map<Integer, BDS> getStateMap()
+    {
+        return bdsState;
+    }
+
+    void validate(XMSSMTParameters params)
+    {
+        long maxIndexLimit = (1L << params.getHeight()) - 1;
+        if (bdsState == null || maxIndex < 0 || maxIndex > maxIndexLimit
+            || bdsState.size() > params.getLayers())
+        {
+            throw new IllegalStateException("BDS state map does not match XMSSMT parameters");
+        }
+
+        XMSSParameters xmssParams = params.getXMSSParameters();
+        for (Iterator<Integer> it = bdsState.keySet().iterator(); it.hasNext();)
+        {
+            Integer layer = it.next();
+            if (layer.intValue() < 0 || layer.intValue() >= params.getLayers())
+            {
+                throw new IllegalStateException("BDS state map has invalid layer");
+            }
+            BDS state = bdsState.get(layer);
+            if (state == null)
+            {
+                throw new IllegalStateException("BDS state map has null state");
+            }
+            state.validate(xmssParams);
+        }
+    }
+
+    /**
+     * Validate as validate(XMSSMTParameters) and additionally tie each layer's traversal state to
+     * the enclosing private key's index. RFC 8391 sec. 1.1 requires each one-time key to be used
+     * once, and the global index and the per-layer BDS states are two records of the same position,
+     * so a stored key whose index has been rolled back while its state stayed advanced - a partial
+     * write, a restore from backup, a buggy storage layer - is detectable and must be refused: it
+     * would otherwise sign a second message under a one-time key already used, and the signature
+     * would verify. The XMSS side has done this since its own state was tied to its index; this is
+     * the multi-tree counterpart.
+     *
+     * @param params      the parameters of the enclosing key.
+     * @param globalIndex the index the enclosing key declares.
+     */
+    /**
+     * Confirm the top layer's root is the one the enclosing private key declares - the top tree's
+     * root is the public root. A layer with no state yet is built lazily at signing time and so is
+     * not compared (github #2414).
+     *
+     * @param params       the parameters of the enclosing key.
+     * @param expectedRoot the root the private key declares.
+     */
+    void validateRoot(XMSSMTParameters params, byte[] expectedRoot)
+    {
+        BDS top = bdsState.get(Integers.valueOf(params.getLayers() - 1));
+
+        if (top != null)
+        {
+            top.validateRoot(expectedRoot);
+        }
+    }
+
+    void validate(XMSSMTParameters params, long globalIndex)
+    {
+        validate(params);
+
+        int xmssHeight = params.getXMSSParameters().getHeight();
+        int lastLeaf = (1 << xmssHeight) - 1;
+        long treeIndex = globalIndex;
+
+        for (int layer = 0; layer < params.getLayers(); layer++)
+        {
+            // the same walk down the layers the signer and updateState perform
+            int expectedLeaf = XMSSUtil.getLeafIndex(treeIndex, xmssHeight);
+            treeIndex = XMSSUtil.getTreeIndex(treeIndex, xmssHeight);
+
+            BDS state = bdsState.get(Integers.valueOf(layer));
+            if (state == null)
+            {
+                // a layer's state is built lazily, on the first signature that needs it
+                continue;
+            }
+
+            //
+            // At a leaf index of 0 the layer has just moved into a new subtree and its state has not
+            // been advanced into it: updateState skips the advance on the last leaf of a subtree and
+            // the signer rebuilds the state when it next signs there, so the carried-over final
+            // index of the previous subtree is legitimate at that one position. Every other position
+            // must agree exactly. Enumerating every index of the h=4/d=2, h=6/d=2, h=6/d=3, h=9/d=3
+            // and h=8/d=4 parameter sets produces no other divergence.
+            //
+            int actual = state.getIndex();
+            boolean ok = (expectedLeaf == 0)
+                ? (actual == 0 || actual == lastLeaf)
+                : (actual == expectedLeaf);
+
+            if (!ok)
+            {
+                throw new IllegalStateException(
+                    "BDS state has wrong index for layer " + layer + ": expected " + expectedLeaf
+                        + " but state is at " + actual);
+            }
+        }
     }
 
     BDS get(int index)

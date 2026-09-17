@@ -96,8 +96,10 @@ configure(allprojects.findAll {it.name != 'bom'}) {
             check('AlreadyChecked', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('AmbiguousMethodReference', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('AssertionFailureIgnored', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
+            check('AssignmentExpression', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('BadImport', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('BadInstanceof', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
+            check('BooleanLiteral', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('BoxedPrimitiveConstructor', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('CanIgnoreReturnValueSuggester', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('CatchAndPrintStackTrace', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
@@ -106,6 +108,7 @@ configure(allprojects.findAll {it.name != 'bom'}) {
             check('CompareToZero', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('DefaultCharset', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('DoubleBraceInitialization', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
+            check('EffectivelyPrivate', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('EmptyBlockTag', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('EmptyCatch', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('EqualsGetClass', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
@@ -114,9 +117,11 @@ configure(allprojects.findAll {it.name != 'bom'}) {
             check('FallThrough', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('FloatingPointLiteralPrecision', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('HidingField', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
+            check('IgnoredPureGetter', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('InconsistentCapitalization', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('InconsistentHashCode', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('IncrementInForLoopAndHeader', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
+            check('InlineMeSuggester', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('InputStreamSlowMultibyteRead', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('InstanceOfAndCastMatchWrongType', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('IntLongMath', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
@@ -145,9 +150,11 @@ configure(allprojects.findAll {it.name != 'bom'}) {
             check('NonOverridingEquals', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('OperatorPrecedence', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('ProtectedMembersInFinalClass', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
+            check('RedundantControlFlow', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('ReferenceEquality', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('ReturnFromVoid', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('ShortCircuitBoolean', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
+            check('StringCharset', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('StringSplitter', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('SynchronizeOnNonFinalField', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
             check('ThreadLocalUsage', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
@@ -241,6 +248,10 @@ configure(subprojects.findAll {it.name != 'bom'}) {
 
         filter {
             includeTestsMatching "AllTest*"
+            // the pattern also matches the nested TestCase classes some suites declare
+            // (AllTestsSlow$RegressionTestTest etc.), which would then run standalone as
+            // well as through their suite() - only run them through the suite.
+            excludeTestsMatching "*\$*"
             if (project.hasProperty('excludeTests')) {
                 excludeTestsMatching "${excludeTests}"
             }
@@ -304,6 +315,14 @@ configure(subprojects.findAll {it.name != 'bom'}) {
         reports {
             junitXml.outputLocation = layout.buildDirectory.dir("test-results")
         }
+
+        // The PKCS#12 keystore writes with a 600,000 iteration PBE by default, and BCFKS
+        // with a 51,200 iteration PBKDF2-HMAC-SHA512, which is several seconds per store and
+        // dominates the wall time of any suite that touches a keystore. The tests are not
+        // measuring the KDF, so write cheap files here. Runs after testFull's
+        // systemProperties assignment above, so it survives it.
+        systemProperty 'org.bouncycastle.pkcs12.store_it_count', '4096'
+        systemProperty 'org.bouncycastle.bcfks.store_it_count', '1024'
     }
 
     // Bundle the project LICENSE into META-INF/ of every jar produced.
@@ -316,11 +335,15 @@ configure(subprojects.findAll {it.name != 'bom'}) {
 }
 
 
-test.dependsOn([':core:test', ':prov:test', ':prov:test11', ':prov:test15', ':prov:test17', ':pkix:test', 'pg:test', ':tls:test', 'mls:test', 'mail:test', 'jmail:test'])
+test.dependsOn([':core:test', ':prov:test', ':prov:test11', ':prov:test15', ':prov:test17', ':pkix:test', 'pg:test', ':pgsc:test', ':tls:test', ':tls-klog:test', 'mls:test', 'mail:test', 'jmail:test'])
 
 // Aggregate all published jars (main, sources, javadoc) into a top-level dist/
 // directory so consumers have a single place to pick up the build outputs.
-def distModules = ['core', 'util', 'prov', 'pkix', 'pg', 'tls', 'mls', 'mail', 'jmail']
+// bctls-klog is a drop-in replacement for bctls rather than an addition to it (same module name,
+// same packages), so it ships alongside the others here but is deliberately absent from the BOM:
+// resolving both onto one class path would be a duplicate-class mess, and the choice between them
+// is one a consumer has to make deliberately. See tls-klog/build.gradle.
+def distModules = ['core', 'util', 'prov', 'pkix', 'pg', 'tls', 'tls-klog', 'mls', 'mail', 'jmail']
 
 distModules.each { evaluationDependsOn(":$it") }
 
@@ -387,3 +410,38 @@ task copyMavenJars(type: Copy) {
 
 apply from: "gradle/cbom.gradle"
 apply from: "gradle/sbom.gradle"
+
+// Android API-level compatibility gate - see gradle/animalsniffer.gradle (github #336).
+// Per jar-producing module: androidIgnored = packages treated as available (the module's
+// own generated code and its bundled runtime dependencies); androidAllowed = substrings of
+// the remaining, intentionally platform-absent references that are permitted.
+def androidApiConfig = [
+    util : [ignored: [],
+            allowed: []],
+    prov : [ignored: [],
+            allowed: ['javax.naming.']],                       // optional LDAP cert-store (JNDI absent on Android)
+    pkix : [ignored: [],
+            allowed: ['javax.naming.']],                       // optional LDAP CRL + DANE fetchers
+    pg   : [ignored: [],
+            allowed: []],
+    tls  : [ignored: [],
+            // A JDK-version-specific SSLSocketFactory.createSocket overload and a ConcurrentHashMap
+            // covariant-return keySet(), both absent from Android 8.0 but not reached on Android in
+            // practice - the createSocket overload is an optional JSSE utility path callers do not invoke.
+            allowed: ['createSocket(java.net.Socket, java.io.InputStream, boolean)',
+                      'java.util.concurrent.ConcurrentHashMap.keySet']],
+    mail : [ignored: ['javax.mail.*', 'javax.activation.*'],
+            allowed: ['java.awt.']],                           // legacy javax.activation 1.x ActivationDataFlavor (github #242)
+    jmail: [ignored: ['jakarta.mail.*', 'jakarta.activation.*'],
+            allowed: []],
+    mls  : [ignored: ['mls_client.*', 'com.google.*', 'io.grpc.*'],
+            allowed: []],
+]
+androidApiConfig.each { moduleName, cfg ->
+    def target = findProject(":${moduleName}")
+    if (target != null) {
+        target.ext.androidIgnoredPackages = cfg.ignored
+        target.ext.androidAllowedRefs = cfg.allowed
+        target.apply from: rootProject.file('gradle/animalsniffer.gradle')
+    }
+}

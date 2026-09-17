@@ -57,7 +57,29 @@ public class SAKKEKEMExtractor
         this.p = publicKey.getPrime();
         this.Z_S = publicKey.getZ();
         this.identifier = publicKey.getIdentifier();
-        this.K_bs = P.multiply(this.identifier.add(privateKey.getMasterSecret()).modInverse(q)).normalize();
+        // the scalar derives from the master secret, so all three steps that touch it are constant
+        // time: BigIntegers.modAdd rather than add(...).mod(q) to canonicalise the sum,
+        // BigIntegers.modOddInverse rather than BigInteger.modInverse, which is variable time in the
+        // value it inverts, and multiplySecret rather than the default wNAF multiplier. q is the
+        // subgroup order and therefore odd. The pairing below already uses the same inverse.
+        //
+        // RFC 6508 sec. 2.2 puts the identifier and sec. 6.1 the master secret in [2, q-1], so the
+        // sum can reach 2q-2 and only sometimes needs reducing. Leaving it unreduced would leak
+        // which: a reduction short-circuits when its argument already fits the modulus, and the
+        // identifier is public, so the timing of the inverse would answer whether the master secret
+        // reaches the top of q's bit range less this identifier - once per identity served, and
+        // those answers combine across identities into a search for the secret.
+        //
+        // The identifier is reduced on the way in because nothing enforces that range on it: RFC
+        // 6509 sec. 3.2 builds it from a URI of any length, so a long one runs past q, and modAdd
+        // rejects rather than reduces an operand out of range. Reducing it here costs nothing -
+        // it is public, and (b + z)^-1 mod q does not depend on which representative of b we use,
+        // so the RSK is the same value this computed before modAdd was introduced. Note b is still
+        // used unreduced everywhere else, since the hash and the encoding are over its bytes.
+        this.K_bs = ECAlgorithms.multiplySecret(P,
+            BigIntegers.modOddInverse(q, BigIntegers.modAdd(q, this.identifier.mod(q),
+                privateKey.getMasterSecret())),
+            q).normalize();
         this.n = publicKey.getN();
 
         this.digest = publicKey.getDigest();
@@ -93,19 +115,10 @@ public class SAKKEKEMExtractor
         BigInteger b = identifier;
         BigInteger r = SAKKEKEMSGenerator.hashToIntegerRange(Arrays.concatenate(ssv.toByteArray(), b.toByteArray()), q, digest);
 
-        // Step 5: Validate R_bS
-        ECPoint Test;
-
-        BigInteger order = curve.getOrder();
-        if (order == null)
-        {
-            Test = P.multiply(b).add(Z_S).multiply(r);
-        }
-        else
-        {
-            BigInteger a = b.multiply(r).mod(order);
-            Test = ECAlgorithms.sumOfTwoMultiplies(P, a, Z_S, r);
-        }
+        // Step 5: Validate R_bS = [r]([b]P + Z_S). Only r is secret (it derives from the
+        // decapsulated SSV), so [b]P runs on the default multiplier and the r multiplication
+        // is constant-time; q is the order of the subgroup P and Z_S generate.
+        ECPoint Test = ECAlgorithms.multiplySecret(P.multiply(b).add(Z_S), r, q);
 
         Test = Test.subtract(R_bS);
 

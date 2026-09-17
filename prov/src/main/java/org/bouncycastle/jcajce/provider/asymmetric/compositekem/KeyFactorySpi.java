@@ -45,6 +45,7 @@ import org.bouncycastle.jcajce.util.BCJcaJceHelper;
 import org.bouncycastle.jcajce.util.JcaJceHelper;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Exceptions;
+import org.bouncycastle.util.Integers;
 
 /**
  * KeyFactory for Composite ML-KEM keys as defined in
@@ -98,7 +99,9 @@ public class KeyFactorySpi
     }
 
     private static final Map<ASN1ObjectIdentifier, AlgorithmIdentifier[]> pairings = new HashMap<ASN1ObjectIdentifier, AlgorithmIdentifier[]>();
-    private static final Map<ASN1ObjectIdentifier, int[]> componentKeySizes = new HashMap<ASN1ObjectIdentifier, int[]>();
+    // the fixed ML-KEM public key length each composite body splits at - the traditional component
+    // is whatever follows, so its length is deliberately not recorded here.
+    private static final Map<ASN1ObjectIdentifier, Integer> mlkemKeySizes = new HashMap<ASN1ObjectIdentifier, Integer>();
 
     static
     {
@@ -113,14 +116,14 @@ public class KeyFactorySpi
         // ML-KEM-768 + ECDH algorithms
         pairings.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_P256_SHA3_256, new AlgorithmIdentifier[]{mlKem768, ecDHP256});
         pairings.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_P384_SHA3_256, new AlgorithmIdentifier[]{mlKem768, ecDHP384});
-        pairings.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_BP256_SHA3_256, new AlgorithmIdentifier[]{mlKem768, ecDHBrainpoolP256r1});
+        pairings.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_brainpoolP256r1_SHA3_256, new AlgorithmIdentifier[]{mlKem768, ecDHBrainpoolP256r1});
 
         // ML-KEM-1024 + RSA-OAEP algorithms
         pairings.put(IANAObjectIdentifiers.id_MLKEM1024_RSA3072_SHA3_256, new AlgorithmIdentifier[]{mlKem1024, rsaOAEP});
 
         // ML-KEM-1024 + ECDH algorithms
         pairings.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_P384_SHA3_256, new AlgorithmIdentifier[]{mlKem1024, ecDHP384});
-        pairings.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_BP384_SHA3_256, new AlgorithmIdentifier[]{mlKem1024, ecDHBrainpoolP384r1});
+        pairings.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_brainpoolP384r1_SHA3_256, new AlgorithmIdentifier[]{mlKem1024, ecDHBrainpoolP384r1});
 
         // ML-KEM-1024 + X448
         pairings.put(IANAObjectIdentifiers.id_MLKEM1024_X448_SHA3_256, new AlgorithmIdentifier[]{mlKem1024, x448KEM});
@@ -129,30 +132,30 @@ public class KeyFactorySpi
         pairings.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_P521_SHA3_256, new AlgorithmIdentifier[]{mlKem1024, ecDHP521});
 
         // ML-KEM-768 + RSA algorithms
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_RSA2048_SHA3_256, new int[]{1184, 270}); // 1454 - 1184 = 270
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_RSA3072_SHA3_256, new int[]{1184, 398}); // 1582 - 1184 = 398
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_RSA4096_SHA3_256, new int[]{1184, 526}); // 1710 - 1184 = 526
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_RSA2048_SHA3_256, Integers.valueOf(1184));
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_RSA3072_SHA3_256, Integers.valueOf(1184));
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_RSA4096_SHA3_256, Integers.valueOf(1184));
 
         // ML-KEM-768 + X25519
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_X25519_SHA3_256, new int[]{1184, 32}); // 1216 - 1184 = 32
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_X25519_SHA3_256, Integers.valueOf(1184));
 
         // ML-KEM-768 + ECDH algorithms
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_P256_SHA3_256, new int[]{1184, 65}); // 1249 - 1184 = 65
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_P384_SHA3_256, new int[]{1184, 97}); // 1281 - 1184 = 97
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_BP256_SHA3_256, new int[]{1184, 65}); // 1249 - 1184 = 65
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_P256_SHA3_256, Integers.valueOf(1184));
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_P384_SHA3_256, Integers.valueOf(1184));
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM768_ECDH_brainpoolP256r1_SHA3_256, Integers.valueOf(1184));
 
         // ML-KEM-1024 + RSA algorithms
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM1024_RSA3072_SHA3_256, new int[]{1568, 398}); // 1966 - 1568 = 398
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM1024_RSA3072_SHA3_256, Integers.valueOf(1568));
 
         // ML-KEM-1024 + ECDH algorithms
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_P384_SHA3_256, new int[]{1568, 97}); // 1665 - 1568 = 97
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_BP384_SHA3_256, new int[]{1568, 97}); // 1665 - 1568 = 97
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_P384_SHA3_256, Integers.valueOf(1568));
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_brainpoolP384r1_SHA3_256, Integers.valueOf(1568));
 
         // ML-KEM-1024 + X448
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM1024_X448_SHA3_256, new int[]{1568, 56}); // 1624 - 1568 = 56
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM1024_X448_SHA3_256, Integers.valueOf(1568));
 
         // ML-KEM-1024 + ECDH P521
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_P521_SHA3_256, new int[]{1568, 133}); // 1701 - 1568 = 133
+        mlkemKeySizes.put(IANAObjectIdentifiers.id_MLKEM1024_ECDH_P521_SHA3_256, Integers.valueOf(1568));
     }
 
     private JcaJceHelper helper;
@@ -315,15 +318,16 @@ public class KeyFactorySpi
     byte[][] split(ASN1ObjectIdentifier algorithm, ASN1BitString publicKeyData)
         throws IOException
     {
-        int[] sizes = componentKeySizes.get(algorithm);
+        Integer mlkemSize = (Integer)mlkemKeySizes.get(algorithm);
         byte[] keyData = publicKeyData.getOctets();
-        if (sizes == null || keyData.length < sizes[0])
+        if (mlkemSize == null || keyData.length < mlkemSize.intValue())
         {
             throw new IOException("malformed composite public key: body shorter than the first component");
         }
-        byte[][] components = new byte[][]{new byte[sizes[0]], new byte[keyData.length - sizes[0]]};
-        System.arraycopy(keyData, 0, components[0], 0, sizes[0]);
-        System.arraycopy(keyData, sizes[0], components[1], 0, components[1].length);
+        int split = mlkemSize.intValue();
+        byte[][] components = new byte[][]{new byte[split], new byte[keyData.length - split]};
+        System.arraycopy(keyData, 0, components[0], 0, split);
+        System.arraycopy(keyData, split, components[1], 0, components[1].length);
         return components;
     }
 

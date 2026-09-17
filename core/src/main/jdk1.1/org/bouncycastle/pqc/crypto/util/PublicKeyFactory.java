@@ -18,32 +18,19 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
 import org.bouncycastle.internal.asn1.isara.IsaraObjectIdentifiers;
-import org.bouncycastle.pqc.asn1.CMCEPublicKey;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.pqc.asn1.SPHINCS256KeyParams;
 import org.bouncycastle.pqc.legacy.bike.BIKEParameters;
 import org.bouncycastle.pqc.legacy.bike.BIKEPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.cmce.CMCEParameters;
-import org.bouncycastle.pqc.crypto.cmce.CMCEPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumParameters;
-import org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumPublicKeyParameters;
+import org.bouncycastle.pqc.legacy.crystals.dilithium.DilithiumParameters;
+import org.bouncycastle.pqc.legacy.crystals.dilithium.DilithiumPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.frodo.FrodoParameters;
-import org.bouncycastle.pqc.crypto.frodo.FrodoPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCParameters;
 import org.bouncycastle.pqc.crypto.hqc.HQCPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.mlkem.MLKEMParameters;
-import org.bouncycastle.pqc.crypto.mlkem.MLKEMPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.newhope.NHPublicKeyParameters;
-import org.bouncycastle.pqc.legacy.picnic.PicnicParameters;
-import org.bouncycastle.pqc.legacy.picnic.PicnicPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.saber.SABERParameters;
 import org.bouncycastle.pqc.crypto.saber.SABERPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAParameters;
-import org.bouncycastle.pqc.crypto.slhdsa.SLHDSAPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.sphincs.SPHINCSPublicKeyParameters;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Pack;
@@ -60,22 +47,6 @@ public class PublicKeyFactory
     {
         converters.put(PQCObjectIdentifiers.sphincs256, new SPHINCSConverter());
         converters.put(PQCObjectIdentifiers.newHope, new NHConverter());
-        converters.put(BCObjectIdentifiers.mceliece348864_r3, new CMCEConverter());
-        converters.put(BCObjectIdentifiers.mceliece348864f_r3, new CMCEConverter());
-        converters.put(BCObjectIdentifiers.mceliece460896_r3, new CMCEConverter());
-        converters.put(BCObjectIdentifiers.mceliece460896f_r3, new CMCEConverter());
-        converters.put(BCObjectIdentifiers.mceliece6688128_r3, new CMCEConverter());
-        converters.put(BCObjectIdentifiers.mceliece6688128f_r3, new CMCEConverter());
-        converters.put(BCObjectIdentifiers.mceliece6960119_r3, new CMCEConverter());
-        converters.put(BCObjectIdentifiers.mceliece6960119f_r3, new CMCEConverter());
-        converters.put(BCObjectIdentifiers.mceliece8192128_r3, new CMCEConverter());
-        converters.put(BCObjectIdentifiers.mceliece8192128f_r3, new CMCEConverter());
-        converters.put(BCObjectIdentifiers.frodokem640aes, new FrodoConverter());
-        converters.put(BCObjectIdentifiers.frodokem640shake, new FrodoConverter());
-        converters.put(BCObjectIdentifiers.frodokem976aes, new FrodoConverter());
-        converters.put(BCObjectIdentifiers.frodokem976shake, new FrodoConverter());
-        converters.put(BCObjectIdentifiers.frodokem1344aes, new FrodoConverter());
-        converters.put(BCObjectIdentifiers.frodokem1344shake, new FrodoConverter());
         converters.put(BCObjectIdentifiers.lightsaberkem128r3, new SABERConverter());
         converters.put(BCObjectIdentifiers.saberkem128r3, new SABERConverter());
         converters.put(BCObjectIdentifiers.firesaberkem128r3, new SABERConverter());
@@ -94,32 +65,8 @@ public class PublicKeyFactory
         converters.put(BCObjectIdentifiers.ulightsaberkem90sr3, new SABERConverter());
         converters.put(BCObjectIdentifiers.usaberkem90sr3, new SABERConverter());
         converters.put(BCObjectIdentifiers.ufiresaberkem90sr3, new SABERConverter());
-        converters.put(BCObjectIdentifiers.picnicl1fs, new PicnicConverter());
-        converters.put(BCObjectIdentifiers.picnicl1ur, new PicnicConverter());
-        converters.put(BCObjectIdentifiers.picnicl3fs, new PicnicConverter());
-        converters.put(BCObjectIdentifiers.picnicl3ur, new PicnicConverter());
-        converters.put(BCObjectIdentifiers.picnicl5fs, new PicnicConverter());
-        converters.put(BCObjectIdentifiers.picnicl5ur, new PicnicConverter());
-        converters.put(BCObjectIdentifiers.picnic3l1, new PicnicConverter());
-        converters.put(BCObjectIdentifiers.picnic3l3, new PicnicConverter());
-        converters.put(BCObjectIdentifiers.picnic3l5, new PicnicConverter());
-        converters.put(BCObjectIdentifiers.picnicl1full, new PicnicConverter());
-        converters.put(BCObjectIdentifiers.picnicl3full, new PicnicConverter());
-        converters.put(BCObjectIdentifiers.picnicl5full, new PicnicConverter());
         converters.put(BCObjectIdentifiers.falcon_512, new FalconConverter());
         converters.put(BCObjectIdentifiers.falcon_1024, new FalconConverter());
-        converters.put(NISTObjectIdentifiers.id_alg_ml_kem_512, new MLKEMConverter());
-        converters.put(NISTObjectIdentifiers.id_alg_ml_kem_768, new MLKEMConverter());
-        converters.put(NISTObjectIdentifiers.id_alg_ml_kem_1024, new MLKEMConverter());
-        converters.put(BCObjectIdentifiers.kyber512_aes, new MLKEMConverter());
-        converters.put(BCObjectIdentifiers.kyber768_aes, new MLKEMConverter());
-        converters.put(BCObjectIdentifiers.kyber1024_aes, new MLKEMConverter());
-        converters.put(NISTObjectIdentifiers.id_ml_dsa_44, new MLDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_ml_dsa_65, new MLDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_ml_dsa_87, new MLDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_ml_dsa_44_with_sha512, new MLDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_ml_dsa_65_with_sha512, new MLDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_ml_dsa_87_with_sha512, new MLDSAConverter());
         converters.put(BCObjectIdentifiers.dilithium2, new DilithiumConverter());
         converters.put(BCObjectIdentifiers.dilithium3, new DilithiumConverter());
         converters.put(BCObjectIdentifiers.dilithium5, new DilithiumConverter());
@@ -130,30 +77,6 @@ public class PublicKeyFactory
         converters.put(BCObjectIdentifiers.hqc192, new HQCConverter());
         converters.put(BCObjectIdentifiers.hqc256, new HQCConverter());
 
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_sha2_128s, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_sha2_128f, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_sha2_192s, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_sha2_192f, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_sha2_256s, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_sha2_256f, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_shake_128s, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_shake_128f, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_shake_192s, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_shake_192f, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_shake_256s, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_slh_dsa_shake_256f, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_128s_with_sha256, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_128f_with_sha256, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_192s_with_sha512, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_192f_with_sha512, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_256s_with_sha512, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_sha2_256f_with_sha512, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_128s_with_shake128, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_128f_with_shake128, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_192s_with_shake256, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_192f_with_shake256, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_256s_with_shake256, new SLHDSAConverter());
-        converters.put(NISTObjectIdentifiers.id_hash_slh_dsa_shake_256f_with_shake256, new SLHDSAConverter());
     }
 
     /**
@@ -264,31 +187,6 @@ public class PublicKeyFactory
     }
 
 
-    private static class CMCEConverter
-        extends SubjectPublicKeyInfoConverter
-    {
-        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
-            throws IOException
-        {
-            try
-            {
-                byte[] keyEnc = CMCEPublicKey.getInstance(keyInfo.parsePublicKey()).getT();
-
-                CMCEParameters spParams = Utils.mcElieceParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
-
-                return new CMCEPublicKeyParameters(spParams, keyEnc);
-            }
-            catch (Exception e)
-            {        
-                byte[] keyEnc = keyInfo.getPublicKeyData().getOctets();
-
-                CMCEParameters spParams = Utils.mcElieceParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
-
-                return new CMCEPublicKeyParameters(spParams, keyEnc);
-            }
-        }
-    }
-
     private static class SABERConverter
             extends SubjectPublicKeyInfoConverter
     {
@@ -301,34 +199,6 @@ public class PublicKeyFactory
             SABERParameters saberParams = Utils.saberParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
 
             return new SABERPublicKeyParameters(saberParams, keyEnc);
-        }
-    }
-
-    private static class FrodoConverter
-            extends SubjectPublicKeyInfoConverter
-    {
-        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
-                throws IOException
-        {
-            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePublicKey()).getOctets();
-
-            FrodoParameters fParams = Utils.frodoParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
-
-            return new FrodoPublicKeyParameters(fParams, keyEnc);
-        }
-    }
-
-    private static class PicnicConverter
-            extends SubjectPublicKeyInfoConverter
-    {
-        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
-                throws IOException
-        {
-            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePublicKey()).getOctets();
-
-            PicnicParameters picnicParams = Utils.picnicParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
-
-            return new PicnicPublicKeyParameters(picnicParams, keyEnc);
         }
     }
 
@@ -345,19 +215,6 @@ public class PublicKeyFactory
 
             return new FalconPublicKeyParameters(falconParams, Arrays.copyOfRange(keyEnc, 1, keyEnc.length));
 
-        }
-    }
-
-    private static class MLKEMConverter
-        extends SubjectPublicKeyInfoConverter
-    {
-        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
-            throws IOException
-        {
-            MLKEMParameters mlkemParameters = Utils.mlkemParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
-
-            // we're a raw encoding
-            return new MLKEMPublicKeyParameters(mlkemParameters, keyInfo.getPublicKeyData().getOctets());
         }
     }
 
@@ -396,45 +253,6 @@ public class PublicKeyFactory
             {
                 // we're a raw encoding
                 return new DilithiumPublicKeyParameters(dilithiumParams, publicKeyData.getOctets());
-            }
-        }
-    }
-
-    static class MLDSAConverter
-        extends SubjectPublicKeyInfoConverter
-    {
-        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
-            throws IOException
-        {
-            MLDSAParameters dilithiumParams = Utils.mldsaParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
-
-            return getPublicKeyParams(dilithiumParams, keyInfo.getPublicKeyData());
-        }
-
-        static MLDSAPublicKeyParameters getPublicKeyParams(MLDSAParameters dilithiumParams, ASN1BitString publicKeyData)
-        {
-            try
-            {
-                ASN1Primitive obj = ASN1Primitive.fromByteArray(publicKeyData.getOctets());
-                if (obj instanceof ASN1Sequence)
-                {
-                    ASN1Sequence keySeq = ASN1Sequence.getInstance(obj);
-
-                    return new MLDSAPublicKeyParameters(dilithiumParams,
-                        ASN1OctetString.getInstance(keySeq.getObjectAt(0)).getOctets(),
-                        ASN1OctetString.getInstance(keySeq.getObjectAt(1)).getOctets());
-                }
-                else
-                {
-                    byte[] encKey = ASN1OctetString.getInstance(obj).getOctets();
-
-                    return new MLDSAPublicKeyParameters(dilithiumParams, encKey);
-                }
-            }
-            catch (Exception e)
-            {
-                // we're a raw encoding
-                return new MLDSAPublicKeyParameters(dilithiumParams, publicKeyData.getOctets());
             }
         }
     }
@@ -490,28 +308,4 @@ public class PublicKeyFactory
         }
     }
 
-    private static class SLHDSAConverter
-        extends SubjectPublicKeyInfoConverter
-    {
-        AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
-            throws IOException
-        {
-            try
-            {
-                byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePublicKey()).getOctets();
-
-                SLHDSAParameters spParams = Utils.slhdsaParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
-
-                return new SLHDSAPublicKeyParameters(spParams, Arrays.copyOfRange(keyEnc, 4, keyEnc.length));
-            }
-            catch (Exception e)
-            {
-                byte[] keyEnc = keyInfo.getPublicKeyData().getOctets();
-
-                SLHDSAParameters spParams = Utils.slhdsaParamsLookup(keyInfo.getAlgorithm().getAlgorithm());
-
-                return new SLHDSAPublicKeyParameters(spParams, keyEnc);
-            }
-        }
-    }
 }

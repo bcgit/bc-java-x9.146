@@ -32,18 +32,16 @@ import org.bouncycastle.jcajce.provider.util.AsymmetricKeyInfoConverter;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.pqc.jcajce.provider.aimer.AIMerKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.bike.BIKEKeyFactorySpi;
-import org.bouncycastle.pqc.jcajce.provider.cmce.CMCEKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.faest.FaestKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.qruov.QRUOVKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.haetae.HaetaeKeyFactorySpi;
-import org.bouncycastle.pqc.jcajce.provider.hawk.HawkKeyFactorySpi;
+import org.bouncycastle.pqc.jcajce.provider.smaugt.SmaugTKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.falcon.FalconKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.hqc.HQCKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.lms.LMSKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.mayo.MayoKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.newhope.NHKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.ntru.NTRUKeyFactorySpi;
-import org.bouncycastle.pqc.jcajce.provider.picnic.PicnicKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.mqom.MQOMKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.sdith.SDitHKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.snova.SnovaKeyFactorySpi;
@@ -84,7 +82,7 @@ public final class BouncyCastleProvider extends Provider
 {
     private static final Logger LOG = Logger.getLogger(BouncyCastleProvider.class.getName());
 
-    private static String info = "BouncyCastle Security Provider v1.85";
+    private static String info = "BouncyCastle Security Provider v1.86";
 
     public static final String PROVIDER_NAME = "BC";
 
@@ -136,7 +134,7 @@ public final class BouncyCastleProvider extends Provider
 
     private static final String[] ASYMMETRIC_CIPHERS =
         {
-            "DSA", "DH", "EC", "RSA", "GOST", "ECGOST", "ElGamal", "DSTU4145", "GM", "EdEC", "LMS", "NTRU", "Falcon", "CONTEXT", "SLHDSA", "MLDSA", "MLKEM",
+            "DSA", "DH", "EC", "RSA", "GOST", "ECGOST", "ElGamal", "DSTU4145", "GM", "EdEC", "LMS", "XMSS", "NTRU", "Falcon", "CONTEXT", "SLHDSA", "MLDSA", "MLKEM",
             "CMCE", "FrodoKEM", "CompositeKEMs"
         };
 
@@ -189,7 +187,7 @@ public final class BouncyCastleProvider extends Provider
      */
     public BouncyCastleProvider()
     {
-        super(PROVIDER_NAME, 1.85, info);
+        super(PROVIDER_NAME, 1.86, info);
 
         AccessController.doPrivileged(new PrivilegedAction()
         {
@@ -257,8 +255,6 @@ public final class BouncyCastleProvider extends Provider
         // Certification Path API
         if (revChkClass != null)
         {
-            put("CertPathValidator.RFC3281", "org.bouncycastle.jce.provider.PKIXAttrCertPathValidatorSpi");
-            put("CertPathBuilder.RFC3281", "org.bouncycastle.jce.provider.PKIXAttrCertPathBuilderSpi");
             put("CertPathValidator.RFC3280", "org.bouncycastle.jce.provider.PKIXCertPathValidatorSpi_8");
             put("CertPathBuilder.RFC3280", "org.bouncycastle.jce.provider.PKIXCertPathBuilderSpi_8");
             put("CertPathValidator.PKIX", "org.bouncycastle.jce.provider.PKIXCertPathValidatorSpi_8");
@@ -266,8 +262,6 @@ public final class BouncyCastleProvider extends Provider
         }
         else
         {
-            put("CertPathValidator.RFC3281", "org.bouncycastle.jce.provider.PKIXAttrCertPathValidatorSpi");
-            put("CertPathBuilder.RFC3281", "org.bouncycastle.jce.provider.PKIXAttrCertPathBuilderSpi");
             put("CertPathValidator.RFC3280", "org.bouncycastle.jce.provider.PKIXCertPathValidatorSpi");
             put("CertPathBuilder.RFC3280", "org.bouncycastle.jce.provider.PKIXCertPathBuilderSpi");
             put("CertPathValidator.PKIX", "org.bouncycastle.jce.provider.PKIXCertPathValidatorSpi");
@@ -383,18 +377,12 @@ public final class BouncyCastleProvider extends Provider
         addKeyInfoConverter(IsaraObjectIdentifiers.id_alg_xmssmt, new XMSSMTKeyFactorySpi());
         addKeyInfoConverter(IANAObjectIdentifiers.id_alg_xmssmt_hashsig, new XMSSMTKeyFactorySpi());
         addKeyInfoConverter(PKCSObjectIdentifiers.id_alg_hss_lms_hashsig, new LMSKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.picnic_key, new PicnicKeyFactorySpi());
 
         addKeyInfoConverter(BCObjectIdentifiers.old_falcon_512, new FalconKeyFactorySpi(BCObjectIdentifiers.old_falcon_512));
         addKeyInfoConverter(BCObjectIdentifiers.old_falcon_1024, new FalconKeyFactorySpi(BCObjectIdentifiers.old_falcon_1024));
         addKeyInfoConverter(BCObjectIdentifiers.falcon_512, new FalconKeyFactorySpi(BCObjectIdentifiers.falcon_512));
         addKeyInfoConverter(BCObjectIdentifiers.falcon_1024, new FalconKeyFactorySpi(BCObjectIdentifiers.falcon_1024));
 
-        addKeyInfoConverter(BCObjectIdentifiers.mceliece348864_r3, new CMCEKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.mceliece460896_r3, new CMCEKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.mceliece6688128_r3, new CMCEKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.mceliece6960119_r3, new CMCEKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.mceliece8192128_r3, new CMCEKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.bike128, new BIKEKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.bike192, new BIKEKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.bike256, new BIKEKeyFactorySpi());
@@ -551,9 +539,6 @@ public final class BouncyCastleProvider extends Provider
         addKeyInfoConverter(BCObjectIdentifiers.sqisign_lvl3, new SQIsignKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.sqisign_lvl5, new SQIsignKeyFactorySpi());
 
-        addKeyInfoConverter(BCObjectIdentifiers.hawk256,  new HawkKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.hawk512,  new HawkKeyFactorySpi());
-        addKeyInfoConverter(BCObjectIdentifiers.hawk1024, new HawkKeyFactorySpi());
 
         addKeyInfoConverter(BCObjectIdentifiers.aimer_128f, new AIMerKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.aimer_128s, new AIMerKeyFactorySpi());
@@ -561,6 +546,10 @@ public final class BouncyCastleProvider extends Provider
         addKeyInfoConverter(BCObjectIdentifiers.aimer_192s, new AIMerKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.aimer_256f, new AIMerKeyFactorySpi());
         addKeyInfoConverter(BCObjectIdentifiers.aimer_256s, new AIMerKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.smaugt_mode1, new SmaugTKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.smaugt_mode3, new SmaugTKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.smaugt_mode5, new SmaugTKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.smaugt_modet, new SmaugTKeyFactorySpi());
     }
 
     public void setParameter(String parameterName, Object parameter)
@@ -651,10 +640,6 @@ public final class BouncyCastleProvider extends Provider
     {
         try
         {
-            if (publicKeyInfo.getAlgorithm().getAlgorithm().on(BCObjectIdentifiers.picnic_key))
-            {
-                return new PicnicKeyFactorySpi().generatePublic(publicKeyInfo);
-            }
             AsymmetricKeyInfoConverter converter = getAsymmetricKeyInfoConverter(publicKeyInfo.getAlgorithm().getAlgorithm());
 
             if (converter == null)

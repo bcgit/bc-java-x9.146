@@ -1,5 +1,6 @@
 package org.bouncycastle.openpgp.operator.bc;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -327,7 +328,7 @@ public class BcAEADUtil
             this.aaData = aaData;
 
             // prime with 2 * tag len bytes.
-            Streams.readFully(in, buf, 0, tagLen + tagLen);
+            readAeadFully(buf, 0, tagLen + tagLen);
 
             // load the first block
             this.data = readBlock();
@@ -407,7 +408,7 @@ public class BcAEADUtil
         {
             // we initialise with the first 16 bytes as there is an additional 16 bytes following
             // the last chunk (which may not be the exact chunklength).
-            int dataLen = Streams.readFully(in, buf, tagLen + tagLen, chunkLength);
+            int dataLen = readAeadFully(buf, tagLen + tagLen, chunkLength);
             if (dataLen == 0)
             {
                 if (!aeadComplete)
@@ -454,10 +455,24 @@ public class BcAEADUtil
             }
             else
             {
-                Streams.readFully(in, buf, tagLen, tagLen);   // read the next tag bytes
+                readAeadFully(buf, tagLen, tagLen);   // read the next tag bytes
             }
 
             return decData;
+        }
+
+        // truncation must not escape as an EOFException - nextPacketTag() reads one as a clean end of message
+        private int readAeadFully(byte[] b, int off, int len)
+            throws IOException
+        {
+            try
+            {
+                return Streams.readFully(in, b, off, len);
+            }
+            catch (EOFException e)
+            {
+                throw Exceptions.ioException("truncated AEAD data: " + e.getMessage(), e);
+            }
         }
 
         // Verify the trailing message tag, which is held in buf[0..tagLen). Called both for a short
@@ -639,11 +654,14 @@ public class BcAEADUtil
             {
                 c.init(true, new AEADParameters(secretKey, 128, getNonce(iv, chunkIndex), adata));  // always full tag.
 
-                int len = c.processBytes(data, 0, dataOff, data, 0);
-                out.write(data, 0, len);
-
-                len = c.doFinal(data, 0);
-                out.write(data, 0, len);
+                // Do not encrypt in-place into the chunk-sized 'data' buffer: getOutputSize() accounts
+                // for any bytes the cipher buffers internally plus the MAC, and the AEADBlockCipher
+                // contract lets an implementation buffer differently from the pure-Java engines, so
+                // doFinal can need more room than 'data' has.
+                byte[] encData = new byte[c.getOutputSize(dataOff)];
+                int len = c.processBytes(data, 0, dataOff, encData, 0);
+                len += c.doFinal(encData, len);
+                out.write(encData, 0, len);
             }
             catch (InvalidCipherTextException e)
             {

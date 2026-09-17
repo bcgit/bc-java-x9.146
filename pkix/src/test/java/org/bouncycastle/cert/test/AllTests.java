@@ -34,6 +34,7 @@ public class AllTests
             new ExternalKeyTest(),
             new GOST3410_2012CMSTest(),
             new GOSTR3410_2012_256GenerateCertificate(),
+            new IndirectCRLSignerTest(),
             new MLDSACredentialsTest(),
             new PKCS10Test(),
             new RelatedCertificateDescriptorTest(),
@@ -77,6 +78,7 @@ public class AllTests
         suite.addTestSuite(BcCertTest.class);
         suite.addTestSuite(BcPKCS10Test.class);
         suite.addTestSuite(PQCPKCS10Test.class);
+        suite.addTestSuite(PQCCertTest.class);
         suite.addTestSuite(X509CertificateReviewerTest.class);
         suite.addTestSuite(RelatedCertificateTest.class);
         suite.addTest(ConverterTest.suite());

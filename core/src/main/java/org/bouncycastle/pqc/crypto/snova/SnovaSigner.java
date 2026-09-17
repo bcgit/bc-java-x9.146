@@ -101,18 +101,29 @@ public class SnovaSigner
         }
         signDigestCore(signature, hash, salt, keyElements.map1.aAlpha, keyElements.map1.bAlpha, keyElements.map1.qAlpha1, keyElements.map1.qAlpha2,
             keyElements.T12, keyElements.map2.f11, keyElements.map2.f12, keyElements.map2.f21, publicKeySeed, ptPrivateKeySeed);
-        return Arrays.concatenate(signature, message);
+        return signature;
     }
 
     @Override
     public boolean verifySignature(byte[] message, byte[] signature)
     {
-        // Reject a buffer too short to contain a signature before indexing it:
-        // generateSignature returns the signature optionally followed by the
-        // message (the signed-message envelope), and verifySignatureCore reads
-        // only the leading signature bytes; a shorter buffer would throw
-        // ArrayIndexOutOfBoundsException.
-        if (signature.length < ((params.getN() * params.getLsq() + 1) >>> 1) + params.getSaltLength())
+        // A Snova signature is exactly the encoded solution plus the salt, so
+        // require that length: a shorter buffer would be indexed past its end,
+        // and accepting a longer one would make the encoding non-unique -
+        // trailing bytes could be added to a valid signature and it would still
+        // verify.
+        int sigNibbles = params.getN() * params.getLsq();
+        int sigBodyBytes = (sigNibbles + 1) >>> 1;
+        if (signature.length != sigBodyBytes + params.getSaltLength())
+        {
+            return false;
+        }
+        // When the solution is an odd number of GF(16) nibbles its last byte carries one nibble
+        // and the top four bits are unused - GF16.decode does not read them. Require them to be
+        // zero, as the signer writes them: ignoring them would leave sixteen distinct byte strings
+        // verifying for the same message and key, the same non-unique encoding github #2403 closed
+        // for trailing bytes.
+        if ((sigNibbles & 1) != 0 && (signature[sigBodyBytes - 1] & 0xF0) != 0)
         {
             return false;
         }
@@ -197,6 +208,7 @@ public class SnovaSigner
 
         int flagRedo;
         byte numSign = 0;
+        int attempts = 0;
         byte valLeft, valB, valA, valRight;
         // Step 1: Create signed hash
         createSignedHash(ptPublicKeySeed, ptPublicKeySeed.length, digest, digest.length,
@@ -209,6 +221,15 @@ public class SnovaSigner
             for (int i = 0; i < Gauss.length; ++i)
             {
                 Arrays.fill(Gauss[i], (byte)0);
+            }
+            // The vinegar values are derived from numSign, a single byte, so only 256 distinct
+            // linear systems can ever be tried: beyond that the same singular systems repeat and
+            // the loop cannot terminate. A key from genuine key generation needs one attempt with
+            // overwhelming probability, but an expanded ("ESK") private key handed in by a caller
+            // need not be a real central map at all, and a degenerate one is singular every time.
+            if (attempts++ == 256)
+            {
+                throw new IllegalStateException("unable to generate SNOVA signature");
             }
             numSign++;
 
@@ -468,49 +489,55 @@ public class SnovaSigner
     private int performGaussianElimination(byte[][] Gauss, byte[] solution, int size)
     {
         final int cols = size + 1;
+        int flagRedo = 0;
 
         for (int i = 0; i < size; i++)
         {
-            // Find pivot
-            int pivot = i;
-            while (pivot < size && Gauss[pivot][i] == 0)
+            /*
+             * Branchless pivot. The previous form searched downward for the first non-zero
+             * pivot, swapped rows, and skipped the row-add when the factor was zero - three
+             * branches on the secret Gauss matrix (derived from the private key and the
+             * per-signature vinegar), i.e. a timing / branch-prediction leak. Instead, add
+             * every lower row into the pivot row under a mask that is all-ones only while
+             * the pivot is still zero, so the work is the same whatever the data is.
+             */
+            int mask = GF16Utils.ctGF16IsNotZero(Gauss[i][i]) - 1;
+            for (int j = i + 1; j < size; j++)
             {
-                pivot++;
+                byte[] gi = Gauss[i], gj = Gauss[j];
+                for (int k = i; k < cols; k++)
+                {
+                    gi[k] ^= (byte)(gj[k] & mask);
+                }
+                mask = GF16Utils.ctGF16IsNotZero(Gauss[i][i]) - 1;
             }
-
-            // Check for singularity
-            if (pivot >= size)
-            {
-                return 1; // Flag for redo
-            }
-
-            // Swap rows if needed
-            if (pivot != i)
-            {
-                byte[] tempRow = Gauss[i];
-                Gauss[i] = Gauss[pivot];
-                Gauss[pivot] = tempRow;
-            }
+            // Still zero after trying every lower row => singular. Accumulate rather than
+            // returning here, so the loop trip count does not depend on the matrix.
+            flagRedo |= mask;
 
             // Normalize pivot row
             byte invPivot = GF16.inv(Gauss[i][i]);
-            for (int j = i; j < cols; j++)
+            byte[] gi = Gauss[i];
+            for (int k = i; k < cols; k++)
             {
-                Gauss[i][j] = GF16.mul(Gauss[i][j], invPivot);
+                gi[k] = GF16.mul(gi[k], invPivot);
             }
 
-            // Eliminate below
+            // Eliminate below; a zero factor makes GF16.mul a no-op, so no if-guard is needed
             for (int j = i + 1; j < size; j++)
             {
                 byte factor = Gauss[j][i];
-                if (factor != 0)
+                byte[] gj = Gauss[j];
+                for (int k = i; k < cols; k++)
                 {
-                    for (int k = i; k < cols; k++)
-                    {
-                        Gauss[j][k] ^= GF16.mul(Gauss[i][k], factor);
-                    }
+                    gj[k] ^= GF16.mul(gi[k], factor);
                 }
             }
+        }
+
+        if (flagRedo != 0)
+        {
+            return 1; // singular system, the caller resamples (matches the reference do-while)
         }
 
         // Back substitution

@@ -16,6 +16,7 @@ import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1InputStream;
+import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
@@ -359,7 +360,7 @@ class CMSUtils
         return others;
     }
 
-    static ASN1Set createBerSetFromList(List derObjects)
+    private static ASN1EncodableVector toVector(List derObjects)
     {
         ASN1EncodableVector v = new ASN1EncodableVector();
 
@@ -368,31 +369,22 @@ class CMSUtils
             v.add((ASN1Encodable)it.next());
         }
 
-        return new BERSet(v);
+        return v;
+    }
+
+    static ASN1Set createBerSetFromList(List derObjects)
+    {
+        return new BERSet(toVector(derObjects));
     }
 
     static ASN1Set createDlSetFromList(List derObjects)
     {
-        ASN1EncodableVector v = new ASN1EncodableVector();
-
-        for (Iterator it = derObjects.iterator(); it.hasNext(); )
-        {
-            v.add((ASN1Encodable)it.next());
-        }
-
-        return new DLSet(v);
+        return new DLSet(toVector(derObjects));
     }
 
     static ASN1Set createDerSetFromList(List derObjects)
     {
-        ASN1EncodableVector v = new ASN1EncodableVector();
-
-        for (Iterator it = derObjects.iterator(); it.hasNext(); )
-        {
-            v.add((ASN1Encodable)it.next());
-        }
-
-        return new DERSet(v);
+        return new DERSet(toVector(derObjects));
     }
 
     /**
@@ -498,6 +490,31 @@ class CMSUtils
         {
             return 64;
         }
+        if (NISTObjectIdentifiers.id_shake256_len.equals(algorithm))
+        {
+            // id-shake256-len carries its output length in bits as the algorithm parameter -
+            // the form RFC 8419 sec. 3.1 mandates for Ed448 SignedData with signed attributes
+            // (with the parameter containing 512).
+            ASN1Encodable params = digAlgId.getParameters();
+            if (params == null)
+            {
+                return -1;
+            }
+            try
+            {
+                int lengthInBits = ASN1Integer.getInstance(params).intValueExact();
+                if (lengthInBits <= 0 || (lengthInBits & 7) != 0)
+                {
+                    return -1;
+                }
+                return lengthInBits / 8;
+            }
+            catch (RuntimeException e)
+            {
+                // parameters not a positive integer in range - no prediction
+                return -1;
+            }
+        }
         if (NISTObjectIdentifiers.id_sha224.equals(algorithm)
             || NISTObjectIdentifiers.id_sha512_224.equals(algorithm)
             || NISTObjectIdentifiers.id_sha3_224.equals(algorithm))
@@ -542,13 +559,27 @@ class CMSUtils
     {
         ASN1ObjectIdentifier algorithm = encAlgId.getAlgorithm();
 
-        if (OidCatalogue.isGCM(algorithm))
+        try
         {
-            return GCMParameters.getInstance(encAlgId.getParameters()).getIcvLen();
+            if (OidCatalogue.isGCM(algorithm))
+            {
+                return GCMParameters.getInstance(encAlgId.getParameters()).getIcvLen();
+            }
+            if (OidCatalogue.isCCM(algorithm))
+            {
+                return CCMParameters.getInstance(encAlgId.getParameters()).getIcvLen();
+            }
         }
-        if (OidCatalogue.isCCM(algorithm))
+        catch (RuntimeException e)
         {
-            return CCMParameters.getInstance(encAlgId.getParameters()).getIcvLen();
+            // encAlgId.getParameters() is attacker-controlled on the decrypt path. Absent params
+            // (getInstance(null) -> null -> getIcvLen NPE) or a too-short ICV (rejected by
+            // GCMParameters/CCMParameters' own validateICVLen) would otherwise let an unchecked
+            // exception escape the CMSException contract. Report a zero-length MAC so a recipient
+            // with a minimum-tag-size floor rejects the message as a CMSTagLengthException
+            // (fail-closed). On the generation path the parameters are well-formed, so this branch
+            // is not reached there.
+            return 0;
         }
 
         return -1;

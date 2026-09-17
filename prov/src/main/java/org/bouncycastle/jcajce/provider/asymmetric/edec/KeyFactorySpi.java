@@ -129,7 +129,21 @@ public class KeyFactorySpi
                 return new RawEncodedKeySpec(((EdDSAPublicKey)key).getPointEncoding());
             }
         }
-        
+        else
+        {
+            // on JDK 15+ the EdDSAKeys twin also serves the standard EdEC key specs here, and
+            // on JDK 11+ the XDHKeys twin the standard XEC ones.
+            KeySpec versionSpec = EdDSAKeys.getKeySpec(key, spec);
+            if (versionSpec == null)
+            {
+                versionSpec = XDHKeys.getKeySpec(key, spec);
+            }
+            if (versionSpec != null)
+            {
+                return versionSpec;
+            }
+        }
+
         return super.engineGetKeySpec(key, spec);
     }
 
@@ -153,9 +167,21 @@ public class KeyFactorySpi
             }
             if (parameters instanceof Ed25519PrivateKeyParameters)
             {
-                return new BCEdDSAPrivateKey((Ed25519PrivateKeyParameters)parameters);
+                return EdDSAKeys.privateKey((Ed25519PrivateKeyParameters)parameters);
             }
             throw new InvalidKeySpecException("openssh private key not Ed25519 private key");
+        }
+
+        // on JDK 15+ the EdDSAKeys twin also serves the standard EdECPrivateKeySpec here, and
+        // on JDK 11+ the XDHKeys twin the standard XECPrivateKeySpec.
+        PrivateKey versionKey = EdDSAKeys.generatePrivate(keySpec);
+        if (versionKey == null)
+        {
+            versionKey = XDHKeys.generatePrivate(keySpec);
+        }
+        if (versionKey != null)
+        {
+            return versionKey;
         }
 
         return super.engineGeneratePrivate(keySpec);
@@ -168,39 +194,51 @@ public class KeyFactorySpi
         if (keySpec instanceof X509EncodedKeySpec)
         {
             byte[] enc = ((X509EncodedKeySpec)keySpec).getEncoded();
+            // the optimised path below reads the algorithm discriminator and the
+            // AlgorithmIdentifier parameters at the fixed offsets enc[8..10], so guard the
+            // length first: a short X509EncodedKeySpec must surface as an InvalidKeySpecException
+            // rather than an ArrayIndexOutOfBoundsException escaping the declared contract.
+            if (enc.length <= 10)
+            {
+                throw new InvalidKeySpecException("malformed EdEC key encoding");
+            }
             // optimise if we can
             if ((specificBase == 0 || specificBase == enc[8]))
             {
-                // watch out for badly placed DER NULL - the default X509Cert will add these!
-                if (enc[9] == 0x05 && enc[10] == 0x00)
+                try
                 {
-                    SubjectPublicKeyInfo keyInfo = SubjectPublicKeyInfo.getInstance(enc);
-
-                    keyInfo = new SubjectPublicKeyInfo(
-                        new AlgorithmIdentifier(keyInfo.getAlgorithm().getAlgorithm()), keyInfo.getPublicKeyData().getBytes());
-
-                    try
+                    // watch out for badly placed DER NULL - the default X509Cert will add these!
+                    if (enc[9] == 0x05 && enc[10] == 0x00)
                     {
+                        SubjectPublicKeyInfo keyInfo = SubjectPublicKeyInfo.getInstance(enc);
+
+                        keyInfo = new SubjectPublicKeyInfo(
+                            new AlgorithmIdentifier(keyInfo.getAlgorithm().getAlgorithm()), keyInfo.getPublicKeyData().getBytes());
+
                         enc = keyInfo.getEncoded(ASN1Encoding.DER);
                     }
-                    catch (IOException e)
+
+                    switch (enc[8])
                     {
-                        throw new InvalidKeySpecException("attempt to reconstruct key failed: " + e.getMessage());
+                    case x448_type:
+                        return XDHKeys.publicKey(x448Prefix, enc);
+                    case x25519_type:
+                        return XDHKeys.publicKey(x25519Prefix, enc);
+                    case Ed448_type:
+                        return EdDSAKeys.publicKey(Ed448Prefix, enc);
+                    case Ed25519_type:
+                        return EdDSAKeys.publicKey(Ed25519Prefix, enc);
+                    default:
+                        return super.engineGeneratePublic(keySpec);
                     }
                 }
-
-                switch (enc[8])
+                catch (IOException e)
                 {
-                case x448_type:
-                    return new BCXDHPublicKey(x448Prefix, enc);
-                case x25519_type:
-                    return new BCXDHPublicKey(x25519Prefix, enc);
-                case Ed448_type:
-                    return new BCEdDSAPublicKey(Ed448Prefix, enc);
-                case Ed25519_type:
-                    return new BCEdDSAPublicKey(Ed25519Prefix, enc);
-                default:
-                    return super.engineGeneratePublic(keySpec);
+                    throw new InvalidKeySpecException("attempt to reconstruct key failed: " + e.getMessage());
+                }
+                catch (RuntimeException e)
+                {
+                    throw SecurityExceptions.invalidKeySpecException("unable to decode EdEC public key: " + e.getMessage(), e);
                 }
             }
         }
@@ -210,26 +248,46 @@ public class KeyFactorySpi
             switch (specificBase)
             {
             case x448_type:
-                return new BCXDHPublicKey(new X448PublicKeyParameters(enc));
+                return XDHKeys.publicKey(new X448PublicKeyParameters(enc));
             case x25519_type:
-                return new BCXDHPublicKey(new X25519PublicKeyParameters(enc));
+                return XDHKeys.publicKey(new X25519PublicKeyParameters(enc));
             case Ed448_type:
-                return new BCEdDSAPublicKey(new Ed448PublicKeyParameters(enc));
+                return EdDSAKeys.publicKey(new Ed448PublicKeyParameters(enc));
             case Ed25519_type:
-                return new BCEdDSAPublicKey(new Ed25519PublicKeyParameters(enc));
+                return EdDSAKeys.publicKey(new Ed25519PublicKeyParameters(enc));
             default:
                 throw new InvalidKeySpecException("factory not a specific type, cannot recognise raw encoding");
             }
         }
         else if (keySpec instanceof OpenSSHPublicKeySpec)
         {
-            CipherParameters parameters = OpenSSHPublicKeyUtil.parsePublicKey(((OpenSSHPublicKeySpec)keySpec).getEncoded());
+            CipherParameters parameters;
+            try
+            {
+                parameters = OpenSSHPublicKeyUtil.parsePublicKey(((OpenSSHPublicKeySpec)keySpec).getEncoded());
+            }
+            catch (RuntimeException e)
+            {
+                throw SecurityExceptions.invalidKeySpecException("unable to decode OpenSSH public key: " + e.getMessage(), e);
+            }
             if (parameters instanceof Ed25519PublicKeyParameters)
             {
-                return new BCEdDSAPublicKey(new byte[0], ((Ed25519PublicKeyParameters)parameters).getEncoded());
+                return EdDSAKeys.publicKey(new byte[0], ((Ed25519PublicKeyParameters)parameters).getEncoded());
             }
 
-            throw new IllegalStateException("openssh public key not Ed25519 public key");
+            throw new InvalidKeySpecException("openssh public key not Ed25519 public key");
+        }
+
+        // on JDK 15+ the EdDSAKeys twin also serves the standard EdECPublicKeySpec here, and
+        // on JDK 11+ the XDHKeys twin the standard XECPublicKeySpec.
+        PublicKey versionKey = EdDSAKeys.generatePublic(keySpec);
+        if (versionKey == null)
+        {
+            versionKey = XDHKeys.generatePublic(keySpec);
+        }
+        if (versionKey != null)
+        {
+            return versionKey;
         }
 
         return super.engineGeneratePublic(keySpec);
@@ -244,22 +302,22 @@ public class KeyFactorySpi
         {
             if ((specificBase == 0 || specificBase == x448_type) && algOid.equals(EdECObjectIdentifiers.id_X448))
             {
-                return new BCXDHPrivateKey(keyInfo);
+                return XDHKeys.privateKey(keyInfo);
             }
             if ((specificBase == 0 || specificBase == x25519_type) && algOid.equals(EdECObjectIdentifiers.id_X25519))
             {
-                return new BCXDHPrivateKey(keyInfo);
+                return XDHKeys.privateKey(keyInfo);
             }
         }
         else if (algOid.equals(EdECObjectIdentifiers.id_Ed448) || algOid.equals(EdECObjectIdentifiers.id_Ed25519))
         {
             if ((specificBase == 0 || specificBase == Ed448_type) && algOid.equals(EdECObjectIdentifiers.id_Ed448))
             {
-                return new BCEdDSAPrivateKey(keyInfo);
+                return EdDSAKeys.privateKey(keyInfo);
             }
             if ((specificBase == 0 || specificBase == Ed25519_type) && algOid.equals(EdECObjectIdentifiers.id_Ed25519))
             {
-                return new BCEdDSAPrivateKey(keyInfo);
+                return EdDSAKeys.privateKey(keyInfo);
             }
         }
 
@@ -275,22 +333,22 @@ public class KeyFactorySpi
         {
             if ((specificBase == 0 || specificBase == x448_type) && algOid.equals(EdECObjectIdentifiers.id_X448))
             {
-                return new BCXDHPublicKey(keyInfo);
+                return XDHKeys.publicKey(keyInfo);
             }
             if ((specificBase == 0 || specificBase == x25519_type) && algOid.equals(EdECObjectIdentifiers.id_X25519))
             {
-                return new BCXDHPublicKey(keyInfo);
+                return XDHKeys.publicKey(keyInfo);
             }
         }
         else if (algOid.equals(EdECObjectIdentifiers.id_Ed448) || algOid.equals(EdECObjectIdentifiers.id_Ed25519))
         {
             if ((specificBase == 0 || specificBase == Ed448_type) && algOid.equals(EdECObjectIdentifiers.id_Ed448))
             {
-                return new BCEdDSAPublicKey(keyInfo);
+                return EdDSAKeys.publicKey(keyInfo);
             }
             if ((specificBase == 0 || specificBase == Ed25519_type) && algOid.equals(EdECObjectIdentifiers.id_Ed25519))
             {
-                return new BCEdDSAPublicKey(keyInfo);
+                return EdDSAKeys.publicKey(keyInfo);
             }
         }
 

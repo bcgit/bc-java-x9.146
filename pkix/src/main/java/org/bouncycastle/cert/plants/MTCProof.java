@@ -11,7 +11,7 @@ import java.util.List;
 /**
  * The MTCProof structure encoded in the X.509 certificate signatureValue per
  * <a href="https://datatracker.ietf.org/doc/draft-ietf-plants-merkle-tree-certs/">draft-ietf-plants-merkle-tree-certs</a>,
- * Section 6.1.
+ * Section 6.2.
  *
  * <pre>
  * opaque HashValue[HASH_SIZE];
@@ -63,7 +63,7 @@ public class MTCProof
      * Varargs convenience for the common case of constructing an MTCProof from
      * a small fixed set of cosigner signatures (typically just one). Equivalent
      * to {@link #MTCProof(long, long, byte[], List)} with the signatures wrapped
-     * in a list; the same ordering rules in Section 6.1 apply.
+     * in a list; the same ordering rules in Section 6.2 apply.
      */
     public MTCProof(long start, long end, byte[] inclusionProof, MTCSignature... signatures)
     {
@@ -129,7 +129,7 @@ public class MTCProof
      * unused-bits prefix).
      *
      * @throws IOException if parsing fails or if the extensions / signatures
-     *                     lists violate the ordering rules in Section 6.1
+     *                     lists violate the ordering rules in Section 6.2
      */
     public MTCProof(byte[] data)
         throws IOException
@@ -324,7 +324,7 @@ public class MTCProof
     }
 
     /**
-     * The canonical comparator on cosigner_id byte strings, per Section 6.1:
+     * The canonical comparator on cosigner_id byte strings, per Section 6.2:
      * shorter byte strings come first, ties are broken lexicographically
      * (unsigned).
      */

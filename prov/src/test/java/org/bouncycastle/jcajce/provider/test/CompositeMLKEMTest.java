@@ -3,6 +3,7 @@ package org.bouncycastle.jcajce.provider.test;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -20,12 +21,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 
+import javax.crypto.spec.SecretKeySpec;
 import junit.framework.TestCase;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.jcajce.CompositePrivateKey;
 import org.bouncycastle.jcajce.CompositePublicKey;
@@ -35,6 +39,7 @@ import org.bouncycastle.jcajce.spec.KEMGenerateSpec;
 import org.bouncycastle.jcajce.spec.MLKEMParameterSpec;
 import org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec;
 import org.bouncycastle.jcajce.spec.MLKEMPublicKeySpec;
+import org.bouncycastle.jce.interfaces.ECPointEncoder;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.test.TestResourceFinder;
 import org.bouncycastle.util.Arrays;
@@ -145,6 +150,28 @@ public class CompositeMLKEMTest
                 .build();
             assertEquals(label + ": builder(name) resolved the wrong OID", oid, byName.getAlgorithmIdentifier().getAlgorithm());
 
+            // github #2404: the composite KEM parameter sets are indexed separately from the
+            // composite signature ones, so getAlgorithm() has to consult both indexes. Returning
+            // null here breaks the standard JCA idiom exercised just below.
+            assertEquals(label + ": unexpected public key algorithm name", algorithmName, pub.getAlgorithm());
+            assertEquals(label + ": unexpected private key algorithm name", algorithmName, priv.getAlgorithm());
+
+            KeyFactory byKeyName = KeyFactory.getInstance(pub.getAlgorithm(), bc);
+            assertTrue(label + ": key did not round-trip through KeyFactory.getInstance(key.getAlgorithm())",
+                Arrays.areEqual(pub.getEncoded(),
+                    byKeyName.generatePublic(new X509EncodedKeySpec(pub.getEncoded())).getEncoded()));
+
+            // and the SubjectPublicKeyInfo / PrivateKeyInfo constructors have to accept a composite
+            // KEM key as well as a composite signature one
+            CompositePublicKey fromSpki = new CompositePublicKey(SubjectPublicKeyInfo.getInstance(pub.getEncoded()));
+            CompositePrivateKey fromPki = new CompositePrivateKey(PrivateKeyInfo.getInstance(priv.getEncoded()));
+            assertEquals(label + ": SubjectPublicKeyInfo constructor lost the algorithm", algorithmName, fromSpki.getAlgorithm());
+            assertEquals(label + ": PrivateKeyInfo constructor lost the algorithm", algorithmName, fromPki.getAlgorithm());
+            assertTrue(label + ": SubjectPublicKeyInfo constructor did not round-trip",
+                Arrays.areEqual(pub.getEncoded(), fromSpki.getEncoded()));
+            assertTrue(label + ": PrivateKeyInfo constructor did not round-trip",
+                Arrays.areEqual(priv.getEncoded(), fromPki.getEncoded()));
+
             // keys must round-trip through their encoded form
             KeyFactory kf = KeyFactory.getInstance(oid.getId(), bc);
             PublicKey pub2 = kf.generatePublic(new X509EncodedKeySpec(pub.getEncoded()));
@@ -163,14 +190,281 @@ public class CompositeMLKEMTest
         }
     }
 
-    // The registered algorithm name is the tcId with the "id-" prefix dropped and the
-    // "brainpoolPNNNr1" component spelled "BPNNN", matching CompositeIndex.
+    /**
+     * initialize(null, random) is documented as existing only to supply a SecureRandom, but it
+     * forwarded to a component only where CompositeIndex held a non-null key-generation spec for it.
+     * The ML-KEM half never had one, and for the X25519 and X448 composites neither half did, so on
+     * those the caller's random reached neither component and on the rest it never reached the
+     * post-quantum one. This is the composite-KEM half of the same defect fixed on the signature
+     * side; see CompositeSignaturesTest.testKeyPairGeneratorSecureRandom.
+     */
+    public void testKeyPairGeneratorSecureRandom()
+        throws Exception
+    {
+        Provider bc = Security.getProvider("BC");
+
+        // neither component of the XDH composites had a spec, so nothing consumed the random at all
+        String[] neither = new String[]{"MLKEM768-X25519-SHA3-256", "MLKEM1024-X448-SHA3-256"};
+
+        for (int i = 0; i != neither.length; i++)
+        {
+            CompositeSignaturesTest.CountingSecureRandom counting = new CompositeSignaturesTest.CountingSecureRandom();
+
+            KeyPairGenerator kpg = KeyPairGenerator.getInstance(neither[i], bc);
+            kpg.initialize(null, counting);
+            kpg.generateKeyPair();
+
+            assertTrue(neither[i] + ": supplied SecureRandom was never drawn from", counting.calls > 0);
+        }
+
+        // and across the parameter sets it has to be the only source, or the key pair would not be
+        // reproducible from the seed - which is what pins the ML-KEM half of every combination
+        for (Map.Entry<String, String> entry : OIDS.entrySet())
+        {
+            String label = entry.getKey();
+
+            if (isPureMLKEM(label))
+            {
+                continue;
+            }
+
+            String algorithm = algorithmNameFor(label);
+
+            if (algorithm.indexOf("RSA") >= 0)
+            {
+                continue;       // an RSA prime search draws an unbounded, seed-dependent amount
+            }
+
+            KeyPairGenerator first = KeyPairGenerator.getInstance(algorithm, bc);
+            first.initialize(null, new CompositeSignaturesTest.SeededSecureRandom(11));
+
+            KeyPairGenerator second = KeyPairGenerator.getInstance(algorithm, bc);
+            second.initialize(null, new CompositeSignaturesTest.SeededSecureRandom(11));
+
+            assertTrue(algorithm + ": key pair not determined by the supplied SecureRandom",
+                Arrays.areEqual(first.generateKeyPair().getPublic().getEncoded(),
+                    second.generateKeyPair().getPublic().getEncoded()));
+        }
+    }
+
+    /**
+     * The SupportedKeyClasses / SupportedKeyFormats maps were built and then never passed to a
+     * provider registration, so JCA key-class filtering did not work for any composite KEM service.
+     */
+    public void testServiceAttributesPublished()
+        throws Exception
+    {
+        Provider prov = Security.getProvider("BC");
+
+        String[] types = new String[]{"Cipher", "KeyGenerator"};
+
+        for (int i = 0; i != types.length; i++)
+        {
+            Provider.Service service = prov.getService(types[i], "MLKEM768-ECDH-P256-SHA3-256");
+
+            assertNotNull(types[i], service);
+            assertEquals(types[i],
+                "org.bouncycastle.jcajce.CompositePublicKey|org.bouncycastle.jcajce.CompositePrivateKey",
+                service.getAttribute("SupportedKeyClasses"));
+            assertEquals(types[i], "PKCS#8|X.509", service.getAttribute("SupportedKeyFormats"));
+        }
+    }
+
+    /**
+     * A wrapped key shorter than the composite encapsulation was not rejected: BC's
+     * Arrays.copyOfRange zero-pads a range running off the end, so the decapsulation ran on a padded
+     * encapsulation - which ML-KEM's implicit rejection makes succeed - and the failure surfaced
+     * from the AES-KWP unwrap instead, naming the wrong thing.
+     */
+    public void testShortCiphertextRejected()
+        throws Exception
+    {
+        Provider bc = Security.getProvider("BC");
+
+        String name = "MLKEM768-ECDH-P256-SHA3-256";
+
+        KeyPair kp = KeyPairGenerator.getInstance(name, bc).generateKeyPair();
+        SecretKeySpec toWrap = new SecretKeySpec(new byte[32], "AES");
+
+        Cipher wrapper = Cipher.getInstance(name, bc);
+        wrapper.init(Cipher.WRAP_MODE, kp.getPublic());
+
+        byte[] wrapped = wrapper.wrap(toWrap);
+
+        Cipher unwrapper = Cipher.getInstance(name, bc);
+        unwrapper.init(Cipher.UNWRAP_MODE, kp.getPrivate());
+
+        assertTrue("the unmodified wrap must still round-trip", Arrays.areEqual(toWrap.getEncoded(),
+            unwrapper.unwrap(wrapped, "AES", Cipher.SECRET_KEY).getEncoded()));
+
+        try
+        {
+            unwrapper.unwrap(new byte[10], "AES", Cipher.SECRET_KEY);
+            fail("ciphertext shorter than the encapsulation accepted");
+        }
+        catch (InvalidKeyException e)
+        {
+            assertEquals("malformed composite KEM ciphertext: shorter than the encapsulation", e.getMessage());
+        }
+    }
+
+    /**
+     * javax.crypto.KEM.newEncapsulator() documents a null SecureRandom as a request for the
+     * provider's default, and KeyGenerator.init(spec, null) reaches the composite KEM the same way.
+     * The RSA-OAEP composites draw the traditional shared secret from the supplied random directly,
+     * so a null one used to surface as a NullPointerException wrapped in an IllegalStateException;
+     * the ECDH and XDH composites were unaffected because their component KeyPairGenerators default
+     * a random themselves. One set of each is covered.
+     */
+    public void testNullSecureRandom()
+        throws Exception
+    {
+        Provider bc = Security.getProvider("BC");
+
+        String[] names = new String[]{"MLKEM768-RSA2048-SHA3-256", "MLKEM768-ECDH-P256-SHA3-256", "MLKEM768-X25519-SHA3-256"};
+
+        for (int i = 0; i != names.length; i++)
+        {
+            String name = names[i];
+            KeyPair kp = KeyPairGenerator.getInstance(name, bc).generateKeyPair();
+
+            KeyGenerator gen = KeyGenerator.getInstance(name, bc);
+            gen.init(new KEMGenerateSpec.Builder(kp.getPublic(), "AES", 256).withKdfAlgorithm(null).build(), (SecureRandom)null);
+            SecretKeyWithEncapsulation enc = (SecretKeyWithEncapsulation)gen.generateKey();
+
+            byte[] decapsulated = decapsulate(new ASN1ObjectIdentifier(OIDS.get("id-" + name)), bc,
+                kp.getPrivate(), enc.getEncapsulation());
+            assertTrue(name + ": encapsulation with a null SecureRandom did not round-trip",
+                Arrays.areEqual(enc.getEncoded(), decapsulated));
+        }
+    }
+
+    /**
+     * Section 4 of draft-ietf-lamps-pq-composite-kem requires an EC component to be carried as an
+     * uncompressed point. Encapsulation takes tradPK from the recipient key's own encoding while
+     * decapsulation recomputes the point from the private key, so a component key that encodes
+     * itself compressed - a BC EC key whose point format has been set, or a key from a provider
+     * that preserves a compressed encoding - used to combine a different tradPK on each side and
+     * the two sides silently derived different shared secrets.
+     */
+    public void testCompressedECComponentIsNormalised()
+        throws Exception
+    {
+        Provider bc = Security.getProvider("BC");
+
+        String name = "MLKEM768-ECDH-P256-SHA3-256";
+        ASN1ObjectIdentifier oid = new ASN1ObjectIdentifier(OIDS.get("id-" + name));
+
+        KeyPair kp = KeyPairGenerator.getInstance(name, bc).generateKeyPair();
+        CompositePublicKey pub = (CompositePublicKey)kp.getPublic();
+
+        ((ECPointEncoder)pub.getPublicKeys().get(1)).setPointFormat("COMPRESSED");
+
+        KeyGenerator gen = KeyGenerator.getInstance(name, bc);
+        gen.init(new KEMGenerateSpec.Builder(pub, "AES", 256).withKdfAlgorithm(null).build(), new SecureRandom());
+        SecretKeyWithEncapsulation enc = (SecretKeyWithEncapsulation)gen.generateKey();
+
+        byte[] decapsulated = decapsulate(oid, bc, kp.getPrivate(), enc.getEncapsulation());
+        assertTrue(name + ": a compressed EC component must still agree on the shared secret",
+            Arrays.areEqual(enc.getEncoded(), decapsulated));
+    }
+
+    /**
+     * The two brainpool parameter sets were originally registered with the curve abbreviated
+     * (MLKEM768-ECDH-BP256-SHA3-256); they are now registered under the draft's spelling, with the
+     * short form kept as an alias, so both names resolve and both reach the same OID.
+     */
+    public void testBrainpoolNameAliases()
+        throws Exception
+    {
+        Provider bc = Security.getProvider("BC");
+
+        String[][] pairs = new String[][]{
+            {"MLKEM768-ECDH-brainpoolP256r1-SHA3-256", "MLKEM768-ECDH-BP256-SHA3-256"},
+            {"MLKEM1024-ECDH-brainpoolP384r1-SHA3-256", "MLKEM1024-ECDH-BP384-SHA3-256"}
+        };
+
+        for (int i = 0; i != pairs.length; i++)
+        {
+            String draftName = pairs[i][0];
+            String alias = pairs[i][1];
+
+            KeyPair kp = KeyPairGenerator.getInstance(alias, bc).generateKeyPair();
+
+            assertEquals(alias + ": getAlgorithm() must report the draft name", draftName, kp.getPublic().getAlgorithm());
+            assertEquals(alias + ": getAlgorithm() must report the draft name", draftName, kp.getPrivate().getAlgorithm());
+
+            assertNotNull(alias + ": no KeyPairGenerator", KeyPairGenerator.getInstance(draftName, bc));
+            assertNotNull(alias + ": no KeyGenerator", KeyGenerator.getInstance(alias, bc));
+            assertNotNull(alias + ": no KeyGenerator", KeyGenerator.getInstance(draftName, bc));
+            assertNotNull(alias + ": no Cipher", javax.crypto.Cipher.getInstance(alias, bc));
+            assertNotNull(alias + ": no Cipher", javax.crypto.Cipher.getInstance(draftName, bc));
+
+            // both names must resolve to the same key, through the KeyFactory each of them aliases
+            assertTrue(alias + ": KeyFactory did not round-trip",
+                Arrays.areEqual(kp.getPublic().getEncoded(), KeyFactory.getInstance(alias, bc)
+                    .generatePublic(new X509EncodedKeySpec(kp.getPublic().getEncoded())).getEncoded()));
+            assertTrue(draftName + ": KeyFactory did not round-trip",
+                Arrays.areEqual(kp.getPublic().getEncoded(), KeyFactory.getInstance(draftName, bc)
+                    .generatePublic(new X509EncodedKeySpec(kp.getPublic().getEncoded())).getEncoded()));
+
+            // CompositePublicKey.builder(String) resolves either spelling to the same OID
+            ASN1ObjectIdentifier oid = ((CompositePublicKey)kp.getPublic()).getAlgorithmIdentifier().getAlgorithm();
+            assertEquals(alias + ": builder(alias) resolved the wrong OID", oid,
+                CompositePublicKey.builder(alias).addPublicKey(((CompositePublicKey)kp.getPublic()).getPublicKeys().get(0))
+                    .addPublicKey(((CompositePublicKey)kp.getPublic()).getPublicKeys().get(1)).build()
+                    .getAlgorithmIdentifier().getAlgorithm());
+            assertEquals(draftName + ": builder(name) resolved the wrong OID", oid,
+                CompositePublicKey.builder(draftName).addPublicKey(((CompositePublicKey)kp.getPublic()).getPublicKeys().get(0))
+                    .addPublicKey(((CompositePublicKey)kp.getPublic()).getPublicKeys().get(1)).build()
+                    .getAlgorithmIdentifier().getAlgorithm());
+        }
+    }
+
+    /**
+     * CompositePublicKey.getEncoded() now normalises an EC component to an uncompressed point, as
+     * section 4 of the draft requires. That is a write-side change only: a composite KEM public key
+     * that an earlier release wrote with a compressed EC component - the shorter body assembled by
+     * hand here - must still decode, and encapsulating to the key it decodes to must still agree
+     * with the matching private key.
+     */
+    public void testCompressedECComponentStillDecodes()
+        throws Exception
+    {
+        Provider bc = Security.getProvider("BC");
+
+        String name = "MLKEM768-ECDH-P256-SHA3-256";
+        ASN1ObjectIdentifier oid = new ASN1ObjectIdentifier(OIDS.get("id-" + name));
+
+        KeyPair kp = KeyPairGenerator.getInstance(name, bc).generateKeyPair();
+        CompositePublicKey pub = (CompositePublicKey)kp.getPublic();
+
+        byte[] mlkemPK = SubjectPublicKeyInfo.getInstance(pub.getPublicKeys().get(0).getEncoded()).getPublicKeyData().getOctets();
+
+        PublicKey ecPub = pub.getPublicKeys().get(1);
+        ((ECPointEncoder)ecPub).setPointFormat("COMPRESSED");
+        byte[] compressedEC = SubjectPublicKeyInfo.getInstance(ecPub.getEncoded()).getPublicKeyData().getOctets();
+        assertEquals("EC component should be a compressed point", 33, compressedEC.length);
+
+        SubjectPublicKeyInfo legacy = new SubjectPublicKeyInfo(new AlgorithmIdentifier(oid),
+            Arrays.concatenate(mlkemPK, compressedEC));
+
+        PublicKey decoded = KeyFactory.getInstance(oid.getId(), bc)
+            .generatePublic(new X509EncodedKeySpec(legacy.getEncoded()));
+
+        KeyGenerator gen = KeyGenerator.getInstance(name, bc);
+        gen.init(new KEMGenerateSpec.Builder(decoded, "AES", 256).withKdfAlgorithm(null).build(), new SecureRandom());
+        SecretKeyWithEncapsulation enc = (SecretKeyWithEncapsulation)gen.generateKey();
+
+        byte[] decapsulated = decapsulate(oid, bc, kp.getPrivate(), enc.getEncapsulation());
+        assertTrue(name + ": a key decoded from a compressed EC component must still agree on the shared secret",
+            Arrays.areEqual(enc.getEncoded(), decapsulated));
+    }
+
+    // The registered algorithm name is the tcId with the "id-" prefix dropped.
     private static String algorithmNameFor(String tcId)
     {
-        String name = tcId.substring("id-".length());
-        name = name.replace("ECDH-brainpoolP256r1", "ECDH-BP256");
-        name = name.replace("ECDH-brainpoolP384r1", "ECDH-BP384");
-        return name;
+        return tcId.substring("id-".length());
     }
 
     private void runTestVectors(String fileName)

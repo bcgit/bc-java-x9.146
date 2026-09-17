@@ -3,16 +3,18 @@ package org.bouncycastle.cert.plants;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.math.BigInteger;
 
 import org.bouncycastle.asn1.plants.MTCObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.x509.TBSCertificate;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.util.Arrays;
 
 /**
  * Issuer-side {@link ContentSigner} that emits an MTC {@code signatureValue}
  * (an encoded {@link MTCProof}) for an EE Merkle Tree certificate per
- * Section 6.1 of draft-ietf-plants-merkle-tree-certs.
+ * Section 6.2 of draft-ietf-plants-merkle-tree-certs.
  *
  * <p>The signer is plugged into the standard
  * {@link org.bouncycastle.cert.X509v3CertificateBuilder#build(ContentSigner)
@@ -20,23 +22,26 @@ import org.bouncycastle.util.Arrays;
  * DER bytes stream out of the builder into {@link #getOutputStream()}, this
  * class captures them; when {@link #getSignature()} is invoked it:</p>
  * <ol>
- *   <li>Derives the {@code MerkleTreeCertEntry} leaf hash and climbs one
- *       Merkle level using the single-sibling {@code inclusionProof} via
- *       {@link MerkleTreeCertificateValidator#computeSubtreeHash}.</li>
+ *   <li>Takes the entry's index from the serial number the builder wrote
+ *       ({@code serial = (log_number << 48) | index}, Section 6.2), checking
+ *       the log number is that of the supplied {@link MTCLog}.</li>
+ *   <li>Derives the {@code MerkleTreeCertEntry} leaf hash via
+ *       {@link MerkleTreeCertificateValidator#computeEntryHash(byte[], MerkleTreeHash)}
+ *       and evaluates the supplied inclusion proof for that index within the
+ *       log's subtree {@code [start, end)} (Section 4.3.2) to obtain the
+ *       subtree hash.</li>
  *   <li>Delegates to {@link MTCCosigner#cosignSubtree} to produce the
  *       cosigner's {@link MTCSignature}.</li>
  *   <li>Wraps the inclusion proof and the cosigner signature in an
  *       {@link MTCProof} and returns its TLS wire encoding.</li>
  * </ol>
  *
- * <p>This is the simple-case binding used by the worked examples: a
- * <em>standalone certificate</em> (Section 6.2 of the draft) over the minimal
- * subtree {@code [0, 2)} — the EE's log entry at index 0, one sibling leaf at
- * index 1, and a single-node inclusion proof — carrying one cosigner
- * signature. Issuers with multi-level inclusion proofs or multiple cosigners
- * should compose the {@link MTCCosigner}, {@link MTCProof} and
- * {@link MerkleTreeHash} primitives directly; landmark-relative certificates
- * (Section 6.3, no signatures) are built via
+ * <p>This is the single-cosigner binding used by the worked examples: a
+ * <em>standalone certificate</em> (Section 6.3 of the draft) carrying one
+ * cosigner signature and no log-entry extensions. Issuers with multiple
+ * cosigners or extensions should compose the {@link MTCCosigner},
+ * {@link MTCProof} and {@link MerkleTreeHash} primitives directly;
+ * landmark-relative certificates (Section 6.4, no signatures) are built via
  * {@link LandmarkCertificateManager#buildLandmarkCertificate}.</p>
  */
 public class MTCContentSigner
@@ -44,6 +49,7 @@ public class MTCContentSigner
 {
     private static final AlgorithmIdentifier MTC_SIG_ALG =
         new AlgorithmIdentifier(MTCObjectIdentifiers.id_alg_mtcProof);
+    private static final BigInteger UINT48_MASK = BigInteger.valueOf(MTCProof.UINT48_MAX);
 
     private final MerkleTreeHash hashFunc;
     private final MTCLog log;
@@ -63,9 +69,11 @@ public class MTCContentSigner
      *                        {@code [log.getStart(), log.getEnd())} — also
      *                        supplies the CA (via {@link MTCLog#getCa()}) and
      *                        therefore the hash function and log ID
-     * @param inclusionProof  the single sibling leaf hash that, combined with
-     *                        the EE's leaf hash, yields the subtree hash —
-     *                        same bytes that land in the resulting MTCProof
+     * @param inclusionProof  the subtree inclusion proof (Section 4.3) for the
+     *                        EE's entry, as the concatenated sibling hashes
+     *                        from the leaf up to the subtree root — the same
+     *                        bytes that land in the resulting MTCProof (a
+     *                        single sibling hash for a two-entry subtree)
      * @param cosigner        cosigner driver bound to its trust anchor ID,
      *                        signature algorithm and key
      */
@@ -94,12 +102,30 @@ public class MTCContentSigner
     {
         try
         {
-            byte[] subtreeHash = MerkleTreeCertificateValidator.computeSubtreeHash(
-                tbsBuf.toByteArray(), inclusionProof, hashFunc);
+            byte[] tbsDer = tbsBuf.toByteArray();
+            BigInteger serial = TBSCertificate.getInstance(tbsDer).getSerialNumber().getValue();
+            if (serial.signum() <= 0 || serial.bitLength() > 64
+                || serial.shiftRight(48).longValue() != log.getLogNumber())
+            {
+                throw new IllegalStateException(
+                    "certificate serial " + serial + " does not name issuance log " + log.getLogNumber());
+            }
+            long index = serial.and(UINT48_MASK).longValue();
+
+            MTCProof unsigned = new MTCProof(log, inclusionProof);
+            byte[] entryHash = MerkleTreeCertificateValidator.computeEntryHash(tbsDer, hashFunc);
+            byte[] subtreeHash = MerkleTreePrimitives.evaluateSubtreeInclusionProof(
+                index, log.getStart(), log.getEnd(), entryHash,
+                unsigned.getHashList(hashFunc.getHashSize()), hashFunc);
+
             MTCSignature sig = cosigner.cosignSubtree(log, subtreeHash);
             return new MTCProof(log, inclusionProof, sig).encode();
         }
         catch (IOException e)
+        {
+            throw new IllegalStateException("MTC content signing failed: " + e.getMessage(), e);
+        }
+        catch (InvalidProofException e)
         {
             throw new IllegalStateException("MTC content signing failed: " + e.getMessage(), e);
         }

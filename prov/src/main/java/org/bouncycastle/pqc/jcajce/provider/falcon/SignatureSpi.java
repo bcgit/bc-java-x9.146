@@ -13,10 +13,10 @@ import java.security.spec.AlgorithmParameterSpec;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.params.ParametersWithRandom;
+import org.bouncycastle.jcajce.provider.util.SecurityExceptions;
 import org.bouncycastle.pqc.crypto.falcon.FalconParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconSigner;
-import org.bouncycastle.pqc.jcajce.provider.dilithium.BCDilithiumPublicKey;
 import org.bouncycastle.util.Strings;
 
 public class SignatureSpi
@@ -56,7 +56,7 @@ public class SignatureSpi
             }
             catch (Exception e)
             {
-                throw new InvalidKeyException("unknown public key passed to Falcon: " + e.getMessage(), e);
+                throw SecurityExceptions.invalidKeyException("unknown public key passed to Falcon: " + e.getMessage(), e);
             }
         }
 

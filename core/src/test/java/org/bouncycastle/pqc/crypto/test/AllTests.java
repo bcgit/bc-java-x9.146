@@ -21,11 +21,13 @@ public class AllTests
 
         suite.addTestSuite(LMSTest.class);
         suite.addTestSuite(HSSTest.class);
+        suite.addTestSuite(LMSPromotionCompatibilityTest.class);
         // XMSS tests split out into AllTestsXMSS so they can run as a separate (parallel) fork.
 //        suite.addTestSuite(SphincsPlusTest.class);   -- now deprecated
         // CMCE (Classic McEliece) tests split out into AllTestsCMCE so they can run as a separate (parallel) fork.
-//        suite.addTestSuite(FrodoVectorTest.class);  -- now deprecated
-        suite.addTestSuite(FrodoVectorTest.class);
+        suite.addTestSuite(FrodoKEMConcurrencyTest.class);
+        suite.addTestSuite(NTRUPlusConcurrencyTest.class);
+        suite.addTestSuite(NTRUPlusTest.class);
         suite.addTestSuite(FrodoKEMVectorTest.class);
         suite.addTestSuite(SABERVectorTest.class);
         suite.addTestSuite(NTRUTest.class);
@@ -51,12 +53,15 @@ public class AllTests
         // Hawk tests split out into AllTestsHawk so they can run as a separate (parallel) fork.
         suite.addTestSuite(UOVTest.class);
         // MQOM tests split out into AllTestsMQOM so they can run as a separate (parallel) fork.
-        suite.addTestSuite(SQIsignTest.class);
+        // SQIsign tests split out into AllTestsSQIsign / AllTestsSQIsignLvl5 so they can run as separate (parallel) forks.
         suite.addTestSuite(HAETAETest.class);
         suite.addTestSuite(SDitHTest.class);
         suite.addTestSuite(AIMerTest.class);
         suite.addTestSuite(PublicKeyLengthValidationTest.class);
         suite.addTestSuite(PqcMalformedInputTest.class);
+        suite.addTestSuite(PqcSignatureEncodingTest.class);
+        suite.addTestSuite(PqcUnmappedAlgorithmOidTest.class);
+        suite.addTestSuite(SmaugTTest.class);
 
         return new BCTestSetup(suite);
     }

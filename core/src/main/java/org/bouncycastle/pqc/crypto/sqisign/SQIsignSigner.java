@@ -37,6 +37,20 @@ import org.bouncycastle.pqc.crypto.MessageSigner;
  * constant-time formulation of the KLPT / lattice steps; treat it as a usage
  * constraint until constant-time SQIsign techniques mature.
  * </p>
+ * <p>
+ * <b>Signature malleability.</b> A SQIsign signature is <em>not</em> a unique encoding of
+ * (key, message). {@code SQIsignVerify.checkCanonicalBasisChangeMatrix} bounds each entry of the
+ * basis-change matrix by {@code 2^(response length + extra torsion - backtracking)}, but the
+ * verification arithmetic depends on the entry modulo a smaller power of two, so the top permitted
+ * bit of each of the four entries is not pinned down: at least sixteen distinct byte strings verify
+ * for any signature this signer produces. This is a property of the scheme rather than of the port -
+ * SQIsign is proved EUF-CMA but not strongly unforgeable, and the two-dimensional response encoding
+ * has further, deeper sources of non-uniqueness than the matrix (see
+ * <a href="https://eprint.iacr.org/2026/1305">eprint 2026/1305</a>, which shows that canonicalising
+ * the matrix would not be sufficient). So unlike MAYO, SNOVA and QR-UOV, whose encodings this
+ * library does pin down, SQIsign signature bytes must not be used as a unique identifier for a
+ * signature - do not key a replay cache, a de-duplication table or an audit record on them.
+ * </p>
  */
 public class SQIsignSigner
     implements MessageSigner
@@ -106,8 +120,7 @@ public class SQIsignSigner
         {
             throw new IllegalStateException("SQIsign sign: protocols_sign failed");
         }
-        return org.bouncycastle.util.Arrays.concatenate(
-            SQIsignEncodeLvl1.signatureToBytes(sig), message);
+        return SQIsignEncodeLvl1.signatureToBytes(sig);
     }
 
     private byte[] signLvl3(byte[] message)
@@ -122,8 +135,7 @@ public class SQIsignSigner
         {
             throw new IllegalStateException("SQIsign sign: protocols_sign failed");
         }
-        return org.bouncycastle.util.Arrays.concatenate(
-            SQIsignEncodeLvl3.signatureToBytes(sig), message);
+        return SQIsignEncodeLvl3.signatureToBytes(sig);
     }
 
     private byte[] signLvl5(byte[] message)
@@ -138,8 +150,7 @@ public class SQIsignSigner
         {
             throw new IllegalStateException("SQIsign sign: protocols_sign failed");
         }
-        return org.bouncycastle.util.Arrays.concatenate(
-            SQIsignEncodeLvl5.signatureToBytes(sig), message);
+        return SQIsignEncodeLvl5.signatureToBytes(sig);
     }
 
     public boolean verifySignature(byte[] message, byte[] signature)
@@ -165,7 +176,7 @@ public class SQIsignSigner
 
     private boolean verifyLvl1(byte[] message, byte[] signature)
     {
-        if (signature == null || signature.length < SQIsignEncodeLvl1.SIGNATURE_BYTES)
+        if (signature == null || signature.length != SQIsignEncodeLvl1.SIGNATURE_BYTES)
         {
             return false;
         }
@@ -173,8 +184,6 @@ public class SQIsignSigner
         SQIsignSignatureLvl1 sig;
         try
         {
-            // The first SIGNATURE_BYTES are the signature; any trailing bytes
-            // (e.g. the appended message in NIST "sm" format) are ignored.
             sig = SQIsignEncodeLvl1.signatureFromBytes(signature);
         }
         catch (IllegalArgumentException e)
@@ -193,7 +202,7 @@ public class SQIsignSigner
 
     private boolean verifyLvl3(byte[] message, byte[] signature)
     {
-        if (signature == null || signature.length < SQIsignEncodeLvl3.SIGNATURE_BYTES)
+        if (signature == null || signature.length != SQIsignEncodeLvl3.SIGNATURE_BYTES)
         {
             return false;
         }
@@ -219,7 +228,7 @@ public class SQIsignSigner
 
     private boolean verifyLvl5(byte[] message, byte[] signature)
     {
-        if (signature == null || signature.length < SQIsignEncodeLvl5.SIGNATURE_BYTES)
+        if (signature == null || signature.length != SQIsignEncodeLvl5.SIGNATURE_BYTES)
         {
             return false;
         }

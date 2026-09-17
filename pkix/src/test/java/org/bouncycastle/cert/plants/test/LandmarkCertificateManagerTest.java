@@ -151,7 +151,7 @@ public class LandmarkCertificateManagerTest
             MTCObjectIdentifiers.id_alg_mtcProof.equals(sigAlg.getAlgorithm()));
         isTrue("Signature algorithm parameters are absent", sigAlg.getParameters() == null);
 
-        // The serial packs (log_number << 48) | index per Section 6.1.
+        // The serial packs (log_number << 48) | index per Section 6.2.
         isEquals((logNumber << 48) | index, cert.getSerialNumber().longValue());
 
         // Decode the MTCProof from the signatureValue and confirm it carries no signatures.
@@ -267,8 +267,8 @@ public class LandmarkCertificateManagerTest
     }
 
     /**
-     * Builds a CosignedMessage for a checkpoint (start==0) per Section 5.3.1
-     * of draft-04. The validator's TrustedSubtreeManager invokes the verifier
+     * Builds a CosignedMessage for a checkpoint (start==0) per Section 5.3.1.
+     * The validator's TrustedSubtreeManager invokes the verifier
      * with {@code timestamp == 0}.
      */
     private byte[] buildCheckpointSignatureInput(byte[] logId, long treeSize, byte[] rootHash, byte[] cosignerId)

@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Collection;
+import java.util.NoSuchElementException;
 
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.cms.Attribute;
@@ -34,7 +35,10 @@ import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Store;
 
 /**
- * Carrier class for a TimeStampToken.
+ * Carrier class for an RFC 3161 time-stamp token - the {@code SignedData} (CMS) structure, with
+ * content type id-ct-TSTInfo, signed by the TSA. Provides access to the embedded
+ * {@link TimeStampTokenInfo} and the means to verify the token against the signing certificate
+ * (see {@link #validate(SignerInformationVerifier)}).
  */
 public class TimeStampToken
 {
@@ -79,7 +83,7 @@ public class TimeStampToken
 
         if (signers.size() != 1)
         {
-            throw new IllegalArgumentException("Time-stamp token signed by "
+            throw new TSPValidationException("Time-stamp token signed by "
                     + signers.size()
                     + " signers, but it must contain just the TSA signature.");
         }
@@ -95,7 +99,18 @@ public class TimeStampToken
 
             this.tstInfo = new TimeStampTokenInfo(TSTInfo.getInstance(bOut.toByteArray()));
 
-            Attribute attr = tsaSignerInfo.getSignedAttributes().get(PKCSObjectIdentifiers.id_aa_signingCertificate);
+            // A time-stamp token must carry the SigningCertificate(V2) as a *signed* attribute; a token
+            // whose SignerInfo has no signed attributes at all (getSignedAttributes() == null) has none,
+            // so reject it cleanly rather than NPE on the following .get(...) — a raw NullPointerException
+            // would escape this ctor's declared throws TSPException, IOException contract.
+            AttributeTable signedAttr = tsaSignerInfo.getSignedAttributes();
+
+            if (signedAttr == null)
+            {
+                throw new TSPValidationException("no signing certificate attribute found, time stamp invalid.");
+            }
+
+            Attribute attr = signedAttr.get(PKCSObjectIdentifiers.id_aa_signingCertificate);
 
             if (attr != null)
             {
@@ -115,7 +130,7 @@ public class TimeStampToken
             }
             else
             {
-                attr = tsaSignerInfo.getSignedAttributes().get(PKCSObjectIdentifiers.id_aa_signingCertificateV2);
+                attr = signedAttr.get(PKCSObjectIdentifiers.id_aa_signingCertificateV2);
 
                 if (attr == null)
                 {
@@ -124,14 +139,14 @@ public class TimeStampToken
 
                 if (attr.getAttrValues().size() < 1)
                 {
-                    throw new TSPException("signing certificate attribute MUST contain at least one AttributeValue");
+                    throw new TSPException("signing certificate v2 attribute MUST contain at least one AttributeValue");
                 }
 
                 SigningCertificateV2 signCertV2 = SigningCertificateV2.getInstance(attr.getAttrValues().getObjectAt(0));
 
                 if (signCertV2.getCerts().length < 1)
                 {
-                    throw new TSPException("signing certificate attribute MUST contain at least one ESSCertID");
+                    throw new TSPException("signing certificate v2 attribute MUST contain at least one ESSCertIDv2");
                 }
 
                 this.certID = ESSCertIDv2.getInstance(signCertV2.getCerts()[0]);
@@ -141,38 +156,71 @@ public class TimeStampToken
         {
             throw new TSPException(e.getMessage(), e.getUnderlyingException());
         }
+        catch (IllegalArgumentException e)
+        {
+            throw new TSPException("malformed timestamp token: " + e, e);
+        }
+        catch (ClassCastException e)
+        {
+            throw new TSPException("malformed timestamp token: " + e, e);
+        }
+        catch (NoSuchElementException e)
+        {
+            throw new TSPException("malformed timestamp token: " + e, e);
+        }
     }
 
+    /**
+     * @return the parsed TSTInfo carried by this token.
+     */
     public TimeStampTokenInfo getTimeStampInfo()
     {
         return tstInfo;
     }
 
+    /**
+     * @return the identifier of the signer (the TSA) of this token.
+     */
     public SignerId getSID()
     {
         return tsaSignerInfo.getSID();
     }
-    
+
+    /**
+     * @return the table of signed (authenticated) attributes on the token.
+     */
     public AttributeTable getSignedAttributes()
     {
         return tsaSignerInfo.getSignedAttributes();
     }
 
+    /**
+     * @return the table of unsigned attributes on the token, null if there are none.
+     */
     public AttributeTable getUnsignedAttributes()
     {
         return tsaSignerInfo.getUnsignedAttributes();
     }
 
+    /**
+     * @return a Store of the X.509 certificates carried by the token.
+     */
     public Store<X509CertificateHolder> getCertificates()
     {
         return tsToken.getCertificates();
     }
 
+    /**
+     * @return a Store of the CRLs carried by the token.
+     */
     public Store<X509CRLHolder> getCRLs()
     {
         return tsToken.getCRLs();
     }
 
+    /**
+     * @return a Store of the X.509 attribute certificates carried by the token.
+     */
     public Store<X509AttributeCertificateHolder> getAttributeCertificates()
     {
         return tsToken.getAttributeCertificates();

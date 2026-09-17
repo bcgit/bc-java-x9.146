@@ -26,9 +26,15 @@ public class Properties
     // classes that reference them compile in the jdk1.4 build. Keep in step with base.
     public static final String PKCS12_IGNORE_USELESS_PASSWD = "org.bouncycastle.pkcs12.ignore_useless_passwd";
     public static final String PKCS12_MAX_IT_COUNT = "org.bouncycastle.pkcs12.max_it_count";
+    public static final String PKCS12_STORE_IT_COUNT = "org.bouncycastle.pkcs12.store_it_count";
     public static final String BKS_MAX_IT_COUNT = "org.bouncycastle.bks.max_it_count";
+    public static final String OPENSSH_MAX_ROUNDS = "org.bouncycastle.openssh.max_rounds";
     public static final String X509_CRL_CACHE_TTL = "org.bouncycastle.x509.crl_cache_ttl";
     public static final String X509_ENABLE_CRLDP = "org.bouncycastle.x509.enableCRLDP";
+    public static final String X509_CRLDP_PROTOCOLS = "org.bouncycastle.x509.CRLDP_protocols";
+    public static final String OCSP_MAX_RESPONSE_SIZE = "org.bouncycastle.ocsp.max_response_size";
+    public static final String OPENPGP_MAX_ARMOR_HEADER_LENGTH = "org.bouncycastle.openpgp.max_armor_header_length";
+    public static final String OPENPGP_MAX_ARMOR_HEADERS = "org.bouncycastle.openpgp.max_armor_headers";
     public static final String PKCS12_ALLOW_SUN_SECRET_KEYS = "org.bouncycastle.pkcs12.allow_sun_secret_keys";
     public static final String PKCS1_STRICT_DIGESTINFO = "org.bouncycastle.pkcs1.strict_digestinfo";
     public static final String JSSE_HOSTNAME_CHECK_CN_FALLBACK = "org.bouncycastle.jsse.hostname_check_cn_fallback";
@@ -37,17 +43,21 @@ public class Properties
     public static final String DRBG_ENTROPY_THREAD = "org.bouncycastle.drbg.entropy_thread";
     public static final String DRBG_GATHER_PAUSE_SECS = "org.bouncycastle.drbg.gather_pause_secs";
     public static final String ASN1_ALLOW_NON_DER_TIME = "org.bouncycastle.asn1.allow_non_der_time";
+    public static final String ASN1_ALLOW_ZONELESS_UTCTIME = "org.bouncycastle.asn1.allow_zoneless_utctime";
     public static final String ASN1_MAX_CONS_DEPTH = "org.bouncycastle.asn1.max_cons_depth";
     public static final String ASN1_MAX_LIMIT = "org.bouncycastle.asn1.max_limit";
     public static final String DH_MAX_SIZE = "org.bouncycastle.dh.max_size";
     public static final String DSA_MAX_SIZE = "org.bouncycastle.dsa.max_size";
     public static final String BCFKS_MAX_IT_COUNT = "org.bouncycastle.bcfks.max_it_count";
     public static final String BCFKS_MAX_SCRYPT_MEMORY = "org.bouncycastle.bcfks.max_scrypt_memory";
+    public static final String BCFKS_STORE_IT_COUNT = "org.bouncycastle.bcfks.store_it_count";
     public static final String PBE_MAX_ITERATION_COUNT = "org.bouncycastle.pbe.max_iteration_count";
     public static final String PBE_MAX_SCRYPT_MEMORY = "org.bouncycastle.pbe.max_scrypt_memory";
     public static final String PKMAC_MAX_ITERATION_COUNT = "org.bouncycastle.pkmac.max_iteration_count";
     public static final String X509_MAX_POLICY_NODES = "org.bouncycastle.x509.max_policy_nodes";
+    public static final String X509_MAX_CERT_PATH_BUILD_NODES = "org.bouncycastle.x509.max_cert_path_build_nodes";
     public static final String X509_ALLOW_LENIENT_RFC822_NAME = "org.bouncycastle.x509.allow_lenient_rfc822_name";
+    public static final String X509_ALLOW_EMPTY_ISSUER_CERT = "org.bouncycastle.x509.allow_empty_issuer_cert";
     public static final String GCM_ALLOW_SHORT_TAGS = "org.bouncycastle.gcm.allow_short_tags";
     public static final String BKS_ENABLE_V1 = "org.bouncycastle.bks.enable_v1";
 
@@ -56,6 +66,14 @@ public class Properties
      * (Remote SIM Provisioning). Looser than RFC 5280 7.1, so defaults to off. See github #2327.
      */
     public static final String X509_SGP22_NAME_CONSTRAINTS = "org.bouncycastle.x509.sgp22_name_constraints";
+
+    /**
+     * Upper bound on the field size m accepted when building a characteristic-2 (F2m) elliptic curve;
+     * an unbounded m from explicit EC parameters is an import-time CPU-exhaustion vector
+     * (CVE-2024-29857). Default 1142 (twice 571).
+     */
+    public static final String EC_MAX_F2M_FIELD_SIZE = "org.bouncycastle.ec.max_f2m_field_size";
+    public static final String MIME_MAX_DEPTH = "org.bouncycastle.mime.max_depth";
 
     private Properties()
     {

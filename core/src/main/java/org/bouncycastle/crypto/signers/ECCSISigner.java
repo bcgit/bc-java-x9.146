@@ -7,12 +7,14 @@ import java.security.SecureRandom;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.CryptoException;
+import org.bouncycastle.crypto.CryptoServicesRegistrar;
 import org.bouncycastle.crypto.DataLengthException;
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.Signer;
 import org.bouncycastle.crypto.params.ECCSIPrivateKeyParameters;
 import org.bouncycastle.crypto.params.ECCSIPublicKeyParameters;
 import org.bouncycastle.crypto.params.ParametersWithRandom;
+import org.bouncycastle.math.ec.ECAlgorithms;
 import org.bouncycastle.math.ec.ECPoint;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.BigIntegers;
@@ -38,6 +40,7 @@ public class ECCSISigner
     private CipherParameters param;
     private ByteArrayOutputStream stream;
     private boolean forSigning;
+    private boolean stale;
     private final int N;
 
     /**
@@ -54,7 +57,11 @@ public class ECCSISigner
         this.G = params.getG();
         this.digest = digest;
         this.digest.reset();
-        this.N = (params.getCurve().getOrder().bitLength() + 7) >> 3;
+        // RFC 6507 sec. 2 sizes N by the prime p the curve is over, and r is an N-octet field
+        // element; the order can be the wider of the two on a curve like secp160r1, and s' is
+        // N octets as well, so take whichever is larger. On the RFC's own P-256 parameters,
+        // and on every curve whose field and order share a bit length, the two agree.
+        this.N = (Math.max(params.getCurve().getFieldSize(), q.bitLength()) + 7) >> 3;
     }
 
     /**
@@ -62,7 +69,8 @@ public class ECCSISigner
      *
      * @param forSigning true for signing, false for verification
      * @param param      Key parameters:
-     *                   - For signing: {@code ParametersWithRandom} containing {@code ECCSIPrivateKeyParameters}
+     *                   - For signing: {@code ParametersWithRandom} containing {@code ECCSIPrivateKeyParameters},
+     *                     or bare {@code ECCSIPrivateKeyParameters} to draw from the default SecureRandom
      *                   - For verification: {@code ECCSIPublicKeyParameters}
      * @throws IllegalArgumentException if invalid parameters are provided
      */
@@ -79,6 +87,10 @@ public class ECCSISigner
     {
         if (forSigning)
         {
+            if (stale)
+            {
+                reset();
+            }
             digest.update(b);
         }
         else
@@ -92,6 +104,10 @@ public class ECCSISigner
     {
         if (forSigning)
         {
+            if (stale)
+            {
+                reset();
+            }
             digest.update(in, off, len);
         }
         else
@@ -115,19 +131,50 @@ public class ECCSISigner
     public byte[] generateSignature()
         throws CryptoException, DataLengthException
     {
+        if (stale)
+        {
+            // a signature has already been formed with the current j and r; RFC 6507 sec. 5.2.1
+            // draws them per signature, and a second signature over the same pair determines the
+            // SSK, so set up afresh rather than reuse them
+            reset();
+        }
+
         byte[] heBytes = new byte[digest.getDigestSize()];
         digest.doFinal(heBytes, 0);
 
+        // whatever happens below, j and r are spent: the next message (or the retry after the
+        // zero-denominator throw) must start from a fresh pair
+        stale = true;
+
         //Compute s' = ( (( HE + r * SSK )^-1) * j ) modulo q
-        ECCSIPrivateKeyParameters params = (ECCSIPrivateKeyParameters)(((ParametersWithRandom)param).getParameters());
+        CipherParameters keyParam = param;
+        if (keyParam instanceof ParametersWithRandom)
+        {
+            keyParam = ((ParametersWithRandom)keyParam).getParameters();
+        }
+        ECCSIPrivateKeyParameters params = (ECCSIPrivateKeyParameters)keyParam;
         BigInteger ssk = params.getSSK();
-        BigInteger denominator = new BigInteger(1, heBytes).add(r.multiply(ssk)).mod(q);
-        if (denominator.equals(BigInteger.ZERO))
+
+        // HE is a hash over public values and r is the unreduced Jx carried in the signature, so
+        // reducing either with BigInteger reveals nothing; reset() has pinned ssk and j to
+        // [1, q-1]. Every remaining step is then constant time: modMult for the products, modAdd
+        // for the sum, and modOddInverse rather than the variable-time BigInteger.modInverse.
+        // q is the curve order, hence odd.
+        //
+        // The products matter as much as the inverse here. HE and r are both public and change per
+        // signature while ssk is the long-term secret, so a reduction of HE + r*ssk costing an
+        // amount that depended on the quotient would answer a question about ssk once per
+        // signature, and those answers combine.
+        BigInteger he = new BigInteger(1, heBytes).mod(q);
+        BigInteger denominator = BigIntegers.modAdd(q, he, BigIntegers.modMult(q, r.mod(q), ssk));
+        if (denominator.equals(BigIntegers.ZERO))
         {
             throw new IllegalArgumentException("Invalid j, retry");
         }
 
-        BigInteger sPrime = denominator.modInverse(q).multiply(j).mod(q);
+        // both forms of the inverse throw ArithmeticException for a non-invertible value, which the
+        // zero check above has already ruled out for a prime q
+        BigInteger sPrime = BigIntegers.modMult(q, BigIntegers.modOddInverse(q, denominator), j);
 
         return Arrays.concatenate(BigIntegers.asUnsignedByteArray(this.N, r), BigIntegers.asUnsignedByteArray(this.N, sPrime),
             params.getPublicKeyParameters().getPVT().getEncoded(false));
@@ -189,11 +236,37 @@ public class ECCSISigner
         {
             ECCSIPrivateKeyParameters parameters = (ECCSIPrivateKeyParameters)param;
             pvt = parameters.getPublicKeyParameters().getPVT();
-            j = BigIntegers.createRandomBigInteger(q.bitLength(), random);
-            ECPoint J = G.multiply(j).normalize();
-            r = J.getAffineXCoord().toBigInteger().mod(q);
+            if (parameters.getSSK().signum() <= 0 || parameters.getSSK().compareTo(q) >= 0)
+            {
+                // RFC 6507 sec. 5.1.2 derives the SSK modulo q, so a value outside [1, q-1] is a
+                // malformed key. Checked here because generateSignature multiplies it in a form
+                // that requires it reduced, and because a wrong answer later is worse than this.
+                // The key parameters cannot check it for themselves: unlike SAKKE's fixed RFC 6509
+                // group, ECCSI keys do not carry their curve, so q is first known here.
+                throw new IllegalArgumentException("SSK must be in [1, q-1]");
+            }
+            if (random == null)
+            {
+                random = CryptoServicesRegistrar.getSecureRandom();
+            }
+            // RFC 6507 sec. 5.2.1 asks for a random non-zero element of F_q, but a draw over q's
+            // bit length can land on zero or above q; reject those. An in-range draw consumes the
+            // same bytes it always did, and being reduced is what lets s' below be computed
+            // without a variable-time reduction of a value derived from j.
+            do
+            {
+                j = BigIntegers.createRandomBigInteger(q.bitLength(), random);
+            }
+            while (j.signum() == 0 || j.compareTo(q) >= 0);
+            // j is the per-signature nonce and SSK the long-term secret signing key:
+            // constant-time, not the curve's default wNAF multiplier
+            ECPoint J = ECAlgorithms.multiplySecret(G, j, q).normalize();
+            // RFC 6507 sec. 5.2.1 assigns r the N-octet Jx itself, not Jx mod q: sec. 5.2.2 has
+            // the verifier check Jx = r modulo p, so a reduced r would fail a conforming external
+            // verifier whenever Jx lands in [q, p)
+            r = J.getAffineXCoord().toBigInteger();
 
-            kpak_computed = G.multiply(parameters.getSSK());
+            kpak_computed = ECAlgorithms.multiplySecret(G, parameters.getSSK(), q);
         }
         else
         {
@@ -231,5 +304,7 @@ public class ECCSISigner
             // Compute Y = HS*PVT + KPAK
             Y = pvt.multiply(HS).add(kpak).normalize();
         }
+
+        stale = false;
     }
 }

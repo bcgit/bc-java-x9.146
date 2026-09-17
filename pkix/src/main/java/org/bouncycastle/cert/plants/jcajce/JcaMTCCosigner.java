@@ -20,7 +20,8 @@ import org.bouncycastle.util.Arrays;
 
 /**
  * JCA-side implementation of {@link MTCCosigner} for the MTC signature
- * algorithms enumerated in Section 6.1 of draft-ietf-plants-merkle-tree-certs:
+ * algorithms named in {@link org.bouncycastle.cert.plants.MTCSignatureAlgorithm},
+ * permitted by Section 5.3.3 of draft-ietf-plants-merkle-tree-certs:
  * {@code "ECDSA-P256-SHA256"}, {@code "ECDSA-P384-SHA384"}, {@code "Ed25519"},
  * {@code "ML-DSA-44"}, {@code "ML-DSA-65"}, {@code "ML-DSA-87"}.
  *

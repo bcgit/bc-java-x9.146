@@ -3,6 +3,7 @@ package org.bouncycastle.tsp.ers;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Date;
+import java.util.NoSuchElementException;
 
 import org.bouncycastle.asn1.tsp.ArchiveTimeStamp;
 import org.bouncycastle.asn1.tsp.PartialHashtree;
@@ -18,7 +19,11 @@ import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.Store;
 
 /**
- * RFC 4998 ArchiveTimeStamp.
+ * Carrier for an RFC 4998 ArchiveTimeStamp - an RFC 3161 time-stamp token
+ * together with the reduced hash tree (a sequence of PartialHashtrees) that
+ * binds a particular data object or data group to the time-stamped root hash.
+ * Provides operations to recover the root hash, confirm a data object is
+ * present, and validate the underlying time-stamp signature.
  */
 public class ERSArchiveTimeStamp
 {
@@ -29,12 +34,49 @@ public class ERSArchiveTimeStamp
 
     private ERSRootNodeCalculator rootNodeCalculator = new BinaryTreeRootCalculator();
 
+    /**
+     * Create an archive time-stamp from an encoded ArchiveTimeStamp.
+     *
+     * @param archiveTimeStamp the DER encoded ArchiveTimeStamp.
+     * @param digCalcProv provider for the digest calculator matching the structure's digest algorithm.
+     */
     public ERSArchiveTimeStamp(byte[] archiveTimeStamp, DigestCalculatorProvider digCalcProv)
         throws TSPException, ERSException
     {
-        this(ArchiveTimeStamp.getInstance(archiveTimeStamp), digCalcProv);
+        this(parseArchiveTimeStamp(archiveTimeStamp), digCalcProv);
     }
 
+    private static ArchiveTimeStamp parseArchiveTimeStamp(byte[] archiveTimeStamp)
+        throws ERSException
+    {
+        try
+        {
+            return ArchiveTimeStamp.getInstance(archiveTimeStamp);
+        }
+        catch (IllegalArgumentException e)
+        {
+            throw new ERSException("malformed archive time stamp: " + e.getMessage(), e);
+        }
+        catch (IllegalStateException e)
+        {
+            throw new ERSException("malformed archive time stamp: " + e.getMessage(), e);
+        }
+        catch (NoSuchElementException e)
+        {
+            throw new ERSException("malformed archive time stamp: " + e.getMessage(), e);
+        }
+        catch (ArrayIndexOutOfBoundsException e)
+        {
+            throw new ERSException("malformed archive time stamp: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Create an archive time-stamp from a parsed ArchiveTimeStamp structure.
+     *
+     * @param archiveTimeStamp the ArchiveTimeStamp to wrap.
+     * @param digCalcProv provider for the digest calculator matching the structure's digest algorithm.
+     */
     public ERSArchiveTimeStamp(ArchiveTimeStamp archiveTimeStamp, DigestCalculatorProvider digCalcProv)
         throws TSPException, ERSException
     {
@@ -96,12 +138,31 @@ public class ERSArchiveTimeStamp
         return archiveTimeStamp.getDigestAlgorithmIdentifier();
     }
 
+    /**
+     * Validate that the passed in data object/group is present in this archive
+     * time-stamp at the given date - that its hash appears in the reduced hash
+     * tree and the recovered root hash matches the time-stamp imprint.
+     *
+     * @param data the data object or data group to check for.
+     * @param atDate date the data is expected to be valid at; the time-stamp must not be in the future relative to it.
+     * @throws ERSException if the data is not present, or the time-stamp generation time is after atDate.
+     */
     public void validatePresent(ERSData data, Date atDate)
         throws ERSException
     {
         validatePresent(data instanceof ERSDataGroup, data.getHash(digCalc, previousChainsDigest), atDate);
     }
 
+    /**
+     * Return true if the passed in data object/group is present in this archive
+     * time-stamp at the given date. Equivalent to {@link #validatePresent(ERSData, Date)}
+     * but returning a boolean rather than throwing on absence.
+     *
+     * @param data the data object or data group to check for.
+     * @param atDate date the data is expected to be valid at.
+     * @return true if the data is present, false otherwise.
+     * @throws ArchiveTimeStampValidationException if the time-stamp generation time is after atDate.
+     */
     public boolean isContaining(ERSData data, Date atDate)
         throws ERSException
     {
@@ -122,6 +183,15 @@ public class ERSArchiveTimeStamp
         }
     }
 
+    /**
+     * Validate that data with the given hash is present in this archive time-stamp
+     * at the given date.
+     *
+     * @param isDataGroup true if the hash represents a data group rather than a single object.
+     * @param hash the (pre-computed) hash of the data object/group to check for.
+     * @param atDate date the data is expected to be valid at.
+     * @throws ERSException if the hash is not present, or the time-stamp generation time is after atDate.
+     */
     public void validatePresent(boolean isDataGroup, byte[] hash, Date atDate)
         throws ERSException
     {
@@ -256,6 +326,11 @@ public class ERSArchiveTimeStamp
         return null;
     }
 
+    /**
+     * Return the underlying ASN.1 ArchiveTimeStamp structure.
+     *
+     * @return the ArchiveTimeStamp this object wraps.
+     */
     public ArchiveTimeStamp toASN1Structure()
     {
         return archiveTimeStamp;

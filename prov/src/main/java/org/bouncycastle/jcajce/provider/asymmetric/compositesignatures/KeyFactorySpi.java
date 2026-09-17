@@ -43,13 +43,12 @@ import org.bouncycastle.jcajce.provider.asymmetric.util.BaseKeyFactorySpi;
 import org.bouncycastle.jcajce.provider.util.AsymmetricKeyInfoConverter;
 import org.bouncycastle.jcajce.util.BCJcaJceHelper;
 import org.bouncycastle.jcajce.util.JcaJceHelper;
-import org.bouncycastle.math.ec.rfc8032.Ed25519;
-import org.bouncycastle.math.ec.rfc8032.Ed448;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Integers;
 import org.bouncycastle.util.Exceptions;
 
 /**
- * KeyFactory for composite signatures. List of supported combinations is in CompositeSignaturesConstants
+ * KeyFactory for composite signatures. The supported combinations are listed in {@link CompositeIndex}.
  */
 public class KeyFactorySpi
     extends BaseKeyFactorySpi
@@ -75,7 +74,9 @@ public class KeyFactorySpi
     private static final AlgorithmIdentifier rsa = new AlgorithmIdentifier(PKCSObjectIdentifiers.rsaEncryption);
 
     private static Map<ASN1ObjectIdentifier, AlgorithmIdentifier[]> pairings = new HashMap<ASN1ObjectIdentifier, AlgorithmIdentifier[]>();
-    private static Map<ASN1ObjectIdentifier, int[]> componentKeySizes = new HashMap<ASN1ObjectIdentifier, int[]>();
+    // the fixed ML-DSA public key length each composite body splits at - the traditional component is
+    // whatever follows, so its length is deliberately not recorded here.
+    private static Map<ASN1ObjectIdentifier, Integer> mldsaKeySizes = new HashMap<ASN1ObjectIdentifier, Integer>();
 
     static
     {
@@ -98,24 +99,24 @@ public class KeyFactorySpi
         pairings.put(IANAObjectIdentifiers.id_MLDSA87_ECDSA_P521_SHA512, new AlgorithmIdentifier[]{mlDsa87, ecDsaP521});
         pairings.put(IANAObjectIdentifiers.id_MLDSA87_RSA3072_PSS_SHA512, new AlgorithmIdentifier[]{mlDsa87, rsa});
 
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA44_RSA2048_PSS_SHA256, new int[]{1312, 268});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA44_RSA2048_PKCS15_SHA256, new int[]{1312, 284});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA44_Ed25519_SHA512, new int[]{1312, Ed25519.PUBLIC_KEY_SIZE});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA44_ECDSA_P256_SHA256, new int[]{1312, 76});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_RSA3072_PSS_SHA512, new int[]{1952, 256});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_RSA3072_PKCS15_SHA512, new int[]{1952, 256});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_RSA4096_PSS_SHA512, new int[]{1952, 542});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_RSA4096_PKCS15_SHA512, new int[]{1952, 542});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_ECDSA_P256_SHA512, new int[]{1952, 76});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_ECDSA_P384_SHA512, new int[]{1952, 87});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_ECDSA_brainpoolP256r1_SHA512, new int[]{1952, 76});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_Ed25519_SHA512, new int[]{1952, Ed25519.PUBLIC_KEY_SIZE});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_ECDSA_P384_SHA512, new int[]{2592, 87});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_ECDSA_brainpoolP384r1_SHA512, new int[]{2592, 87});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_Ed448_SHAKE256, new int[]{2592, Ed448.PUBLIC_KEY_SIZE});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_RSA4096_PSS_SHA512, new int[]{2592, 542});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_RSA3072_PSS_SHA512, new int[]{2592, 256});
-        componentKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_ECDSA_P521_SHA512, new int[]{2592, 93});
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA44_RSA2048_PSS_SHA256, Integers.valueOf(1312));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA44_RSA2048_PKCS15_SHA256, Integers.valueOf(1312));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA44_Ed25519_SHA512, Integers.valueOf(1312));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA44_ECDSA_P256_SHA256, Integers.valueOf(1312));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_RSA3072_PSS_SHA512, Integers.valueOf(1952));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_RSA3072_PKCS15_SHA512, Integers.valueOf(1952));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_RSA4096_PSS_SHA512, Integers.valueOf(1952));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_RSA4096_PKCS15_SHA512, Integers.valueOf(1952));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_ECDSA_P256_SHA512, Integers.valueOf(1952));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_ECDSA_P384_SHA512, Integers.valueOf(1952));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_ECDSA_brainpoolP256r1_SHA512, Integers.valueOf(1952));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA65_Ed25519_SHA512, Integers.valueOf(1952));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_ECDSA_P384_SHA512, Integers.valueOf(2592));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_ECDSA_brainpoolP384r1_SHA512, Integers.valueOf(2592));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_Ed448_SHAKE256, Integers.valueOf(2592));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_RSA4096_PSS_SHA512, Integers.valueOf(2592));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_RSA3072_PSS_SHA512, Integers.valueOf(2592));
+        mldsaKeySizes.put(IANAObjectIdentifiers.id_MLDSA87_ECDSA_P521_SHA512, Integers.valueOf(2592));
     }
 
     private JcaJceHelper helper;
@@ -159,11 +160,14 @@ public class KeyFactorySpi
 
     /**
      * Creates a CompositePrivateKey from its PrivateKeyInfo encoded form.
-     * It is compliant with https://www.ietf.org/archive/id/draft-ounsworth-pq-composite-sigs-13.html where
-     * CompositeSignaturePrivateKey is a sequence of two OneAsymmetricKey which a newer name for PrivateKeyInfo.
+     * <p>
+     * For the current OIDs (draft-ietf-lamps-pq-composite-sigs, IANA arc 1.3.6.1.5.5.7.6.37-54) the
+     * privateKey body is the bare concatenation mldsaSeed || tradSK, with no inner ASN.1 structure.
+     * The superseded Entrust/OpenCA OIDs, whose body is a SEQUENCE of OneAsymmetricKey (the newer name
+     * for PrivateKeyInfo), are still decoded for compatibility.
      *
-     * @param keyInfo PrivateKeyInfo containing a sequence of PrivateKeyInfos corresponding to each component.
-     * @return A CompositePrivateKey created from all components in the sequence.
+     * @param keyInfo PrivateKeyInfo carrying the composite private key body.
+     * @return A CompositePrivateKey created from all components in the body.
      * @throws IOException
      */
     public PrivateKey generatePrivate(PrivateKeyInfo keyInfo)
@@ -273,12 +277,15 @@ public class KeyFactorySpi
 
     /**
      * Creates a CompositePublicKey from its SubjectPublicKeyInfo encoded form.
-     * It is compliant with https://www.ietf.org/archive/id/draft-ounsworth-pq-composite-sigs-13.html where
-     * CompositeSignaturePublicKey is a sequence of two BIT STRINGs which contain the encoded component public keys.
-     * In BC implementation - CompositePublicKey is encoded into a BIT STRING in the form of SubjectPublicKeyInfo.
+     * <p>
+     * For the current OIDs (draft-ietf-lamps-pq-composite-sigs, IANA arc 1.3.6.1.5.5.7.6.37-54) the
+     * subjectPublicKey BIT STRING holds the bare concatenation mldsaPK || tradPK, split at the fixed
+     * ML-DSA public key length. The superseded encodings - a SEQUENCE of SubjectPublicKeyInfo, or of
+     * BIT STRINGs - are still decoded for compatibility, which is why the sequence parse is attempted
+     * first and the fixed-length split is reached from its catch branch.
      *
-     * @param keyInfo SubjectPublicKeyInfo containing a sequence of BIT STRINGs corresponding to each component.
-     * @return
+     * @param keyInfo SubjectPublicKeyInfo carrying the composite public key body.
+     * @return A CompositePublicKey created from all components in the body.
      * @throws IOException
      */
     public PublicKey generatePublic(SubjectPublicKeyInfo keyInfo)
@@ -378,15 +385,16 @@ public class KeyFactorySpi
     byte[][] split(ASN1ObjectIdentifier algorithm, ASN1BitString publicKeyData)
         throws IOException
     {
-        int[] sizes = componentKeySizes.get(algorithm);
+        Integer mldsaSize = (Integer)mldsaKeySizes.get(algorithm);
         byte[] keyData = publicKeyData.getOctets();
-        if (sizes == null || keyData.length < sizes[0])
+        if (mldsaSize == null || keyData.length < mldsaSize.intValue())
         {
             throw new IOException("malformed composite public key: body shorter than the first component");
         }
-        byte[][] components = new byte[][]{new byte[sizes[0]], new byte[keyData.length - sizes[0]]};
-        System.arraycopy(keyData, 0, components[0], 0, sizes[0]);
-        System.arraycopy(keyData, sizes[0], components[1], 0, components[1].length);
+        int split = mldsaSize.intValue();
+        byte[][] components = new byte[][]{new byte[split], new byte[keyData.length - split]};
+        System.arraycopy(keyData, 0, components[0], 0, split);
+        System.arraycopy(keyData, split, components[1], 0, components[1].length);
         return components;
     }
 

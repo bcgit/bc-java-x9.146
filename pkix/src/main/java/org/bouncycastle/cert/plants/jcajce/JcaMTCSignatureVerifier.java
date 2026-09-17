@@ -17,8 +17,9 @@ import org.bouncycastle.util.Exceptions;
 /**
  * JCA-side implementation of {@link MTCSignatureVerifier}.
  *
- * <p>Bound to a {@link PublicKey} and one of the algorithm identifiers defined
- * by Section 6.1 of draft-ietf-plants-merkle-tree-certs:
+ * <p>Bound to a {@link PublicKey} and one of the canonical algorithm names in
+ * {@link org.bouncycastle.cert.plants.MTCSignatureAlgorithm}, for an algorithm
+ * permitted by Section 5.3.3 of draft-ietf-plants-merkle-tree-certs:
  * {@code "ECDSA-P256-SHA256"}, {@code "ECDSA-P384-SHA384"}, {@code "Ed25519"},
  * {@code "ML-DSA-44"}, {@code "ML-DSA-65"}, {@code "ML-DSA-87"}.</p>
  *

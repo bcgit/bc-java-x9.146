@@ -15,9 +15,11 @@ public class AllTestsSnova
 
     public static Test suite()
     {
-        TestSuite suite = new TestSuite("Lightweight SNOVA Tests");
+        TestSuite suite = new TestSuite("Lightweight SNOVA Tests (ESK)");
 
-        suite.addTestSuite(SnovaTest.class);
+        // the other SnovaTest KAT methods run from AllTestsSnovaSSK / AllTestsSnovaShake /
+        // AllTestsSnovaShakeSSK so the four quarters, each minutes of KATs, run as separate (parallel) forks.
+        suite.addTest(TestSuite.createTest(SnovaTest.class, "testTestVectorsESK"));
 
         return new AllTests.BCTestSetup(suite);
     }

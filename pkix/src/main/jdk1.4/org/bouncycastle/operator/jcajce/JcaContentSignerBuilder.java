@@ -1,52 +1,45 @@
 package org.bouncycastle.operator.jcajce;
 
-import java.io.IOException;
 import java.io.OutputStream;
 import java.security.GeneralSecurityException;
 import java.security.PrivateKey;
 import java.security.Provider;
-import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Signature;
 import java.security.SignatureException;
+import java.security.interfaces.RSAPrivateKey;
 import java.security.spec.AlgorithmParameterSpec;
 import java.security.spec.PSSParameterSpec;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
-import org.bouncycastle.asn1.ASN1EncodableVector;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Integer;
-import org.bouncycastle.asn1.ASN1Sequence;
-import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERNull;
-import org.bouncycastle.asn1.DERSequence;
-import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
+import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
+import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
-import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
-import org.bouncycastle.jcajce.CompositePrivateKey;
 import org.bouncycastle.jcajce.io.OutputStreamFactory;
-import org.bouncycastle.jcajce.spec.CompositeAlgorithmSpec;
 import org.bouncycastle.jcajce.util.DefaultJcaJceHelper;
 import org.bouncycastle.jcajce.util.NamedJcaJceHelper;
 import org.bouncycastle.jcajce.util.ProviderJcaJceHelper;
 import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.FixedLengthContentSigner;
 import org.bouncycastle.operator.DefaultDigestAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.DigestAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.ExtendedContentSigner;
 import org.bouncycastle.operator.OperatorCreationException;
-import org.bouncycastle.operator.OperatorStreamException;
 import org.bouncycastle.operator.RuntimeOperatorException;
-import org.bouncycastle.operator.SignatureAlgorithmIdentifierFinder;
-import org.bouncycastle.util.Pack;
 import org.bouncycastle.util.Strings;
-import org.bouncycastle.util.io.TeeOutputStream;
 
+/**
+ * General builder class for ContentSigner operators based on the JCA.
+ */
 public class JcaContentSignerBuilder
 {
     private static final Set isAlgIdFromPrivate = new HashSet();
@@ -54,6 +47,7 @@ public class JcaContentSignerBuilder
 
     static
     {
+        isAlgIdFromPrivate.add("COMPOSITE");
         isAlgIdFromPrivate.add("DILITHIUM");
         isAlgIdFromPrivate.add("SPHINCS+");
         isAlgIdFromPrivate.add("SPHINCSPlus");
@@ -83,6 +77,10 @@ public class JcaContentSignerBuilder
         this(signatureAlgorithm, (AlgorithmIdentifier)null);
     }
 
+    // NOTE: LMS (org.bouncycastle.pqc.crypto.lms) is excluded from the jdk1.4 distribution
+    // (ant/jdk14.xml), so the base getSigDigAlgId(PublicKey)/LMSigParameters lookup and the
+    // JcaContentSignerBuilder(String, PublicKey) constructor built on it are dropped here.
+
     /**
      * Constructor which includes the digest algorithm identifier used.
      * <p>
@@ -91,7 +89,7 @@ public class JcaContentSignerBuilder
      * be explicitly specified.
      * </p>
      *
-     * @param signatureAlgorithm         the signature algorithm we perform.
+     * @param signatureAlgorithm the signature algorithm we perform.
      * @param signatureDigestAlgorithmID the public key associated with our private key.
      */
     public JcaContentSignerBuilder(String signatureAlgorithm, AlgorithmIdentifier signatureDigestAlgorithmID)
@@ -99,7 +97,7 @@ public class JcaContentSignerBuilder
         this.signatureAlgorithm = signatureAlgorithm;
         this.signatureDigestAlgorithm = signatureDigestAlgorithmID;
     }
-
+    
     public JcaContentSignerBuilder(String signatureAlgorithm, AlgorithmParameterSpec sigParamSpec)
     {
         this(signatureAlgorithm, sigParamSpec, null);
@@ -109,27 +107,19 @@ public class JcaContentSignerBuilder
     {
         this.signatureAlgorithm = signatureAlgorithm;
         this.signatureDigestAlgorithm = signatureDigestAlgorithmID;
-
+        
         if (sigParamSpec instanceof PSSParameterSpec)
         {
             PSSParameterSpec pssSpec = (PSSParameterSpec)sigParamSpec;
 
             this.sigAlgSpec = pssSpec;
             this.sigAlgId = new AlgorithmIdentifier(
-                PKCSObjectIdentifiers.id_RSASSA_PSS, createPSSParams(signatureAlgorithm, pssSpec));
-        }
-        else if (sigParamSpec instanceof CompositeAlgorithmSpec)
-        {
-            CompositeAlgorithmSpec compSpec = (CompositeAlgorithmSpec)sigParamSpec;
-
-            this.sigAlgSpec = compSpec;
-            this.sigAlgId = new AlgorithmIdentifier(
-                MiscObjectIdentifiers.id_alg_composite, createCompParams(compSpec));
+                                    PKCSObjectIdentifiers.id_RSASSA_PSS, createPSSParams(signatureAlgorithm, pssSpec));
         }
         else
         {
             throw new IllegalArgumentException("unknown sigParamSpec: "
-                + ((sigParamSpec == null) ? "null" : sigParamSpec.getClass().getName()));
+                            + ((sigParamSpec == null) ? "null" : sigParamSpec.getClass().getName()));
         }
     }
 
@@ -164,8 +154,8 @@ public class JcaContentSignerBuilder
                 this.sigAlgId = getSigAlgId(privateKey);
             }
 
-            final Signature sig = helper.createSignature(sigAlgId);
             final AlgorithmIdentifier signatureAlgId = sigAlgId;
+            final Signature sig = helper.createSignature(sigAlgId);
 
             if (random != null)
             {
@@ -176,9 +166,9 @@ public class JcaContentSignerBuilder
                 sig.initSign(privateKey);
             }
 
-            return new ContentSigner()
+            final ContentSigner contentSigner = new ContentSigner()
             {
-                private SignatureOutputStream stream = new SignatureOutputStream(sig);
+                private OutputStream stream = OutputStreamFactory.createStream(sig);
 
                 public AlgorithmIdentifier getAlgorithmIdentifier()
                 {
@@ -194,7 +184,7 @@ public class JcaContentSignerBuilder
                 {
                     try
                     {
-                        return stream.getSignature();
+                        return sig.sign();
                     }
                     catch (SignatureException e)
                     {
@@ -202,11 +192,109 @@ public class JcaContentSignerBuilder
                     }
                 }
             };
+
+            if (signatureDigestAlgorithm != null)
+            {
+                return new ExtendedContentSigner()
+                {
+                    private final AlgorithmIdentifier digestAlgorithm = signatureDigestAlgorithm;
+                    private final ContentSigner signer = contentSigner;
+
+                    public AlgorithmIdentifier getDigestAlgorithmIdentifier()
+                    {
+                        return digestAlgorithm;
+                    }
+
+                    public AlgorithmIdentifier getAlgorithmIdentifier()
+                    {
+                        return signer.getAlgorithmIdentifier();
+                    }
+
+                    public OutputStream getOutputStream()
+                    {
+                        return signer.getOutputStream();
+                    }
+
+                    public byte[] getSignature()
+                    {
+                        return signer.getSignature();
+                    }
+                };
+            }
+            else
+            {
+                final int fixedLength = getFixedSignatureLength(signatureAlgId, privateKey);
+                if (fixedLength > 0)
+                {
+                    return new FixedLengthContentSigner()
+                    {
+                        public int getSignatureLength()
+                        {
+                            return fixedLength;
+                        }
+
+                        public AlgorithmIdentifier getAlgorithmIdentifier()
+                        {
+                            return contentSigner.getAlgorithmIdentifier();
+                        }
+
+                        public OutputStream getOutputStream()
+                        {
+                            return contentSigner.getOutputStream();
+                        }
+
+                        public byte[] getSignature()
+                        {
+                            return contentSigner.getSignature();
+                        }
+                    };
+                }
+
+                return contentSigner;
+            }
         }
         catch (GeneralSecurityException e)
         {
             throw new OperatorCreationException("cannot create signer: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Return the fixed signature length in octets for the passed in algorithm
+     * and key, or -1 when the length varies (e.g. DER-encoded ECDSA/DSA) or
+     * cannot be determined. RSA (PKCS#1 v1.5 and PSS) signatures are the
+     * modulus size; Ed25519/Ed448 and ML-DSA are constants.
+     */
+    private static int getFixedSignatureLength(AlgorithmIdentifier sigAlgId, PrivateKey privateKey)
+    {
+        if (privateKey instanceof RSAPrivateKey)
+        {
+            return (((RSAPrivateKey)privateKey).getModulus().bitLength() + 7) / 8;
+        }
+
+        ASN1ObjectIdentifier algorithm = sigAlgId.getAlgorithm();
+        if (EdECObjectIdentifiers.id_Ed25519.equals(algorithm))
+        {
+            return 64;
+        }
+        if (EdECObjectIdentifiers.id_Ed448.equals(algorithm))
+        {
+            return 114;
+        }
+        if (NISTObjectIdentifiers.id_ml_dsa_44.equals(algorithm))
+        {
+            return 2420;
+        }
+        if (NISTObjectIdentifiers.id_ml_dsa_65.equals(algorithm))
+        {
+            return 3309;
+        }
+        if (NISTObjectIdentifiers.id_ml_dsa_87.equals(algorithm))
+        {
+            return 4627;
+        }
+
+        return -1;
     }
 
     private AlgorithmIdentifier getSigAlgId(PrivateKey privateKey)
@@ -216,7 +304,7 @@ public class JcaContentSignerBuilder
             AlgorithmIdentifier sigAlgId = SIGNATURE_ALGORITHM_IDENTIFIER_FINDER.find(privateKey.getAlgorithm());
             if (sigAlgId == null)
             {
-                return PrivateKeyInfo.getInstance(privateKey.getEncoded()).getPrivateKeyAlgorithm();
+               return PrivateKeyInfo.getInstance(privateKey.getEncoded()).getPrivateKeyAlgorithm();
             }
             return sigAlgId;
         }
@@ -226,100 +314,29 @@ public class JcaContentSignerBuilder
         }
     }
 
-    private class SignatureOutputStream
-        extends OutputStream
-    {
-        private Signature sig;
-
-        SignatureOutputStream(Signature sig)
-        {
-            this.sig = sig;
-        }
-
-        public void write(byte[] bytes, int off, int len)
-            throws IOException
-        {
-            try
-            {
-                sig.update(bytes, off, len);
-            }
-            catch (SignatureException e)
-            {
-                throw new OperatorStreamException("exception in content signer: " + e.getMessage(), e);
-            }
-        }
-
-        public void write(byte[] bytes)
-            throws IOException
-        {
-            try
-            {
-                sig.update(bytes);
-            }
-            catch (SignatureException e)
-            {
-                throw new OperatorStreamException("exception in content signer: " + e.getMessage(), e);
-            }
-        }
-
-        public void write(int b)
-            throws IOException
-        {
-            try
-            {
-                sig.update((byte)b);
-            }
-            catch (SignatureException e)
-            {
-                throw new OperatorStreamException("exception in content signer: " + e.getMessage(), e);
-            }
-        }
-
-        byte[] getSignature()
-            throws SignatureException
-        {
-            return sig.sign();
-        }
-    }
-
+    // NOTE: java.security.spec.PSSParameterSpec on JRE 1.4 has only getSaltLength() - no
+    // getDigestAlgorithm()/getMGFParameters()/getTrailerField(), and MGF1ParameterSpec (Java 5)
+    // does not exist at all - so the digest name is derived from the signature algorithm string
+    // instead (e.g. "SHA256withRSAandMGF1" -> "SHA256"), used for both the main and MGF1 digest,
+    // and the trailer field defaults to RSASSAPSSparams.DEFAULT_TRAILER_FIELD.
     private static RSASSAPSSparams createPSSParams(String signatureAlgorithm, PSSParameterSpec pssSpec)
     {
         DigestAlgorithmIdentifierFinder digFinder = new DefaultDigestAlgorithmIdentifierFinder();
         AlgorithmIdentifier digId = digFinder.find(signatureAlgorithm.substring(0, signatureAlgorithm.indexOf("w")));
+        if (digId.getParameters() == null)
+        {
+            digId = new AlgorithmIdentifier(digId.getAlgorithm(), DERNull.INSTANCE);
+        }
         AlgorithmIdentifier mgfDig = digFinder.find(signatureAlgorithm.substring(0, signatureAlgorithm.indexOf("w")));
+        if (mgfDig.getParameters() == null)
+        {
+            mgfDig = new AlgorithmIdentifier(mgfDig.getAlgorithm(), DERNull.INSTANCE);
+        }
 
         return new RSASSAPSSparams(
             digId,
             new AlgorithmIdentifier(PKCSObjectIdentifiers.id_mgf1, mgfDig),
-            new ASN1Integer(pssSpec.getSaltLength()),
+            ASN1Integer.valueOf(pssSpec.getSaltLength()),
             RSASSAPSSparams.DEFAULT_TRAILER_FIELD);
-    }
-
-    private static ASN1Sequence createCompParams(CompositeAlgorithmSpec compSpec)
-    {
-        SignatureAlgorithmIdentifierFinder algFinder = new DefaultSignatureAlgorithmIdentifierFinder();
-        ASN1EncodableVector v = new ASN1EncodableVector();
-
-        List<String> algorithmNames = compSpec.getAlgorithmNames();
-        List<AlgorithmParameterSpec> algorithmSpecs = compSpec.getParameterSpecs();
-
-        for (int i = 0; i != algorithmNames.size(); i++)
-        {
-            AlgorithmParameterSpec sigSpec = (AlgorithmParameterSpec)algorithmSpecs.get(i);
-            if (sigSpec == null)
-            {
-                v.add(algFinder.find((String)algorithmNames.get(i)));
-            }
-            else if (sigSpec instanceof PSSParameterSpec)
-            {
-                v.add(new AlgorithmIdentifier(PKCSObjectIdentifiers.id_RSASSA_PSS, createPSSParams((String)algorithmNames.get(i), (PSSParameterSpec)sigSpec)));
-            }
-            else
-            {
-                throw new IllegalArgumentException("unrecognized parameterSpec");
-            }
-        }
-
-        return new DERSequence(v);
     }
 }
