@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in */src/main/*.java) if ! /home/roy/Projects/bc-java-x9.146/.claude/scripts/run-checkstyle.sh \"$f\" 2>/dev/null; then /home/roy/Programs/idea-IU-241.18034.62/bin/format.sh -s /home/roy/.config/JetBrains/IntelliJIdea2026.1/codestyles/Default.xml -Didea.config.path=/tmp/idea-fmt-config -Didea.system.path=/tmp/idea-fmt-system \"$f\" >/dev/null 2>&1; fi ;; esac"
+          }
+        ]
+      }
+    ]
+  }
+}

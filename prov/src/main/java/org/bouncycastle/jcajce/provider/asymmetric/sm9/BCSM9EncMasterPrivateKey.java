@@ -1,0 +1,151 @@
+package org.bouncycastle.jcajce.provider.asymmetric.sm9;
+
+import java.io.IOException;
+import java.io.NotSerializableException;
+import java.io.ObjectStreamException;
+import java.security.KeyPair;
+
+import javax.security.auth.Destroyable;
+
+import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Exceptions;
+import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.gm.GMObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.crypto.params.SM9EncMasterPrivateKeyParameters;
+import org.bouncycastle.jcajce.interfaces.SM9EncMasterPrivateKey;
+
+/**
+ * JCA wrapper for an SM9 encryption master private key (ke), held by the KGC.
+ * Use {@link #generateUserKeyPair(byte[], byte)} (a KGC operation) to derive a
+ * user's key pair under the KGC's published hid - 0x03 for KEM / public-key
+ * encryption, 0x02 for key exchange.
+ * <p>
+ * The JCA {@code getEncoded()} is a PKCS#8 PrivateKeyInfo under the GM algorithm OID
+ * (the JCA convention); the bare GM/T 0080-2020 key bytes are available via the
+ * lightweight key-parameter class's {@code getEncoded()}.
+ */
+class BCSM9EncMasterPrivateKey
+    implements SM9EncMasterPrivateKey, Destroyable
+{
+    private static final long serialVersionUID = 1L;
+
+    private final transient SM9EncMasterPrivateKeyParameters keyParams;
+
+    BCSM9EncMasterPrivateKey(SM9EncMasterPrivateKeyParameters keyParams)
+    {
+        this.keyParams = keyParams;
+    }
+
+    /**
+     * Generate the key pair of the user identified by {@code identity} under the given
+     * hid (a KGC operation): for hid = 0x03 the public key to encapsulate to and
+     * the private key that decapsulates, for hid = 0x02 the key-exchange pair.
+     */
+    public KeyPair generateUserKeyPair(byte[] identity, byte hid)
+    {
+        return new KeyPair(
+            new BCSM9EncPublicKey(keyParams.getPublicKeyParameters().getUserPublicKey(identity, hid)),
+            new BCSM9EncPrivateKey(keyParams.generateUserKey(identity, hid)));
+    }
+
+    /**
+     * Generate the key-exchange key pair of the user identified by {@code identity}
+     * (a KGC operation), under hid 0x02 - see
+     * {@link #generateExchangeKeyPair(byte[], byte)} for a KGC whose published
+     * exchange hid differs.
+     */
+    public KeyPair generateExchangeKeyPair(byte[] identity)
+    {
+        return generateExchangeKeyPair(identity, SM9EncMasterPrivateKeyParameters.HID_EXCHANGE);
+    }
+
+    /**
+     * Generate the key-exchange key pair of the user identified by {@code identity}
+     * under the given hid (a KGC operation). The private half initialises
+     * {@code KeyAgreement.SM9}; exchange keys and KEM/decryption keys are distinct
+     * objects and the consumers mutually reject them.
+     */
+    public KeyPair generateExchangeKeyPair(byte[] identity, byte hid)
+    {
+        return new KeyPair(
+            new BCSM9EncPublicKey(keyParams.getPublicKeyParameters().getUserPublicKey(identity, hid)),
+            new BCSM9EncPrivateKey(keyParams.generateExchangeKey(identity, hid)));
+    }
+
+    public String getAlgorithm()
+    {
+        return "SM9-ENC";
+    }
+
+    public String getFormat()
+    {
+        return "PKCS#8";
+    }
+
+    public byte[] getEncoded()
+    {
+        if (keyParams.isDestroyed())
+        {
+            throw new IllegalStateException("key destroyed");
+        }
+
+        try
+        {
+            PrivateKeyInfo info = new PrivateKeyInfo(
+                new AlgorithmIdentifier(GMObjectIdentifiers.sm9encrypt), new DEROctetString(keyParams.getEncoded()));
+            return info.getEncoded(ASN1Encoding.DER);
+        }
+        catch (IOException e)
+        {
+            throw Exceptions.illegalStateException("unable to encode SM9 encryption master private key", e);
+        }
+    }
+
+    public boolean equals(Object o)
+    {
+        if (o == this)
+        {
+            return true;
+        }
+        if (!(o instanceof BCSM9EncMasterPrivateKey))
+        {
+            return false;
+        }
+        return Arrays.constantTimeAreEqual(getEncoded(), ((BCSM9EncMasterPrivateKey)o).getEncoded());
+    }
+
+    public int hashCode()
+    {
+        // derive from the public master key, never the secret ke
+        return Arrays.hashCode(keyParams.getPublicKeyParameters().getEncoded());
+    }
+
+    /**
+     * Destroy the underlying master secret ke. After destruction {@link #isDestroyed()}
+     * returns true and the secret-bearing operations ({@link #getEncoded()},
+     * {@link #generateUserKeyPair(byte[], byte)}) throw {@link IllegalStateException};
+     * user key pairs already generated are unaffected.
+     */
+    public synchronized void destroy()
+    {
+        keyParams.destroy();
+    }
+
+    public boolean isDestroyed()
+    {
+        return keyParams.isDestroyed();
+    }
+
+    private Object writeReplace()
+        throws ObjectStreamException
+    {
+        if (keyParams.isDestroyed())
+        {
+            throw new NotSerializableException("key destroyed");
+        }
+        return new SM9KeyProxy(true, getEncoded());
+    }
+}
